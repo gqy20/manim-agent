@@ -93,7 +93,7 @@ export default function TaskDetailPage() {
       (event: SSEEvent) => {
         // 存储所有事件（结构化 + 纯文本）
         setLogs((prev) => [...prev, event]);
-        if (event.type === "status") {
+        if (event.type === "status" && typeof event.data === "string") {
           setTask((prev) =>
             prev ? { ...prev, status: event.data as TaskStatus } : prev,
           );

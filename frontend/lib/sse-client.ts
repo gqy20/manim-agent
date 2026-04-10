@@ -34,8 +34,8 @@ export function connectTaskEvents(
         es.close();
         onComplete?.();
       }
-    } catch {
-      // ignore parse errors
+    } catch (err) {
+      console.warn("[SSE] failed to parse event:", err);
     }
   };
 
