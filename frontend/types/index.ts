@@ -9,6 +9,16 @@ export interface TaskCreatePayload {
   no_tts: boolean;
 }
 
+/** Pipeline 结构化输出数据（完成任务时可用）。 */
+export interface PipelineOutputData {
+  video_output: string | null;
+  scene_file: string | null;
+  scene_class: string | null;
+  duration_seconds: number | null;
+  narration: string | null;
+  source_code: string | null;
+}
+
 export interface Task {
   id: string;
   user_text: string;
@@ -18,6 +28,7 @@ export interface Task {
   video_path: string | null;
   error: string | null;
   options: TaskCreatePayload;
+  pipeline_output: PipelineOutputData | null;
 }
 
 // ── 结构化事件载荷 ────────────────────────────────────────

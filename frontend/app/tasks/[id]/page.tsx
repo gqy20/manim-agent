@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
 import { LogViewer } from "@/components/log-viewer";
 import { VideoPlayer } from "@/components/video-player";
 import { Badge } from "@/components/ui/badge";
@@ -76,6 +78,7 @@ export default function TaskDetailPage() {
   const [task, setTask] = useState<Task | null>(null);
   const [logs, setLogs] = useState<SSEEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const containerRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     getTask(taskId)
@@ -104,6 +107,47 @@ export default function TaskDetailPage() {
 
     return cleanup;
   }, [task, taskId]);
+
+  // GSAP Entry Animation Orchestration
+  useGSAP(() => {
+    if (!task || loading || !containerRef.current) return;
+
+    // Kill any previous breathing animation to prevent leaks
+    gsap.killTweensOf(".gsap-video-placeholder");
+
+    // We compose a timeline to present the page elements beautifully
+    const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+
+    tl.fromTo(".gsap-header",
+      { y: -20, opacity: 0, filter: "blur(5px)" },
+      { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.6, stagger: 0.1 }
+    )
+    .fromTo(".gsap-log",
+      { x: -30, opacity: 0 },
+      { x: 0, opacity: 1, duration: 0.6 },
+      "-=0.3"
+    )
+    .fromTo(".gsap-video",
+      { x: 30, opacity: 0, scale: 0.95 },
+      { x: 0, opacity: 1, scale: 1, duration: 0.6 },
+      "-=0.4"
+    );
+
+    // If the task is running, make the placeholder border breathe/pulse slightly
+    if (task.status === "running" || task.status === "pending") {
+      gsap.to(".gsap-video-placeholder", {
+        boxShadow: "0 0 20px rgba(139, 92, 246, 0.15)",
+        borderColor: "rgba(139, 92, 246, 0.4)",
+        repeat: -1,
+        yoyo: true,
+        duration: 1.5,
+        ease: "sine.inOut",
+        id: "detail-breathing",  // named for targeted kill
+      });
+    }
+
+    return () => { tl.kill(); };
+  }, [task, loading]);
 
   if (loading) return (
     <main className="flex-1 container py-8 max-w-6xl">
@@ -136,18 +180,18 @@ export default function TaskDetailPage() {
   const config = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.pending;
 
   return (
-    <main className="flex-1 container py-8 max-w-6xl space-y-6 animate-fade-in-up">
+    <main ref={containerRef} className="flex-1 w-full px-6 md:px-10 py-8 max-w-[1400px] mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between flex-wrap gap-4">
+      <div className="gsap-header flex items-start justify-between flex-wrap gap-4">
         <div className="space-y-1.5">
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-all duration-200 mb-2 group"
+            className="gsap-header inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-all duration-200 mb-2 group"
           >
             <ArrowLeft className="h-3 w-3 group-hover:-translate-x-0.5 transition-transform" />
             返回首页
           </Link>
-          <div className="flex items-center gap-3">
+          <div className="gsap-header flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-primary/[0.08] border border-primary/10 text-primary">
               <Film className="h-4.5 w-4.5" />
             </div>
@@ -159,7 +203,7 @@ export default function TaskDetailPage() {
             </div>
           </div>
         </div>
-        <Badge variant="outline" className={`font-medium ${config.color} px-3 py-1`}>
+        <Badge variant="outline" className={`gsap-header font-medium ${config.color} px-3 py-1`}>
           <span className="mr-1.5">{config.icon}</span>
           {config.label}
         </Badge>
@@ -167,7 +211,7 @@ export default function TaskDetailPage() {
 
       {/* Error display */}
       {task.error && (
-        <div className="rounded-xl border border-destructive/20 bg-destructive/[0.04] p-4 text-sm text-red-400 glass-card backdrop-blur-sm animate-fade-in-up">
+        <div className="gsap-header rounded-xl border border-destructive/20 bg-destructive/[0.04] p-4 text-sm text-red-400 glass-card backdrop-blur-sm">
           <strong>错误：</strong>{task.error}
         </div>
       )}
@@ -175,7 +219,7 @@ export default function TaskDetailPage() {
       {/* Main content grid */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Left: Log viewer */}
-        <div className="space-y-2.5">
+        <div className="gsap-log space-y-2.5 opacity-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Terminal className="h-3.5 w-3.5 text-muted-foreground/50" />
@@ -189,7 +233,7 @@ export default function TaskDetailPage() {
         </div>
 
         {/* Right: Video player or placeholder */}
-        <div className="space-y-2.5">
+        <div className="gsap-video space-y-2.5 opacity-0">
           <div className="flex items-center gap-2">
             <Play className="h-3.5 w-3.5 text-muted-foreground/50" />
             <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">输出视频</h2>
@@ -197,7 +241,7 @@ export default function TaskDetailPage() {
           {showVideo ? (
             <VideoPlayer src={getVideoUrl(taskId)} />
           ) : (
-            <div className="flex flex-col items-center justify-center border border-border/40 rounded-xl h-[480px] text-muted-foreground bg-surface/30 glow-border transition-all duration-300 overflow-hidden relative">
+            <div className="gsap-video-placeholder flex flex-col items-center justify-center border border-border/40 rounded-xl h-[480px] text-muted-foreground bg-surface/30 glow-border transition-colors duration-300 overflow-hidden relative">
               {/* Subtle grid background */}
               <svg className="absolute inset-0 w-full h-full opacity-[0.02]" xmlns="http://www.w3.org/2000/svg">
                 <defs>
@@ -241,6 +285,63 @@ export default function TaskDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Pipeline Output Summary (completed tasks only) */}
+      {task.pipeline_output && (
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2">
+            <Terminal className="h-3.5 w-3.5 text-muted-foreground/50" />
+            <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Pipeline 输出
+            </h2>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {task.pipeline_output.duration_seconds != null && (
+              <div className="glass-card rounded-lg p-3 text-center space-y-1">
+                <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">时长</span>
+                <span className="text-sm font-mono font-medium tabular-nums">
+                  {task.pipeline_output.duration_seconds.toFixed(1)}s
+                </span>
+              </div>
+            )}
+            {task.pipeline_output.scene_class && (
+              <div className="glass-card rounded-lg p-3 text-center space-y-1">
+                <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">场景类</span>
+                <span className="text-sm font-mono truncate">
+                  {task.pipeline_output.scene_class}
+                </span>
+              </div>
+            )}
+            {task.pipeline_output.scene_file && (
+              <div className="glass-card rounded-lg p-3 text-center space-y-1">
+                <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">文件</span>
+                <span className="text-xs font-mono truncate">
+                  {task.pipeline_output.scene_file.split("/").pop()}
+                </span>
+              </div>
+            )}
+            {task.pipeline_output.narration && (
+              <div className="glass-card rounded-lg p-3 col-span-2 sm:col-span-4 space-y-1">
+                <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">解说词</span>
+                <p className="text-xs text-muted-foreground/70 line-clamp-2 italic">
+                  &ldquo;{task.pipeline_output.narration}&rdquo;
+                </p>
+              </div>
+            )}
+          </div>
+          {task.pipeline_output.source_code && (
+            <details className="glass-card rounded-lg overflow-hidden group cursor-pointer">
+              <summary className="flex items-center justify-between px-4 py-3 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                <span className="font-mono uppercase tracking-wider">Manim 源码</span>
+                <span className="opacity-40 group-hover:opacity-100 transition-opacity">&#9660;</span>
+              </summary>
+              <pre className="max-h-[240px] overflow-auto bg-zinc-950/80 px-4 py-3 text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-all text-zinc-400/80">
+                {task.pipeline_output.source_code}
+              </pre>
+            </details>
+          )}
+        </div>
+      )}
     </main>
   );
 }
