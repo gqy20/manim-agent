@@ -1,5 +1,6 @@
 """FastAPI application entry point for manim-agent web backend."""
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,12 +11,22 @@ from fastapi.staticfiles import StaticFiles
 from .routes import router, set_store
 from .task_store import TaskStore
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store = TaskStore()
     set_store(store)
     app.state.store = store
+    # 启动横幅：让用户在终端中一眼识别后端就绪状态
+    print()
+    print("=" * 56)
+    print("  Manim Agent Backend Ready")
+    print(f"  Tasks in store: {len(store._tasks)}")
+    print(f"  Output dir:   {Path('backend/output').resolve()}")
+    print("=" * 56)
+    print()
     yield
     await store.save()
 
