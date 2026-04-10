@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -69,9 +70,16 @@ export function TaskForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showAllTemplates, setShowAllTemplates] = useState(false);
 
   const handleTemplate = useCallback((templateText: string) => {
-    setText(templateText);
+    setText("");
+    let i = 0;
+    const interval = setInterval(() => {
+      setText(templateText.slice(0, i + 1));
+      i++;
+      if (i >= templateText.length) clearInterval(interval);
+    }, 30);
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -120,11 +128,38 @@ export function TaskForm() {
 
       {/* Template chips */}
       <div className="space-y-2">
-        <p className="text-[11px] text-muted-foreground/70 uppercase tracking-wider font-medium">快速开始</p>
-        <div className="flex flex-wrap gap-1.5">
-          {TEMPLATES.map((t) => (
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] text-muted-foreground/70 uppercase tracking-wider font-medium">快速开始</p>
+          {TEMPLATES.length > 3 && (
             <button
+              type="button"
+              onClick={() => setShowAllTemplates(!showAllTemplates)}
+              className="text-[10px] text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+            >
+              {showAllTemplates ? "收起" : "显示全部"}
+            </button>
+          )}
+        </div>
+        <motion.div
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: {
+              opacity: 1,
+              transition: { staggerChildren: 0.05 }
+            }
+          }}
+          className="flex flex-wrap gap-1.5"
+        >
+          {(showAllTemplates ? TEMPLATES : TEMPLATES.slice(0, 3)).map((t) => (
+            <motion.button
               key={t.text}
+              variants={{
+                hidden: { opacity: 0, scale: 0.95 },
+                visible: { opacity: 1, scale: 1 }
+              }}
+              transition={{ type: "spring", stiffness: 400, damping: 25 }}
               type="button"
               onClick={() => handleTemplate(t.text)}
               disabled={submitting}
@@ -132,9 +167,9 @@ export function TaskForm() {
             >
               <span className="text-xs">{t.icon}</span>
               <span className="truncate max-w-[160px]">{t.text.length > 18 ? t.text.slice(0, 18) + "…" : t.text}</span>
-            </button>
+            </motion.button>
           ))}
-        </div>
+        </motion.div>
       </div>
 
       {/* Advanced options toggle */}
@@ -149,54 +184,64 @@ export function TaskForm() {
           <span className="text-muted-foreground/40 text-[10px]">({showAdvanced ? "收起" : "音色 · 画质 · 模式"})</span>
         </button>
 
-        {showAdvanced && (
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-4 animate-fade-in-up">
-            {/* Voice */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">音色</label>
-              <Select value={voiceId} onValueChange={(v) => v && setVoiceId(v)} disabled={submitting}>
-                <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors h-9">
-                  <SelectValue>{getLabel(VOICES, voiceId)}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {VOICES.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <AnimatePresence initial={false}>
+          {showAdvanced && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 25 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-4 pb-2">
+                {/* Voice */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">音色</label>
+                  <Select value={voiceId} onValueChange={(v) => v && setVoiceId(v)} disabled={submitting}>
+                    <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors h-9">
+                      <SelectValue>{getLabel(VOICES, voiceId)}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {VOICES.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {/* Quality */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">画质</label>
-              <Select value={quality} onValueChange={(v) => v && setQuality(v as "high" | "medium" | "low")} disabled={submitting}>
-                <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors h-9">
-                  <SelectValue>{getLabel(QUALITIES, quality)}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {QUALITIES.map((q) => (
-                    <SelectItem key={q.value} value={q.value}>{q.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                {/* Quality */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">画质</label>
+                  <Select value={quality} onValueChange={(v) => v && setQuality(v as "high" | "medium" | "low")} disabled={submitting}>
+                    <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors h-9">
+                      <SelectValue>{getLabel(QUALITIES, quality)}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {QUALITIES.map((q) => (
+                        <SelectItem key={q.value} value={q.value}>{q.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            {/* Preset */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">模式</label>
-              <Select value={preset} onValueChange={(v) => v && setPreset(v as any)} disabled={submitting}>
-                <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors h-9">
-                  <SelectValue>{getLabel(PRESETS, preset)}</SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {PRESETS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        )}
+                {/* Preset */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">模式</label>
+                  <Select value={preset} onValueChange={(v) => v && setPreset(v as "default" | "educational" | "presentation" | "proof" | "concept")} disabled={submitting}>
+                    <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors h-9">
+                      <SelectValue>{getLabel(PRESETS, preset)}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRESETS.map((p) => (
+                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Skip TTS toggle */}
@@ -205,7 +250,7 @@ export function TaskForm() {
           <input
             type="checkbox"
             checked={noTts}
-            onChange={(e) => setNoTts(e.checked)}
+            onChange={(e) => setNoTts(e.target.checked)}
             disabled={submitting}
             className="sr-only"
           />

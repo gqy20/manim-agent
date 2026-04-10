@@ -90,6 +90,47 @@ class TestTaskCRUD:
         resp = client.get(f"/api/tasks/{task_id}/video")
         assert resp.status_code == 404
 
+    @pytest.mark.asyncio
+    async def test_events_replay_completed_task(self, client, store):
+        req = TaskCreateRequest(user_text="stream me")
+        task = await store.create(req)
+        await store.append_log(task["id"], "line 1")
+        await store.append_log(task["id"], "line 2")
+        await store.update_status(task["id"], TaskStatus.COMPLETED)
+
+        with client.stream("GET", f"/api/tasks/{task['id']}/events") as resp:
+            body = "".join(resp.iter_text())
+
+        assert resp.status_code == 200
+        assert '"event": "log"' in body
+        assert "line 1" in body
+        assert "line 2" in body
+        assert '"event": "status"' in body
+        assert "completed" in body
+
+    def test_create_task_surfaces_non_empty_failure_message(self, client, sample_request):
+        async def failing_pipeline(**_kwargs):
+            raise RuntimeError("Failed to start Claude Code: ") from OSError(
+                "The system cannot find the file specified"
+            )
+
+        with patch("manim_agent.__main__.run_pipeline", failing_pipeline):
+            resp = client.post("/api/tasks", json=sample_request.model_dump())
+
+        assert resp.status_code == 201
+        task_id = resp.json()["id"]
+
+        for _ in range(20):
+            task_resp = client.get(f"/api/tasks/{task_id}")
+            assert task_resp.status_code == 200
+            task = task_resp.json()
+            if task["status"] == "failed":
+                break
+        else:
+            pytest.fail("task did not transition to failed state")
+
+        assert "The system cannot find the file specified" in task["error"]
+
 
 class TestTaskStore:
     @pytest.mark.asyncio

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
-import { History, Github, Sparkles, Command } from "lucide-react";
+import { History, Sparkles, Command } from "lucide-react";
 import { Logo } from "@/components/logo";
 import "./globals.css";
 
@@ -25,7 +25,7 @@ export const metadata: Metadata = {
 function Footer() {
   return (
     <footer className="border-t border-border/40 bg-background/50 backdrop-blur-sm">
-      <div className="container max-w-6xl py-8 px-4">
+      <div className="w-full px-6 md:px-10 py-8">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           {/* Brand */}
           <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
@@ -68,7 +68,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-mesh">
         {/* Header */}
         <header className="border-b border-border/40 bg-background/60 backdrop-blur-2xl supports-[backdrop-filter]:bg-background/30 sticky top-0 z-50">
-          <nav className="container flex h-14 items-center justify-between max-w-6xl">
+          <nav className="w-full px-6 md:px-10 flex h-14 items-center justify-between">
             {/* Left: Brand */}
             <Link href="/" className="flex items-center gap-2.5 group">
               <Logo size={24} className="text-primary transition-transform duration-300 group-hover:rotate-12" />

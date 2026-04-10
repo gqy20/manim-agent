@@ -137,7 +137,8 @@
 
 /* ── Animated Background Mesh ───────────────────── */
 .bg-mesh {
-  background:
+  background-color: var(--background);
+  background-image:
     radial-gradient(ellipse 80% 60% at 20% 40%, oklch(0.7 0.18 250 / 6%) 0%, transparent 70%),
     radial-gradient(ellipse 60% 50% at 80% 20%, oklch(0.65 0.2 280 / 5%) 0%, transparent 70%),
     radial-gradient(ellipse 50% 40% at 60% 80%, oklch(0.7 0.15 200 / 4%) 0%, transparent 70%);

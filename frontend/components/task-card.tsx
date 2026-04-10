@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import type { Task } from "@/types";
@@ -33,19 +36,44 @@ interface TaskCardProps {
 
 export function TaskCard({ task }: TaskCardProps) {
   const config = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.pending;
+  const divRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [opacity, setOpacity] = useState(0);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!divRef.current) return;
+    const rect = divRef.current.getBoundingClientRect();
+    setPosition({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
 
   return (
     <Link href={`/tasks/${task.id}`} className="group block">
-      <Card
-        className="glass-card rounded-xl p-4 cursor-pointer transition-all duration-300 ease-out
-          hover:border-primary/25
-          hover:shadow-xl hover:shadow-primary/[0.04]
-          hover:-translate-y-1
-          active:scale-[0.98]
-          relative overflow-hidden"
-        style={{ transformStyle: "preserve-3d", perspective: "1000px" }}
+      <div
+        ref={divRef}
+        onMouseMove={handleMouseMove}
+        onMouseEnter={() => setOpacity(1)}
+        onMouseLeave={() => setOpacity(0)}
+        className="relative h-full"
       >
-        {/* Subtle top accent line */}
+        <Card
+          className="glass-card rounded-xl p-4 cursor-pointer transition-all duration-300 ease-out
+            hover:border-primary/25
+            hover:shadow-xl hover:shadow-primary/[0.04]
+            hover:-translate-y-1
+            active:scale-[0.98]
+            relative overflow-hidden h-full"
+          style={{ transformStyle: "preserve-3d", perspective: "1000px" }}
+        >
+          {/* Spotlight overlay effect */}
+          <div
+            className="pointer-events-none absolute -inset-px transition-opacity duration-300 z-0"
+            style={{
+              opacity,
+              background: `radial-gradient(600px circle at ${position.x}px ${position.y}px, rgba(255,255,255,0.06), transparent 40%)`,
+            }}
+          />
+
+          {/* Subtle top accent line */}
         <div className="absolute top-0 left-4 right-4 h-[1px] bg-gradient-to-r from-transparent via-primary/0 to-transparent group-hover:via-primary/30 transition-all duration-500"/>
 
         <CardContent className="p-0 space-y-3">
@@ -87,6 +115,7 @@ export function TaskCard({ task }: TaskCardProps) {
           </div>
         </CardContent>
       </Card>
+      </div>
     </Link>
   );
 }

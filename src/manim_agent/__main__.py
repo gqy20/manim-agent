@@ -60,6 +60,23 @@ _EMOJI = {
 # ── 消息分发器 ─────────────────────────────────────────────────
 
 
+# ASCII-only console markers for Windows terminals with non-UTF-8 encodings.
+_LOG_SEPARATOR = "=" * 58
+_EMOJI = {
+    "write": "[WRITE]",
+    "bash": "[BASH]",
+    "read": "[READ]",
+    "think": "[THINK]",
+    "video": "[VIDEO]",
+    "check": "[OK]",
+    "cross": "[ERR]",
+    "tts": "[TTS]",
+    "film": "[MUX]",
+    "chart": "[SUMMARY]",
+    "gear": "[PROGRESS]",
+}
+
+
 class _MessageDispatcher:
     """分发 query() 消息流中的各类消息，提取结构化信息并输出实时日志。
 
@@ -244,7 +261,10 @@ class _MessageDispatcher:
     def _print(self, message: str) -> None:
         """条件打印：verbose=True 时输出；同时调用回调（如有）。"""
         if self.verbose:
-            print(message)
+            try:
+                print(message)
+            except UnicodeEncodeError:
+                print(message.encode("ascii", "replace").decode("ascii"))
         if self.log_callback:
             self.log_callback(message)
 

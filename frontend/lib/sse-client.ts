@@ -15,7 +15,7 @@ export function connectTaskEvents(
   const url = `${API_BASE}/api/tasks/${taskId}/events`;
   const es = new EventSource(url);
 
-  es.onmessage = (e) => {
+  const handleEvent = (e: MessageEvent<string>) => {
     try {
       const parsed: SSEEvent = JSON.parse(e.data);
       onEvent(parsed);
@@ -28,10 +28,17 @@ export function connectTaskEvents(
     }
   };
 
+  es.addEventListener("log", handleEvent);
+  es.addEventListener("status", handleEvent);
+
   es.onerror = (e) => {
     onError?.(e);
   };
 
   // Return cleanup function
-  return () => es.close();
+  return () => {
+    es.removeEventListener("log", handleEvent);
+    es.removeEventListener("status", handleEvent);
+    es.close();
+  };
 }

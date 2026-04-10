@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from .sse_manager import SSESubscriptionManager
 from .task_store import TaskStore
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+logger = logging.getLogger(__name__)
 
 _store: TaskStore  # set via set_store()
 _sse_mgr: SSESubscriptionManager = SSESubscriptionManager()
@@ -33,6 +35,21 @@ def set_store(store: TaskStore) -> None:
 
 def get_sse_manager() -> SSESubscriptionManager:
     return _sse_mgr
+
+
+def _format_exception_message(exc: Exception) -> str:
+    """Return a compact, non-empty error summary including chained causes."""
+    parts: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        text = str(current).strip() or repr(current)
+        parts.append(text)
+        current = current.__cause__ or current.__context__
+
+    return " -> ".join(parts)
 
 
 @router.post("", response_model=TaskResponse, status_code=201)
@@ -76,8 +93,11 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 task_id, TaskStatus.COMPLETED, video_path=final_video
             )
         except Exception as exc:
+            error_message = _format_exception_message(exc)
+            logger.exception("Task %s failed: %s", task_id, error_message)
+            log_callback(f"[ERR] {error_message}")
             await _store.update_status(
-                task_id, TaskStatus.FAILED, error=str(exc)
+                task_id, TaskStatus.FAILED, error=error_message
             )
         finally:
             _sse_mgr.done(task_id)
@@ -114,58 +134,56 @@ async def task_events(task_id: str):
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    async def event_generator():
-        # Replay existing logs first (supports reconnect)
-        for line in task.get("logs", []):
+    # Replay existing logs first (supports reconnect)
+    for line in task.get("logs", []):
+        yield {
+            "event": "log",
+            "data": SSEEvent(
+                event_type="log",
+                data=line,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            ).model_dump_json(),
+        }
+
+    status = task["status"]
+    if status in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value):
+        yield {
+            "event": "status",
+            "data": SSEEvent(
+                event_type="status",
+                data=status,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            ).model_dump_json(),
+        }
+        return
+
+    # Live streaming from queue
+    queue = _sse_mgr.subscribe(task_id)
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:  # sentinel
+                break
+            now = datetime.now(timezone.utc).isoformat()
             yield {
                 "event": "log",
-                "data": SSEEvent(
-                    event_type="log",
-                    data=line,
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                ).model_dump_json(),
+                "data": SSEEvent(event_type="log", data=item, timestamp=now)
+                .model_dump_json(),
             }
 
-        status = task["status"]
-        if status in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value):
+        # Send final status after sentinel
+        refreshed = await _store.get(task_id)
+        if refreshed:
             yield {
                 "event": "status",
                 "data": SSEEvent(
                     event_type="status",
-                    data=status,
+                    data=refreshed["status"],
                     timestamp=datetime.now(timezone.utc).isoformat(),
                 ).model_dump_json(),
             }
-            return
-
-        # Live streaming from queue
-        queue = _sse_mgr.subscribe(task_id)
-        try:
-            while True:
-                item = await queue.get()
-                if item is None:  # sentinel
-                    break
-                now = datetime.now(timezone.utc).isoformat()
-                yield {
-                    "event": "log",
-                    "data": SSEEvent(event_type="log", data=item, timestamp=now)
-                    .model_dump_json(),
-                }
-            # Send final status after sentinel
-            refreshed = await _store.get(task_id)
-            if refreshed:
-                yield {
-                    "event": "status",
-                    "data": SSEEvent(
-                        event_type="status",
-                        data=refreshed["status"],
-                        timestamp=datetime.now(timezone.utc).isoformat(),
-                    ).model_dump_json(),
-                }
-        finally:
-            _sse_mgr.unsubscribe(task_id)
-
-    return EventSourceResponse(event_generator())
+    finally:
+        _sse_mgr.unsubscribe(task_id)
 
 
 @router.get("/{task_id}/video")
