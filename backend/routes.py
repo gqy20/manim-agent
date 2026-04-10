@@ -62,7 +62,7 @@ def _format_exception_message(exc: Exception) -> str:
 
 @router.post("", response_model=TaskResponse, status_code=201)
 async def create_task(req: TaskCreateRequest) -> TaskResponse:
-    """Create a new video generation task and start the pipeline in background."""
+    """Create a task & start the pipeline in background."""
     task = await _store.create(req)
     task_id = task["id"]
 
@@ -71,7 +71,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
     output_path = str(output_dir / "final.mp4")
 
     # Subscribe SSE queue for this task
-    queue = _sse_mgr.subscribe(task_id)
+    _sse_mgr.subscribe(task_id)
 
     def log_callback(line: str) -> None:
         _sse_mgr.push(task_id, line)
@@ -80,6 +80,10 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             lambda: asyncio.create_task(_store.append_log(task_id, line))
         )
 
+    # 立即推送启动日志（消除 GAP 1）
+    _sse_mgr.push(task_id, f"[SYS] Task {task_id} created")
+    _store.append_log(task_id, f"[SYS] Task {task_id} created")
+
     def event_callback(event: Any) -> None:
         """将 Dispatcher 结构化事件推送到 SSE 队列。"""
         _sse_mgr.push(task_id, event)
@@ -87,6 +91,12 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
     async def run_pipeline_background() -> None:
         from manim_agent.__main__ import run_pipeline
 
+        # 推送启动日志（后台任务已开始执行）
+        _sse_mgr.push(task_id, "[SYS] Connecting to Claude Agent SDK...")
+        await _store.append_log(
+            task_id,
+            "[SYS] Connecting to Claude Agent SDK...",
+        )
         await _store.update_status(task_id, TaskStatus.RUNNING)
         # 用于从 run_pipeline 内部获取 dispatcher 实例
         dispatcher_ref: list[Any] = []

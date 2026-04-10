@@ -205,7 +205,13 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
       <ScrollArea className="h-[480px] w-full bg-zinc-950/90 p-4 font-mono text-xs leading-5">
         <div className="space-y-0">
           {events.length === 0 && (
-            <span className="log-dim">等待流水线启动...</span>
+            <div className="space-y-2 text-muted-foreground/50">
+              <span className="log-dim">等待流水线启动...</span>
+              <div className="flex items-center gap-1.5 text-[10px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                <span>正在初始化 Claude Agent SDK，请稍候</span>
+              </div>
+            </div>
           )}
           {events.map((evt, i) => (
             <EventRenderer key={i} event={evt} />
@@ -241,6 +247,18 @@ function EventRenderer({ event }: { event: SSEEvent }) {
 
   // 向后兼容：纯文本日志 / status / error
   if (typeof event.data === "string") {
+    // status 事件也渲染为可见日志（消除 GAP 2）
+    if (event.type === "status") {
+      const statusMap: Record<string, { icon: string; cls: string }> = {
+        pending: { icon: "\u23F3", cls: "log-step" },
+        running: { icon: "\u25B6", cls: "log-success" },
+        completed: { icon: "\u2705", cls: "log-success" },
+        failed: { icon: "\u274C", cls: "log-error" },
+      };
+      const s = statusMap[event.data as string]
+        ?? { icon: "\u2022", cls: "log-info" };
+      return <LogLine text={`${s.icon} Status: ${event.data}`} />;
+    }
     return <LogLine text={event.data} />;
   }
 

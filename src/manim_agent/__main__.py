@@ -601,10 +601,14 @@ async def run_pipeline(
     dispatcher = _MessageDispatcher(verbose=True, log_callback=log_callback)
     if event_callback is not None:
         dispatcher.event_callback = event_callback
+    # ── 阶段标记：初始化完成，即将启动 SDK query ──
     dispatcher._print(f"\n{_LOG_SEPARATOR}")
     dispatcher._print(f"  Claude Agent 工作日志                              "
                    f"Session: {options.session_id[:8]}...")
     dispatcher._print(_LOG_SEPARATOR)
+    dispatcher._print(f"  {_EMOJI['gear']} Phase 1/4: 启动 Claude Agent SDK...")
+    dispatcher._print(f"  quality={quality} preset={preset} "
+                     f"max_turns={max_turns}")
 
     async for message in query(prompt=user_prompt, options=options):
         dispatcher.dispatch(message)
@@ -614,6 +618,9 @@ async def run_pipeline(
         _dispatcher_ref.append(dispatcher)
 
     # 3. 从 dispatcher 提取结果
+    # ── 阶段标记：SDK 对话结束，提取输出 ──
+    dispatcher._print(f"  {_EMOJI['gear']} Phase 2/4: "
+                     f"提取渲染结果...")
     video_output = dispatcher.get_video_output()
 
     if not video_output:
@@ -634,6 +641,10 @@ async def run_pipeline(
         dispatcher._print(f"\n{_EMOJI['video']} 输出静音视频: {video_output}")
         return video_output
 
+    # ── 阶段标记：TTS 语音合成 ──
+    dispatcher._print(f"  {_EMOJI['gear']} Phase 3/4: "
+                     f"TTS 语音合成...")
+
     # TTS 合成（优先使用 Claude 生成的解说词，fallback 到用户原始输入）
     po = dispatcher.get_pipeline_output()
     narration_text = po.narration if po and po.narration else user_text
@@ -649,6 +660,9 @@ async def run_pipeline(
                  f"{tts_result.word_count} chars")
 
     # FFmpeg 合成
+    # ── 阶段标记：最终合成 ──
+    dispatcher._print(f"  {_EMOJI['gear']} Phase 4/4: "
+                     f"FFmpeg 视频合成...")
     dispatcher._print(f"{_EMOJI['film']} FFmpeg 合成中... "
                    f"(video + audio + subtitle)")
     final_video = await video_builder.build_final_video(
