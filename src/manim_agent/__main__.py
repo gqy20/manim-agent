@@ -13,6 +13,10 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,

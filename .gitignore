@@ -38,3 +38,9 @@ backend/data/
 backend/output/
 frontend/.next/
 frontend/node_modules/
+
+# Environment variables (keep .env.example)
+.env
+!.env.example
+frontend/.env*
+!frontend/*.example
