@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { History } from "lucide-react";
+import { Logo } from "@/components/logo";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,9 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Manim Agent — AI Math Animation Generator",
-  description:
-    "Generate professional Manim math animation videos from natural language descriptions",
+  title: "Manim Agent — AI 数学动画生成器",
+  description: "用自然语言描述数学概念，自动生成专业 Manim 动画视频",
 };
 
 export default function RootLayout({
@@ -26,20 +27,24 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      lang="zh-CN"
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
-      <body className="min-h-full flex flex-col">
-        <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-          <nav className="container flex h-14 items-center justify-between">
-            <Link href="/" className="font-bold text-lg tracking-tight">
-              Manim Agent
+      <body className="min-h-full flex flex-col bg-mesh">
+        <header className="border-b border-border/50 bg-background/70 backdrop-blur-xl supports-[backdrop-filter]:bg-background/40 sticky top-0 z-50">
+          <nav className="container flex h-14 items-center justify-between max-w-6xl">
+            <Link href="/" className="flex items-center gap-2.5 group">
+              <Logo size={26} className="text-primary" />
+              <span className="font-semibold text-sm tracking-tight">
+                Manim Agent
+              </span>
             </Link>
             <Link
               href="/history"
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-md hover:bg-accent"
             >
-              History
+              <History className="h-3.5 w-3.5" />
+              历史记录
             </Link>
           </nav>
         </header>

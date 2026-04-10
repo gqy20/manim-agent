@@ -13,28 +13,28 @@ import {
 } from "@/components/ui/select";
 import { createTask } from "@/lib/api";
 import type { TaskCreatePayload } from "@/types";
-import { Loader2 } from "lucide-react";
+import { Loader2, Wand2 } from "lucide-react";
 
 const VOICES = [
-  { id: "female-tianmei", label: "Tianmei (Sweet)" },
-  { id: "male-qn-qingse", label: "Qingse (Fresh)" },
-  { id: "presenter_male", label: "Presenter (Professional)" },
-  { id: "audiobook_male_1", label: "Audiobook (Narrator)" },
-  { id: "female-shaonv", label: "Shaonv (Lively)" },
+  { id: "female-tianmei", label: "甜美女声" },
+  { id: "male-qn-qingse", label: "清新男声" },
+  { id: "presenter_male", label: "专业播音" },
+  { id: "audiobook_male_1", label: "故事旁白" },
+  { id: "female-shaonv", label: "活泼女声" },
 ];
 
 const QUALITIES = [
-  { value: "high", label: "High (720p)" },
-  { value: "medium", label: "Medium (480p)" },
-  { value: "low", label: "Low (360p)" },
+  { value: "high", label: "高清 (1080p60)" },
+  { value: "medium", label: "标清 (480p)" },
+  { value: "low", label: "流畅 (360p)" },
 ];
 
 const PRESETS = [
-  { value: "default", label: "Default" },
-  { value: "educational", label: "Educational" },
-  { value: "presentation", label: "Presentation" },
-  { value: "proof", label: "Proof" },
-  { value: "concept", label: "Concept Visualization" },
+  { value: "default", label: "默认" },
+  { value: "educational", label: "教学讲解" },
+  { value: "presentation", label: "演示汇报" },
+  { value: "proof", label: "证明推导" },
+  { value: "concept", label: "概念可视化" },
 ];
 
 export function TaskForm() {
@@ -64,36 +64,36 @@ export function TaskForm() {
       const task = await createTask(payload);
       router.push(`/tasks/${task.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create task");
+      setError(err instanceof Error ? err.message : "创建任务失败");
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl mx-auto">
+    <form onSubmit={handleSubmit} className="glass-card rounded-2xl p-6 sm:p-8 space-y-6 glow-border transition-all duration-300">
       {/* Natural language input */}
       <div className="space-y-2">
-        <label htmlFor="prompt" className="text-sm font-medium">
-          Describe your animation
+        <label htmlFor="prompt" className="text-sm font-medium text-foreground/80">
+          描述你想生成的动画
         </label>
         <Textarea
           id="prompt"
-          placeholder='e.g. "Explain the Pythagorean theorem with a visual proof"'
+          placeholder='例如："用动画演示勾股定理的证明过程"'
           value={text}
           onChange={(e) => setText(e.target.value)}
-          rows={5}
+          rows={4}
           disabled={submitting}
-          className="resize-none"
+          className="resize-none bg-background/50 border-border/50 text-foreground placeholder:text-muted-foreground/60 focus:border-primary/40 focus:ring-primary/20 transition-colors"
         />
       </div>
 
       {/* Options row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="space-y-2">
-          <label className="text-sm font-medium">Voice</label>
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">音色</label>
           <Select value={voiceId} onValueChange={(v) => v && setVoiceId(v)} disabled={submitting}>
-            <SelectTrigger>
+            <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -107,13 +107,13 @@ export function TaskForm() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium">Quality</label>
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">画质</label>
           <Select
             value={quality}
             onValueChange={(v) => v && setQuality(v as "high" | "medium" | "low")}
             disabled={submitting}
           >
-            <SelectTrigger>
+            <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -127,9 +127,9 @@ export function TaskForm() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium">Mode</label>
+          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">模式</label>
           <Select value={preset} onValueChange={(v) => v && setPreset(v as "default" | "educational" | "presentation" | "proof" | "concept")} disabled={submitting}>
-            <SelectTrigger>
+            <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -144,31 +144,46 @@ export function TaskForm() {
       </div>
 
       {/* Skip TTS toggle */}
-      <label className="flex items-center gap-2 text-sm cursor-pointer">
-        <input
-          type="checkbox"
-          checked={noTts}
-          onChange={(e) => setNoTts(e.target.checked)}
-          disabled={submitting}
-          className="rounded"
-        />
-        Skip TTS (silent video only)
+      <label className="flex items-center gap-2.5 text-sm cursor-pointer group select-none">
+        <div className={`relative w-4 h-4 rounded border transition-colors ${noTts ? "bg-primary border-primary" : "border-border/60 group-hover:border-border"}`}>
+          <input
+            type="checkbox"
+            checked={noTts}
+            onChange={(e) => setNoTts(e.target.checked)}
+            disabled={submitting}
+            className="sr-only"
+          />
+          {noTts && (
+            <svg className="absolute inset-0 m-auto w-3 h-3 text-primary-foreground pointer-events-none" viewBox="0 0 12 12" fill="none">
+              <path d="M2 6l3 3l5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          )}
+        </div>
+        <span className="text-muted-foreground group-hover:text-foreground/80 transition-colors">跳过语音合成（仅静音视频）</span>
       </label>
 
       {/* Error message */}
       {error && (
-        <p className="text-sm text-red-500">{error}</p>
+        <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">{error}</p>
       )}
 
       {/* Submit */}
-      <Button type="submit" disabled={submitting || !text.trim()} size="lg" className="w-full">
+      <Button
+        type="submit"
+        disabled={submitting || !text.trim()}
+        size="lg"
+        className="w-full btn-glow font-medium h-11"
+      >
         {submitting ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Creating task...
+            正在创建任务...
           </>
         ) : (
-          "Generate Video"
+          <>
+            <Wand2 className="mr-2 h-4 w-4" />
+            开始生成
+          </>
         )}
       </Button>
     </form>
