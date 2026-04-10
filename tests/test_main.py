@@ -505,7 +505,13 @@ class TestBuildOptions:
         assert opts.cwd == "/work"
         assert opts.system_prompt == "You are a helpful assistant."
         assert opts.max_turns == 30
-        assert opts.permission_mode == "acceptEdits"
+        assert opts.permission_mode == "bypassPermissions"
+        # 工具白名单：仅允许 pipeline 必需的工具（收敛攻击面）
+        assert opts.allowed_tools is not None
+        assert set(opts.allowed_tools) == {
+            "Read", "Write", "Edit",
+            "Bash", "Glob", "Grep",
+        }
 
     def test_custom_prompt_file(self, tmp_path):
         """自定义提示词文件被加载。"""

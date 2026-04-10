@@ -514,7 +514,7 @@ def _build_options(
     return ClaudeAgentOptions(
         cwd=cwd,
         system_prompt=final_system_prompt,
-        permission_mode="acceptEdits",
+        permission_mode="bypassPermissions",
         max_turns=max_turns,
         # ── 会话隔离：每次运行使用唯一 session ID，不污染用户本地 Claude Code ──
         session_id=str(uuid.uuid4()),
@@ -523,6 +523,11 @@ def _build_options(
         stderr=_stderr_handler,
         # ── 结构化输出 schema ──
         output_format=PipelineOutput.output_format_schema(),
+        # ── 工具白名单：收敛攻击面，仅允许 pipeline 必需的工具（参照 Distill）──
+        allowed_tools=[
+            "Read", "Write", "Edit",
+            "Bash", "Glob", "Grep",
+        ],
     )
 
 

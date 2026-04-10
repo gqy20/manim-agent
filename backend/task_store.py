@@ -88,4 +88,6 @@ class TaskStore:
 
     @staticmethod
     def to_response(task: dict[str, Any]) -> TaskResponse:
-        return TaskResponse(**{k: task[k] for k in TaskResponse.model_fields})
+        return TaskResponse(
+            **{k: task.get(k) for k in TaskResponse.model_fields}
+        )

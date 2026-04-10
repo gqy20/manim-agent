@@ -1,6 +1,6 @@
 import type { SSEEvent, SSEEventType } from "@/types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8471";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 /** 所有需要注册的 SSE 事件名称。 */
 const ALL_EVENT_TYPES: SSEEventType[] = [
@@ -27,6 +27,10 @@ export function connectTaskEvents(
   const es = new EventSource(url);
 
   const handleEvent = (e: MessageEvent<string>) => {
+    // 跳过空数据或非 JSON 数据（旧日志兼容 + 边界容错）
+    if (!e.data || e.data === "undefined" || e.data === "null") {
+      return;
+    }
     try {
       const parsed: SSEEvent = JSON.parse(e.data);
       onEvent(parsed);
@@ -35,7 +39,7 @@ export function connectTaskEvents(
         onComplete?.();
       }
     } catch (err) {
-      console.warn("[SSE] failed to parse event:", err);
+      console.warn("[SSE] failed to parse event:", err, "| raw:", e.data.slice(0, 120));
     }
   };
 

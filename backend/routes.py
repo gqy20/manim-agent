@@ -39,14 +39,21 @@ def get_sse_manager() -> SSESubscriptionManager:
 
 
 def _format_exception_message(exc: Exception) -> str:
-    """Return a compact, non-empty error summary including chained causes."""
+    """Return a compact, non-empty error summary including chained causes.
+
+    Always includes exception class name so that empty-str exceptions
+    (e.g. some SDK internal errors) are still diagnosable.
+    """
     parts: list[str] = []
     seen: set[int] = set()
     current: BaseException | None = exc
 
     while current is not None and id(current) not in seen:
         seen.add(id(current))
-        text = str(current).strip() or repr(current)
+        # 始终包含类名，防止空消息导致诊断困难
+        raw = str(current).strip() or repr(current)
+        label = type(current).__name__
+        text = f"{label}: {raw}" if raw else label
         parts.append(text)
         current = current.__cause__ or current.__context__
 
@@ -113,8 +120,19 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             )
         except Exception as exc:
             error_message = _format_exception_message(exc)
-            logger.exception("Task %s failed: %s", task_id, error_message)
+            logger.exception(
+                "Task %s failed: %s [type=%s args=%s]",
+                task_id,
+                error_message,
+                type(exc).__name__,
+                getattr(exc, "args", None),
+            )
+            # 将完整错误链写入 log stream（前端可展示）
             log_callback(f"[ERR] {error_message}")
+            import traceback as tb
+            for line in tb.format_exception(type(exc), exc, exc.__traceback__):
+                for ll in line.rstrip().splitlines():
+                    log_callback(f"[TRACE] {ll}")
             await _store.update_status(
                 task_id, TaskStatus.FAILED, error=error_message
             )
