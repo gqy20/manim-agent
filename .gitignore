@@ -32,3 +32,9 @@ Thumbs.db
 .coverage
 htmlcov/
 pytest_cache/
+
+# Web backend & frontend
+backend/data/
+backend/output/
+frontend/.next/
+frontend/node_modules/
