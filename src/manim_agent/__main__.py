@@ -408,6 +408,7 @@ async def run_pipeline(
     prompt_file: str | None = None,
     max_turns: int = 50,
     log_callback: Callable[[str], None] | None = None,
+    preset: str = "default",
 ) -> str:
     """执行完整的视频生成 pipeline。
 
@@ -436,10 +437,19 @@ async def run_pipeline(
     Raises:
         RuntimeError: Claude 未输出 VIDEO_OUTPUT 标记。
     """
-    # 1. 构建 options（含会话隔离 + quality 映射）
+    # 1. 构建 options（含会话隔离 + quality + preset 映射）
+    # 使用 prompts.get_prompt() 将 preset 后缀追加到系统提示词
+    full_system_prompt = prompts.get_prompt(
+        user_text="",  # 用户文本单独作为 query prompt 传入
+        preset=preset,
+        quality=quality,
+    )
+    # 去掉 get_prompt 追加的 "# 用户需求" 段落，只保留系统提示词部分
+    system_prompt = full_system_prompt.rsplit("\n\n# 用户需求", 1)[0]
+
     options = _build_options(
         cwd=cwd,
-        system_prompt=None,  # 由 _build_options 内部决定
+        system_prompt=system_prompt,
         max_turns=max_turns,
         prompt_file=prompt_file,
         quality=quality,

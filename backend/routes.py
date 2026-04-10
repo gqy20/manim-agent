@@ -70,6 +70,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 cwd=str(output_dir),
                 max_turns=50,
                 log_callback=log_callback,
+                preset=req.preset,
             )
             await _store.update_status(
                 task_id, TaskStatus.COMPLETED, video_path=final_video
