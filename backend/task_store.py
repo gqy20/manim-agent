@@ -51,6 +51,7 @@ class TaskStore:
             "error": None,
             "logs": [],
             "options": req.model_dump(),
+            "pipeline_output": None,
         }
         self._tasks[task_id] = task
         await self.save()

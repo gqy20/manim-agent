@@ -76,6 +76,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         from manim_agent.__main__ import run_pipeline
 
         await _store.update_status(task_id, TaskStatus.RUNNING)
+        # 用于从 run_pipeline 内部获取 dispatcher 实例
+        dispatcher_ref: list[Any] = []
         try:
             final_video = await run_pipeline(
                 user_text=req.user_text,
@@ -88,9 +90,20 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 max_turns=50,
                 log_callback=log_callback,
                 preset=req.preset,
+                _dispatcher_ref=dispatcher_ref,
             )
+            # 提取 pipeline 结构化输出
+            po_data = None
+            if dispatcher_ref:
+                dispatcher = dispatcher_ref[0]
+                po = dispatcher.get_pipeline_output()
+                if po is not None:
+                    po_data = po.model_dump()
+
             await _store.update_status(
-                task_id, TaskStatus.COMPLETED, video_path=final_video
+                task_id, TaskStatus.COMPLETED,
+                video_path=final_video,
+                pipeline_output=po_data,
             )
         except Exception as exc:
             error_message = _format_exception_message(exc)

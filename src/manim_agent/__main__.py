@@ -35,6 +35,7 @@ from claude_agent_sdk import (
 from . import prompts
 from . import tts_client
 from . import video_builder
+from .output_schema import PipelineOutput
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,11 @@ class _MessageDispatcher:
         self.tool_use_count = 0
         self.tool_stats: dict[str, int] = {}
         self.collected_text: list[str] = []
+        # ── PipelineOutput (替代裸字符串属性) ──
+        self.pipeline_output: PipelineOutput | None = None
+        # ── 源码捕获：file_path → content ──
+        self.captured_source_code: dict[str, str] = {}
+        # ── 向后兼容的旧属性（由 pipeline_output 填充）──
         self.video_output: str | None = None
         self.scene_file: str | None = None
         self.scene_class: str | None = None
@@ -117,11 +123,36 @@ class _MessageDispatcher:
             self._handle_task_notification(message)
         # UserMessage / SystemMessage / StreamEvent 暂不处理
 
+    def get_pipeline_output(self) -> PipelineOutput | None:
+        """返回验证后的 PipelineOutput（可能为 None）。
+
+        优先级：structured_output > text markers > None
+        """
+        if self.pipeline_output is not None:
+            return self.pipeline_output
+        # fallback：从 collected_text 的标记中解析
+        try:
+            self.pipeline_output = PipelineOutput.from_text_markers(
+                "\n".join(self.collected_text)
+            )
+        except (ValueError, Exception):
+            return None
+        # 自动关联捕获的源代码
+        if (
+            self.pipeline_output.scene_file
+            and self.pipeline_output.scene_file in self.captured_source_code
+        ):
+            self.pipeline_output.source_code = self.captured_source_code[
+                self.pipeline_output.scene_file
+            ]
+        # 同步向后兼容属性
+        self._sync_compat_attrs()
+        return self.pipeline_output
+
     def get_video_output(self) -> str | None:
-        """返回提取到的视频输出路径（可能为 None）。"""
-        if self.video_output is None:
-            self._extract_video_output()
-        return self.video_output
+        """返回提取到的视频输出路径（向后兼容接口）。"""
+        po = self.get_pipeline_output()
+        return po.video_output if po else None
 
     # ── 消息处理器 ──────────────────────────────────────────────
 
@@ -137,6 +168,12 @@ class _MessageDispatcher:
                 self.tool_use_count += 1
                 name = block.name
                 self.tool_stats[name] = self.tool_stats.get(name, 0) + 1
+                # ── 源码捕获：Write/Edit 工具的 .py 文件内容 ──
+                if name in ("Write", "Edit") and isinstance(block.input, dict):
+                    file_path = block.input.get("file_path", "")
+                    content = block.input.get("content", "")
+                    if file_path.endswith(".py") and content:
+                        self.captured_source_code[file_path] = content
 
             elif isinstance(block, ToolResultBlock):
                 self._log_tool_result(block)
@@ -145,7 +182,7 @@ class _MessageDispatcher:
                 self._log_thinking(block)
 
     def _handle_result(self, msg: ResultMessage) -> None:
-        """处理 ResultMessage，记录会话摘要。"""
+        """处理 ResultMessage，记录会话摘要并尝试解析 structured_output。"""
         self.result_summary = {
             "turns": msg.num_turns,
             "cost_usd": msg.total_cost_usd,
@@ -154,6 +191,26 @@ class _MessageDispatcher:
             "stop_reason": msg.stop_reason,
             "errors": msg.errors,
         }
+        # ── 尝试从 structured_output 构建 PipelineOutput（主路径）──
+        if msg.structured_output is not None:
+            try:
+                self.pipeline_output = PipelineOutput.model_validate(
+                    msg.structured_output
+                )
+                # 关联捕获的源代码
+                if (
+                    self.pipeline_output.scene_file
+                    and self.pipeline_output.scene_file in self.captured_source_code
+                ):
+                    self.pipeline_output.source_code = self.captured_source_code[
+                        self.pipeline_output.scene_file
+                    ]
+                self._sync_compat_attrs()
+            except Exception:
+                logger.warning(
+                    "structured_output validation failed, "
+                    "falling back to text markers"
+                )
         self._log_result_summary()
 
     def _handle_rate_limit(self, event: RateLimitEvent) -> None:
@@ -176,21 +233,14 @@ class _MessageDispatcher:
         icon = _EMOJI["check"] if msg.status == "completed" else _EMOJI["cross"]
         self._print(f"  {icon} Task {msg.status}: {msg.summary}")
 
-    # ── VIDEO_OUTPUT 提取 ─────────────────────────────────────────
+    # ── 内部辅助 ───────────────────────────────────────────────
 
-    def _extract_video_output(self) -> None:
-        """从收集的文本中提取结构化标记。"""
-        last_video_output = None
-        for text in self.collected_text:
-            for line in text.splitlines():
-                if line.startswith("VIDEO_OUTPUT:"):
-                    last_video_output = line.split(":", 1)[1].strip()
-                elif line.startswith("SCENE_FILE:"):
-                    self.scene_file = line.split(":", 1)[1].strip()
-                elif line.startswith("SCENE_CLASS:"):
-                    self.scene_class = line.split(":", 1)[1].strip()
-
-        self.video_output = last_video_output
+    def _sync_compat_attrs(self) -> None:
+        """将 pipeline_output 的值同步到向后兼容的旧属性。"""
+        if self.pipeline_output is not None:
+            self.video_output = self.pipeline_output.video_output
+            self.scene_file = self.pipeline_output.scene_file
+            self.scene_class = self.pipeline_output.scene_class
 
     # ── 日志格式化方法 ──────────────────────────────────────────
 
@@ -347,14 +397,19 @@ def extract_result(text: str) -> dict[str, str | None]:
     Returns:
         包含 video_output_path, scene_file, scene_class 的字典。
     """
-    d = _MessageDispatcher(verbose=False)
-    d.collected_text = [text]
-    d._extract_video_output()
-    return {
-        "video_output_path": d.video_output,
-        "scene_file": d.scene_file,
-        "scene_class": d.scene_class,
-    }
+    try:
+        po = PipelineOutput.from_text_markers(text)
+        return {
+            "video_output_path": po.video_output,
+            "scene_file": po.scene_file,
+            "scene_class": po.scene_class,
+        }
+    except ValueError:
+        return {
+            "video_output_path": None,
+            "scene_file": None,
+            "scene_class": None,
+        }
 
 
 # ── Options 构建 ────────────────────────────────────────────────
@@ -411,6 +466,8 @@ def _build_options(
         fork_session=True,
         # ── 日志回调 ──
         stderr=_stderr_handler,
+        # ── 结构化输出 schema ──
+        output_format=PipelineOutput.output_format_schema(),
     )
 
 
@@ -429,6 +486,7 @@ async def run_pipeline(
     max_turns: int = 50,
     log_callback: Callable[[str], None] | None = None,
     preset: str = "default",
+    _dispatcher_ref: list[Any] | None = None,
 ) -> str:
     """执行完整的视频生成 pipeline。
 
@@ -488,6 +546,10 @@ async def run_pipeline(
     async for message in query(prompt=user_prompt, options=options):
         dispatcher.dispatch(message)
 
+    # 将 dispatcher 传给调用方（用于提取 pipeline_output 等元数据）
+    if _dispatcher_ref is not None:
+        _dispatcher_ref.append(dispatcher)
+
     # 3. 从 dispatcher 提取结果
     video_output = dispatcher.get_video_output()
 
@@ -509,11 +571,13 @@ async def run_pipeline(
         dispatcher._print(f"\n{_EMOJI['video']} 输出静音视频: {video_output}")
         return video_output
 
-    # TTS 合成
+    # TTS 合成（优先使用 Claude 生成的解说词，fallback 到用户原始输入）
+    po = dispatcher.get_pipeline_output()
+    narration_text = po.narration if po and po.narration else user_text
     dispatcher._print(f"\n{_EMOJI['tts']} TTS 合成中... "
                    f"(voice={voice_id}, model={model})")
     tts_result = await tts_client.synthesize(
-        text=user_text,
+        text=narration_text,
         voice_id=voice_id,
         model=model,
         output_dir=str(Path(output_path).parent),
@@ -543,7 +607,7 @@ async def main() -> None:
     args = parse_args()
 
     try:
-        output = await run_pipeline(
+        _ = await run_pipeline(
             user_text=args.text,
             output_path=args.output,
             voice_id=args.voice,

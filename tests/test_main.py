@@ -322,7 +322,7 @@ class TestMessageDispatcherDispatch:
 
 class TestMessageDispatcherVideoOutput:
     def test_video_output_extracted_from_collected_text(self):
-        """VIDEO_OUTPUT 从收集的文本中被提取。"""
+        """VIDEO_OUTPUT 从收集的文本中被提取（通过公共接口）。"""
         d = _MessageDispatcher(verbose=False)
         d.collected_text = [
             "working...",
@@ -330,11 +330,15 @@ class TestMessageDispatcherVideoOutput:
             "SCENE_FILE: scene.py",
             "SCENE_CLASS: MyScene",
         ]
-        d._extract_video_output()
+        po = d.get_pipeline_output()
 
+        assert po is not None
+        assert po.video_output == "media/out.mp4"
+        assert po.scene_file == "scene.py"
+        assert po.scene_class == "MyScene"
+        # 向后兼容属性也正确
         assert d.video_output == "media/out.mp4"
         assert d.scene_file == "scene.py"
-        assert d.scene_class == "MyScene"
 
     def test_video_output_takes_last(self):
         """多个 VIDEO_OUTPUT 取最后一个。"""
@@ -344,17 +348,16 @@ class TestMessageDispatcherVideoOutput:
             "retrying...",
             "VIDEO_OUTPUT: /tmp/b.mp4",
         ]
-        d._extract_video_output()
-
-        assert d.video_output == "/tmp/b.mp4"
+        po = d.get_pipeline_output()
+        assert po.video_output == "/tmp/b.mp4"
 
     def test_no_video_output_stays_none(self):
         """无 VIDEO_OUTPUT 时保持 None。"""
         d = _MessageDispatcher(verbose=False)
         d.collected_text = ["nothing useful"]
-        d._extract_video_output()
-
-        assert d.video_output is None
+        po = d.get_pipeline_output()
+        assert po is None
+        assert d.get_video_output() is None
 
 
 # ── 会话隔离 ──────────────────────────────────────────────────
@@ -641,3 +644,390 @@ class TestQualityIntegration:
                 )
 
         assert call_capture.get("quality") == "medium"
+
+
+# ── Phase 2: Dispatcher PipelineOutput 集成 ────────────────────
+
+
+class TestDispatcherPipelineOutput:
+    """验证 _MessageDispatcher 使用 PipelineOutput 替代裸字符串属性。"""
+
+    def test_get_pipeline_output_returns_model(self):
+        """dispatch 含标记消息后，get_pipeline_output() 返回 PipelineOutput 实例。"""
+        from manim_agent.output_schema import PipelineOutput
+
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(
+            _make_text_block(
+                "VIDEO_OUTPUT: /media/out.mp4\n"
+                "SCENE_FILE: scene.py\n"
+                "SCENE_CLASS: MyScene\n"
+                "DURATION: 25\n"
+            ),
+        ))
+
+        po = d.get_pipeline_output()
+        assert isinstance(po, PipelineOutput)
+        assert po.video_output == "/media/out.mp4"
+        assert po.scene_file == "scene.py"
+        assert po.scene_class == "MyScene"
+        assert po.duration_seconds == 25.0
+
+    def test_get_pipeline_output_none_when_no_markers(self):
+        """无 VIDEO_OUTPUT 标记时 get_pipeline_output() 返回 None。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(_make_text_block("普通文本输出")))
+        assert d.get_pipeline_output() is None
+
+    def test_get_video_output_backward_compat(self):
+        """get_video_output() 仍返回字符串路径（向后兼容）。"""
+        d = _MessageDispatcher(verbose=False)
+        d.collected_text = ["VIDEO_OUTPUT: /legacy/path.mp4"]
+        assert d.get_video_output() == "/legacy/path.mp4"
+
+    def test_extract_graceful_on_malformed_markers(self):
+        """畸形标记文本不崩溃，pipeline_output 保持 None。"""
+        d = _MessageDispatcher(verbose=False)
+        # VIDEO_OUTPUT: 后面没有值
+        d.collected_text = ["VIDEO_OUTPUT:", "SCENE_FILE: x.py"]
+        # 不应抛异常
+        po = d.get_pipeline_output()
+        assert po is None
+
+    def test_extract_result_backward_compat_dict(self):
+        """extract_result() 仍返回兼容 dict 格式。"""
+        text = (
+            "VIDEO_OUTPUT: /out.mp4\n"
+            "SCENE_FILE: s.py\n"
+            "SCENE_CLASS: SClass\n"
+        )
+        result = main_module.extract_result(text)
+        assert isinstance(result, dict)
+        assert result["video_output_path"] == "/out.mp4"
+        assert result["scene_file"] == "s.py"
+        assert result["scene_class"] == "SClass"
+
+
+# ── Phase 3: 源码捕获 ───────────────────────────────────────────
+
+
+class TestCodeCapture:
+    """验证 _MessageDispatcher 从 ToolUseBlock 捕获 Manim 源代码。"""
+
+    def test_capture_write_tool_source_code(self):
+        """Write 工具的 .py 文件内容被捕获。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(
+            _make_tool_use_block("Write", {
+                "file_path": "scenes/fourier.py",
+                "content": "from manim import *\n\nclass FourierScene(Scene):\n    pass",
+            }),
+        ))
+        assert "scenes/fourier.py" in d.captured_source_code
+        assert "class FourierScene" in d.captured_source_code["scenes/fourier.py"]
+
+    def test_capture_edit_tool_source_code(self):
+        """Edit 工具的文件内容也被捕获。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(
+            _make_tool_use_block("Edit", {
+                "file_path": "scene.py",
+                "content": "updated code here",
+            }),
+        ))
+        assert d.captured_source_code.get("scene.py") == "updated code here"
+
+    def test_capture_overwrites_previous_write(self):
+        """同一文件的第二次写入覆盖第一次。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(
+            _make_tool_use_block("Write", {
+                "file_path": "scene.py",
+                "content": "version 1",
+            }),
+        ))
+        d.dispatch(_make_assistant_message(
+            _make_tool_use_block("Write", {
+                "file_path": "scene.py",
+                "content": "version 2",
+            }, tool_id="tu_002"),
+        ))
+        assert d.captured_source_code["scene.py"] == "version 2"
+
+    def test_capture_ignores_non_write_tools(self):
+        """Bash/Read 等工具不触发源码捕获。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(
+            _make_tool_use_block("Bash", {"command": "manim -qh scene.py Scene"}),
+        ))
+        d.dispatch(_make_assistant_message(
+            _make_tool_use_block("Read", {"file_path": "scene.py"}),
+        ))
+        assert len(d.captured_source_code) == 0
+
+    def test_capture_empty_content_not_stored(self):
+        """空 content 的 Write 不存储。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(
+            _make_tool_use_block("Write", {"file_path": "scene.py", "content": ""}),
+        ))
+        assert "scene.py" not in d.captured_source_code
+
+    def test_source_code_linked_to_pipeline_output(self):
+        """完整 dispatch 循环后 source_code 自动关联到 pipeline_output。"""
+        from manim_agent.output_schema import PipelineOutput
+
+        d = _MessageDispatcher(verbose=False)
+        # 1. Claude 写入 scene.py
+        d.dispatch(_make_assistant_message(
+            _make_tool_use_block("Write", {
+                "file_path": "output/scene.py",
+                "content": "from manim import *\nclass Demo(Scene):\n    pass",
+            }),
+        ))
+        # 2. 输出标记
+        d.dispatch(_make_assistant_message(
+            _make_text_block(
+                "VIDEO_OUTPUT: media/demo.mp4\n"
+                "SCENE_FILE: output/scene.py\n"
+                "SCENE_CLASS: Demo\n"
+            ),
+        ))
+
+        po = d.get_pipeline_output()
+        assert isinstance(po, PipelineOutput)
+        assert po.source_code is not None
+        assert "class Demo" in po.source_code
+
+    def test_source_code_none_when_file_not_matched(self):
+        """scene_file 指向的文件未被捕获时 source_code 为 None。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(
+            _make_tool_use_block("Write", {
+                "file_path": "actual_scene.py",
+                "content": "code here",
+            }),
+        ))
+        d.dispatch(_make_assistant_message(
+            _make_text_block(
+                "VIDEO_OUTPUT: /out.mp4\n"
+                "SCENE_FILE: different_file.py\n"
+            ),
+        ))
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.source_code is None
+
+
+# ── Phase 4: Narration + TTS 集成 ───────────────────────────────
+
+
+class TestNarrationExtraction:
+    """验证 NARRATION 标记提取和 TTS 文本选择逻辑。"""
+
+    def test_narration_extracted_from_dispatcher(self):
+        """dispatcher 从 TextBlock 中提取 NARRATION 标记。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(_make_text_block(
+            "VIDEO_OUTPUT: /out.mp4\n"
+            "NARRATION: 这是关于二叉树的专业解说。\n"
+            "二叉树每个节点最多有两个子节点。\n"
+        )))
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert "二叉树" in po.narration
+
+    def test_narration_multiline_in_dispatcher(self):
+        """多行 narration 在 dispatcher 中完整保留。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(_make_text_block(
+            "VIDEO_OUTPUT: /x.mp4\n"
+            "NARRATION: 第一行。\n"
+            "第二行。\n"
+            "第三行。\n"
+        )))
+
+        po = d.get_pipeline_output()
+        lines = po.narration.split("\n")
+        assert len(lines) == 3
+
+    def test_narration_none_when_absent(self):
+        """无 NARRATION 标记时 narration 为 None。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(_make_text_block("VIDEO_OUTPUT: /x.mp4")))
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.narration is None
+
+
+class TestTTSNarrationFlow:
+    """验证 run_pipeline 在有 narration 时传给 TTS，否则 fallback 到 user_text。"""
+
+    @pytest.mark.asyncio
+    async def test_tts_uses_narration_when_available(self):
+        """dispatcher 有 narration 时 TTS 收到解说词而非 user_text。"""
+        mock_messages = [
+            _make_assistant_message(_make_text_block(
+                "VIDEO_OUTPUT: /out.mp4\n"
+                "NARRATION: 专业解说词内容\n"
+            )),
+            _make_result_message(num_turns=1),
+        ]
+        captured_tts_text: list[str] = []
+
+        async def capture_tts(text, **_kw):
+            captured_tts_text.append(text)
+            return MagicMock(audio_path="a.mp3", subtitle_path="sub.srt", duration_ms=1000)
+
+        with (
+            patch("manim_agent.__main__.query") as mock_query,
+            patch("manim_agent.__main__.tts_client.synthesize", side_effect=capture_tts),
+            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
+        ):
+            async def gen(*_a, **_k):
+                for m in mock_messages:
+                    yield m
+            mock_query.side_effect = gen
+            mock_vid.return_value = "final.mp4"
+
+            await main_module.run_pipeline(
+                user_text="用户原始需求描述",
+                output_path="/out.mp4",
+                no_tts=False,
+            )
+
+        assert len(captured_tts_text) == 1
+        assert captured_tts_text[0] == "专业解说词内容"
+
+    @pytest.mark.asyncio
+    async def test_tts_fallback_to_user_text(self):
+        """无 narration 时 TTS 收到原始 user_text。"""
+        mock_messages = [
+            _make_assistant_message(_make_text_block("VIDEO_OUTPUT: /out.mp4")),
+            _make_result_message(num_turns=1),
+        ]
+        captured_tts_text: list[str] = []
+
+        async def capture_tts(text, **_kw):
+            captured_tts_text.append(text)
+            return MagicMock(audio_path="a.mp3", subtitle_path="sub.srt", duration_ms=1000)
+
+        with (
+            patch("manim_agent.__main__.query") as mock_query,
+            patch("manim_agent.__main__.tts_client.synthesize", side_effect=capture_tts),
+            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
+        ):
+            async def gen(*_a, **_k):
+                for m in mock_messages:
+                    yield m
+            mock_query.side_effect = gen
+            mock_vid.return_value = "final.mp4"
+
+            await main_module.run_pipeline(
+                user_text="用户需求",
+                output_path="/out.mp4",
+                no_tts=False,
+            )
+
+        assert captured_tts_text == ["用户需求"]
+
+
+# ── Phase 5: structured_output 集成 ─────────────────────────────
+
+
+class TestStructuredOutput:
+    """验证 SDK structured_output 主路径和 text markers fallback。"""
+
+    def test_handle_result_parses_structured_output(self):
+        """ResultMessage 的 structured_output 被解析为 PipelineOutput。"""
+        d = _MessageDispatcher(verbose=False)
+        msg = _make_result_message(
+            num_turns=2,
+            **{"structured_output": {
+                "video_output": "/structured/out.mp4",
+                "scene_file": "s.py",
+                "scene_class": "SScene",
+                "duration_seconds": 15,
+                "narration": "结构化解说",
+            }},
+        )
+        d.dispatch(msg)
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output == "/structured/out.mp4"
+        assert po.narration == "结构化解说"
+
+    def test_handle_result_invalid_structured_output_falls_back(self):
+        """无效的 structured_output 不崩溃，fallback 到 text markers。"""
+        d = _MessageDispatcher(verbose=False)
+        # 先发一个带畸形 structured_output 的 ResultMessage
+        msg_bad = _make_result_message(
+            num_turns=1,
+            **{"structured_output": {"bad_field": "data"}},
+        )
+        d.dispatch(msg_bad)
+        # 再发含正确 text markers 的 AssistantMessage
+        d.dispatch(_make_assistant_message(
+            _make_text_block("VIDEO_OUTPUT: /fallback.mp4"),
+        ))
+
+        po = d.get_pipeline_output()
+        # 应该从 text markers 中恢复
+        assert po is not None
+        assert po.video_output == "/fallback.mp4"
+
+    def test_handle_result_null_structured_output_ignored(self):
+        """structured_output=None 时 pipeline_output 依赖 text markers。"""
+        d = _MessageDispatcher(verbose=False)
+        msg = _make_result_message(
+            num_turns=1,
+            **{"structured_output": None},
+        )
+        d.dispatch(msg)
+        # 无 text markers → None
+        assert d.get_pipeline_output() is None
+
+    def test_structured_output_takes_priority_over_text(self):
+        """同时存在时 structured_output 优先于 text markers。"""
+        d = _MessageDispatcher(verbose=False)
+        # text markers 说 /text.mp4
+        d.dispatch(_make_assistant_message(
+            _make_text_block("VIDEO_OUTPUT: /text.mp4"),
+        ))
+        # structured_output 说 /struct.mp4 (后到，应覆盖)
+        msg = _make_result_message(
+            num_turns=1,
+            **{"structured_output": {"video_output": "/struct.mp4"}},
+        )
+        d.dispatch(msg)
+
+        po = d.get_pipeline_output()
+        assert po.video_output == "/struct.mp4"
+
+
+class TestBuildOptionsOutputFormat:
+    """验证 _build_options 包含 output_format schema。"""
+
+    def test_options_include_output_format(self):
+        """_build_options() 返回的 options 含 output_format 字段。"""
+        opts = main_module._build_options(
+            cwd="/work",
+            system_prompt="test",
+            max_turns=10,
+        )
+        assert opts.output_format is not None
+        assert opts.output_format["type"] == "json_schema"
+
+    def test_output_format_schema_has_required_fields(self):
+        """schema 要求 video_output 必填，其余可选。"""
+        opts = main_module._build_options(
+            cwd="/work",
+            system_prompt="test",
+            max_turns=10,
+        )
+        schema = opts.output_format["json_schema"]["schema"]
+        assert "video_output" in schema["required"]
+        assert "narration" in schema["properties"]

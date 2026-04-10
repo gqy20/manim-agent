@@ -25,6 +25,17 @@ class TaskCreateRequest(BaseModel):
     no_tts: bool = False
 
 
+class PipelineOutputData(BaseModel):
+    """完成任务的 pipeline 结构化输出数据（API 响应用）。"""
+
+    video_output: str | None = None
+    scene_file: str | None = None
+    scene_class: str | None = None
+    duration_seconds: float | None = None
+    narration: str | None = None
+    source_code: str | None = None
+
+
 class TaskResponse(BaseModel):
     id: str
     user_text: str
@@ -34,6 +45,7 @@ class TaskResponse(BaseModel):
     video_path: str | None = None
     error: str | None = None
     options: dict[str, Any]
+    pipeline_output: PipelineOutputData | None = None
 
 
 class TaskListResponse(BaseModel):

@@ -227,3 +227,132 @@ class TestSSEManager:
 
         mgr = SSESubscriptionManager()
         mgr.push("nonexistent", "should not crash")  # no error
+
+
+# ── Phase 6: PipelineOutput 数据传播 ──────────────────────────
+
+
+class TestPipelineOutputDataModel:
+    """验证后端 PipelineOutputData 模型。"""
+
+    def test_model_exists(self):
+        """PipelineOutputData 模型可导入。"""
+        from backend.models import PipelineOutputData
+        assert PipelineOutputData is not None
+
+    def test_all_fields_default_none(self):
+        """默认实例所有字段为 None。"""
+        from backend.models import PipelineOutputData
+        m = PipelineOutputData()
+        assert m.video_output is None
+        assert m.scene_file is None
+        assert m.scene_class is None
+        assert m.duration_seconds is None
+        assert m.narration is None
+        assert m.source_code is None
+
+    def test_populated_model(self):
+        """所有字段有值时正确存储。"""
+        from backend.models import PipelineOutputData
+        m = PipelineOutputData(
+            video_output="/out.mp4",
+            scene_file="s.py",
+            scene_class="MyScene",
+            duration_seconds=30,
+            narration="解说词",
+            source_code="code",
+        )
+        assert m.video_output == "/out.mp4"
+        assert m.narration == "解说词"
+
+    def test_task_response_has_pipeline_output_field(self):
+        """TaskResponse 含 pipeline_output 字段。"""
+        from backend.models import TaskResponse
+        fields = TaskResponse.model_fields
+        assert "pipeline_output" in fields
+
+
+class TestTaskStorePipelineOutput:
+    """验证 TaskStore 存取 pipeline_output 字段。"""
+
+    @pytest.mark.asyncio
+    async def test_create_task_pipeline_output_initially_none(self, store):
+        """新创建的 task 的 pipeline_output 为 None。"""
+        req = TaskCreateRequest(user_text="test")
+        task = await store.create(req)
+        assert "pipeline_output" in task
+        assert task["pipeline_output"] is None
+
+    @pytest.mark.asyncio
+    async def test_update_status_stores_pipeline_output(self, store):
+        """update_status 可写入 pipeline_output 数据。"""
+        req = TaskCreateRequest(user_text="test")
+        task = await store.create(req)
+
+        await store.update_status(
+            task["id"],
+            TaskStatus.COMPLETED,
+            video_path="/out.mp4",
+            pipeline_output={
+                "video_output": "/out.mp4",
+                "scene_file": "s.py",
+                "scene_class": "SClass",
+                "narration": "专业解说",
+            },
+        )
+
+        updated = await store.get(task["id"])
+        po = updated["pipeline_output"]
+        assert po is not None
+        assert po["video_output"] == "/out.mp4"
+        assert po["narration"] == "专业解说"
+
+    @pytest.mark.asyncio
+    async def test_to_response_includes_pipeline_output(self, store):
+        """to_response() 序列化包含 pipeline_output。"""
+        req = TaskCreateRequest(user_text="test")
+        task = await store.create(req)
+        response = store.to_response(task)
+        assert response.pipeline_output is None
+
+        # 设置后再序列化
+        task["pipeline_output"] = {
+            "video_output": "/x.mp4",
+            "scene_file": "x.py",
+        }
+        response = store.to_response(task)
+        assert response.pipeline_output is not None
+        assert response.pipeline_output.video_output == "/x.mp4"
+
+
+class TestAPIReturnsPipelineOutput:
+    """验证 API 在任务完成时返回 pipeline_output 数据。"""
+
+    @pytest.mark.asyncio
+    async def test_completed_task_api_includes_pipeline_output(self, client, store):
+        """完成任务的 GET 响应含 pipeline_output。"""
+        req = TaskCreateRequest(user_text="测试输出")
+        create_resp = client.post("/api/tasks", json=req.model_dump())
+        task_id = create_resp.json()["id"]
+
+        # 直接更新为完成状态并附带 pipeline_output
+        await store.update_status(
+            task_id,
+            TaskStatus.COMPLETED,
+            video_path="/final.mp4",
+            pipeline_output={
+                "video_output": "/final.mp4",
+                "scene_file": "scene.py",
+                "scene_class": "DemoScene",
+                "duration_seconds": 20,
+                "narration": "这是自动生成的解说词。",
+            },
+        )
+
+        resp = client.get(f"/api/tasks/{task_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "pipeline_output" in data
+        po = data["pipeline_output"]
+        assert po["video_output"] == "/final.mp4"
+        assert po["narration"] == "这是自动生成的解说词。"
