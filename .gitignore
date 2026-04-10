@@ -44,3 +44,12 @@ frontend/node_modules/
 !.env.example
 frontend/.env*
 !frontend/*.example
+
+# Playwright MCP browser session data
+.playwright-mcp/
+
+# Development screenshots & snapshots (root level)
+current-*.png
+current-*.md
+frontend-page.png
+optimized-*.png
