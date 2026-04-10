@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -71,6 +73,7 @@ export function TaskForm() {
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showAllTemplates, setShowAllTemplates] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const handleTemplate = useCallback((templateText: string) => {
     setText("");
@@ -87,28 +90,61 @@ export function TaskForm() {
     if (!text.trim()) return;
     setSubmitting(true);
     setError(null);
-    try {
-      const payload: TaskCreatePayload = {
-        user_text: text.trim(),
-        voice_id: voiceId,
-        model: "speech-2.8-hd",
-        quality,
-        preset,
-        no_tts: noTts,
-      };
-      const task = await createTask(payload);
-      router.push(`/tasks/${task.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "创建任务失败");
-    } finally {
-      setSubmitting(false);
+
+    // Get the button element and form container to animate out
+    const formEl = document.querySelector(".glass-card");
+    
+    // Play an exit timeline animation before actually redirecting
+    const tl = gsap.timeline({
+      onComplete: () => {
+        createTask({
+          user_text: text.trim(),
+          voice_id: voiceId,
+          model: "speech-2.8-hd",
+          quality,
+          preset,
+          no_tts: noTts,
+        })
+          .then((task) => {
+            router.push(`/tasks/${task.id}`);
+          })
+          .catch((err) => {
+            setError(err instanceof Error ? err.message : "创建任务失败");
+            setSubmitting(false);
+            // Restore form if error
+            gsap.to(formEl, { y: 0, opacity: 1, filter: "blur(0px)", scale: 1, duration: 0.4 });
+          });
+      }
+    });
+
+    if (formEl) {
+      tl.to(formEl, {
+        y: -40,
+        opacity: 0,
+        scale: 0.95,
+        filter: "blur(10px)",
+        duration: 0.6,
+        ease: "power3.in"
+      });
+    } else {
+      tl.play();
     }
   }
 
   const canSubmit = !submitting && !!text.trim();
 
+  // Intro animation for the form
+  useGSAP(() => {
+    if (!formRef.current) return;
+    
+    gsap.fromTo(formRef.current, 
+      { y: 30, opacity: 0, scale: 0.98 },
+      { y: 0, opacity: 1, scale: 1, duration: 0.8, ease: "power3.out", delay: 0.2 }
+    );
+  }, { scope: formRef });
+
   return (
-    <form onSubmit={handleSubmit} className="glass-card rounded-2xl p-6 sm:p-8 glow-border transition-all duration-300">
+    <form ref={formRef} onSubmit={handleSubmit} className="glass-card rounded-2xl p-6 sm:p-8 glow-border transition-all duration-300">
       {/* Natural language input */}
       <div className="space-y-2.5">
         <label htmlFor="prompt" className="text-sm font-medium text-foreground/80 flex items-center gap-1.5">
