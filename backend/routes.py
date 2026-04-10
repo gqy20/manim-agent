@@ -72,6 +72,10 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             lambda: asyncio.create_task(_store.append_log(task_id, line))
         )
 
+    def event_callback(event: Any) -> None:
+        """将 Dispatcher 结构化事件推送到 SSE 队列。"""
+        _sse_mgr.push(task_id, event)
+
     async def run_pipeline_background() -> None:
         from manim_agent.__main__ import run_pipeline
 
@@ -91,6 +95,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 log_callback=log_callback,
                 preset=req.preset,
                 _dispatcher_ref=dispatcher_ref,
+                event_callback=event_callback,
             )
             # 提取 pipeline 结构化输出
             po_data = None

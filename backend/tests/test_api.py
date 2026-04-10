@@ -204,13 +204,15 @@ class TestSSEManager:
 
         mgr = SSESubscriptionManager()
         q = mgr.subscribe("t1")
+        import json
 
         mgr.push("t1", "hello")
         mgr.push("t1", "world")
         mgr.done("t1")
 
-        assert q.get_nowait() == "hello"
-        assert q.get_nowait() == "world"
+        # push() 现在返回序列化的 SSEEvent JSON
+        assert json.loads(q.get_nowait())["data"] == "hello"
+        assert json.loads(q.get_nowait())["data"] == "world"
         assert q.get_nowait() is None
 
     def test_unsubscribe(self):

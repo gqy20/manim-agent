@@ -54,8 +54,18 @@ class TaskListResponse(BaseModel):
 
 
 class SSEEvent(BaseModel):
-    event_type: str = Field(..., alias="type")  # "log" | "status" | "error"
-    data: str
-    timestamp: str  # ISO 8601
+    event_type: str = Field(
+        ...,
+        alias="type",
+        description=(
+            "SSE event name: log, status, error, "
+            "tool_start, tool_result, thinking, progress"
+        ),
+    )
+    data: str | dict[str, Any] = Field(
+        ...,
+        description="事件载荷：纯文本日志或结构化字典",
+    )
+    timestamp: str = Field(..., description="ISO 8601 时间戳")
 
     model_config = {"populate_by_name": True}

@@ -36,6 +36,14 @@ from . import prompts
 from . import tts_client
 from . import video_builder
 from .output_schema import PipelineOutput
+from .pipeline_events import (
+    EventType,
+    PipelineEvent,
+    ThinkingPayload,
+    ProgressPayload,
+    ToolResultPayload,
+    ToolStartPayload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +101,7 @@ class _MessageDispatcher:
     ) -> None:
         self.verbose = verbose
         self.log_callback = log_callback
+        self.event_callback: Callable[[PipelineEvent], None] | None = None
         self.turn_count = 0
         self.tool_use_count = 0
         self.tool_stats: dict[str, int] = {}
@@ -221,12 +230,24 @@ class _MessageDispatcher:
                      f"(utilization={info.utilization:.0%})")
 
     def _handle_task_progress(self, msg: TaskProgressMessage) -> None:
-        """处理任务进度消息。"""
+        """处理任务进度消息 + 发射 PROGRESS 结构化事件。"""
         usage = msg.usage
         self._print(f"  {_EMOJI['gear']} Progress: "
                      f"{usage['total_tokens']} tokens, "
                      f"{usage['tool_uses']} tool_uses, "
                      f"{usage['duration_ms'] // 1000}s")
+        # 发射结构化事件
+        self.turn_count += 1
+        self._emit_event(PipelineEvent(
+            event_type=EventType.PROGRESS,
+            data=ProgressPayload(
+                turn=self.turn_count,
+                total_tokens=usage["total_tokens"],
+                tool_uses=usage["tool_uses"],
+                elapsed_ms=usage["duration_ms"],
+                last_tool_name=None,
+            ),
+        ))
 
     def _handle_task_notification(self, msg: TaskNotificationMessage) -> None:
         """处理任务完成/失败通知。"""
@@ -242,6 +263,11 @@ class _MessageDispatcher:
             self.scene_file = self.pipeline_output.scene_file
             self.scene_class = self.pipeline_output.scene_class
 
+    def _emit_event(self, event: PipelineEvent) -> None:
+        """通过 event_callback 发射结构化事件（如已注册）。"""
+        if self.event_callback is not None:
+            self.event_callback(event)
+
     # ── 日志格式化方法 ──────────────────────────────────────────
 
     def _log_text(self, text: str) -> None:
@@ -249,24 +275,53 @@ class _MessageDispatcher:
         pass  # 文本已收集到 collected_text，不需要逐行打印
 
     def _log_tool_use(self, block: ToolUseBlock) -> None:
-        """打印工具调用信息。"""
+        """打印工具调用信息 + 发射 TOOL_START 结构化事件。"""
         icon = _EMOJI.get(block.name.lower(), "\u25b6")
         input_summary = self._summarize_input(block.input)
         self._print(f"  {icon} {block.name} \u2192 {input_summary}")
+        # 发射结构化事件
+        self._emit_event(PipelineEvent(
+            event_type=EventType.TOOL_START,
+            data=ToolStartPayload(
+                tool_use_id=block.id,
+                name=block.name,
+                input_summary=block.input if isinstance(block.input, dict)
+                else {},
+            ),
+        ))
 
     def _log_tool_result(self, block: ToolResultBlock) -> None:
-        """打印工具执行结果。"""
+        """打印工具执行结果 + 发射 TOOL_RESULT 结构化事件。"""
         if block.is_error:
             self._print(f"  {_EMOJI['cross']} Result Error "
                          f"(tool_use_id={block.tool_use_id})")
         # 成功结果通常静默（避免日志刷屏）
+        # 发射结构化事件
+        self._emit_event(PipelineEvent(
+            event_type=EventType.TOOL_RESULT,
+            data=ToolResultPayload(
+                tool_use_id=block.tool_use_id,
+                name="",  # 名称从 tool_start 配对获取
+                is_error=block.is_error,
+                content=block.content if not block.is_error else None,
+                duration_ms=None,
+            ),
+        ))
 
     def _log_thinking(self, block: ThinkingBlock) -> None:
-        """打印思考过程摘要。"""
+        """打印思考过程摘要 + 发射 THINKING 结构化事件。"""
         preview = block.thinking[:80].replace("\n", " ")
         if len(block.thinking) > 80:
             preview += "..."
         self._print(f"  {_EMOJI['think']} {preview}")
+        # 发射结构化事件
+        self._emit_event(PipelineEvent(
+            event_type=EventType.THINKING,
+            data=ThinkingPayload(
+                thinking=block.thinking,
+                signature=getattr(block, "signature", ""),
+            ),
+        ))
 
     def _log_result_summary(self) -> None:
         """打印会话摘要。"""
@@ -487,6 +542,7 @@ async def run_pipeline(
     log_callback: Callable[[str], None] | None = None,
     preset: str = "default",
     _dispatcher_ref: list[Any] | None = None,
+    event_callback: Callable[[PipelineEvent], None] | None = None,
 ) -> str:
     """执行完整的视频生成 pipeline。
 
@@ -538,6 +594,8 @@ async def run_pipeline(
 
     # 2. 创建 dispatcher 并消费消息流
     dispatcher = _MessageDispatcher(verbose=True, log_callback=log_callback)
+    if event_callback is not None:
+        dispatcher.event_callback = event_callback
     dispatcher._print(f"\n{_LOG_SEPARATOR}")
     dispatcher._print(f"  Claude Agent 工作日志                              "
                    f"Session: {options.session_id[:8]}...")

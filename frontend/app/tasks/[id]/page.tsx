@@ -74,7 +74,7 @@ export default function TaskDetailPage() {
   const params = useParams();
   const taskId = params.id as string;
   const [task, setTask] = useState<Task | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [logs, setLogs] = useState<SSEEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -91,9 +91,9 @@ export default function TaskDetailPage() {
     const cleanup = connectTaskEvents(
       taskId,
       (event: SSEEvent) => {
-        if (event.type === "log") {
-          setLogs((prev) => [...prev, event.data]);
-        } else if (event.type === "status") {
+        // 存储所有事件（结构化 + 纯文本）
+        setLogs((prev) => [...prev, event]);
+        if (event.type === "status") {
           setTask((prev) =>
             prev ? { ...prev, status: event.data as TaskStatus } : prev,
           );
@@ -185,7 +185,7 @@ export default function TaskDetailPage() {
               <span className="text-[11px] text-muted-foreground/50 font-mono bg-surface/60 px-2 py-0.5 rounded">{logs.length} 行</span>
             )}
           </div>
-          <LogViewer logs={logs} isRunning={isRunning} />
+          <LogViewer events={logs} isRunning={isRunning} />
         </div>
 
         {/* Right: Video player or placeholder */}

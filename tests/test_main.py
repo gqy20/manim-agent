@@ -1031,3 +1031,208 @@ class TestBuildOptionsOutputFormat:
         schema = opts.output_format["json_schema"]["schema"]
         assert "video_output" in schema["required"]
         assert "narration" in schema["properties"]
+
+
+# ── Phase B: Dispatcher 结构化事件发射 ─────────────────────
+
+
+from manim_agent.pipeline_events import (
+    EventType,
+    PipelineEvent,
+    ToolStartPayload,
+    ToolResultPayload,
+    ThinkingPayload,
+    ProgressPayload,
+)
+
+
+class TestDispatcherStructuredEvents:
+    """验证 _MessageDispatcher 通过 event_callback 发射结构化事件。"""
+
+    def _make_dispatcher(
+        self,
+        log_callback=None,
+        event_callback=None,
+    ) -> _MessageDispatcher:
+        """创建 dispatcher，支持新旧两种回调。"""
+        d = _MessageDispatcher(
+            verbose=False,
+            log_callback=log_callback,
+        )
+        if event_callback is not None:
+            d.event_callback = event_callback
+        return d
+
+    # ── TOOL_START ─────────────────────────────────────────
+
+    def test_tool_use_emits_tool_start_event(self):
+        """ToolUseBlock 触发 TOOL_START 事件。"""
+        events: list[PipelineEvent] = []
+        d = self._make_dispatcher(event_callback=events.append)
+
+        block = ToolUseBlock(
+            id="tu_001",
+            name="Write",
+            input={"file_path": "scene.py", "content": "print('hi')"},
+        )
+        msg = _make_assistant_message(block)
+        d._handle_assistant(msg)
+
+        start_events = [
+            e for e in events if e.event_type == EventType.TOOL_START
+        ]
+        assert len(start_events) == 1
+        assert start_events[0].data.name == "Write"
+        assert start_events[0].data.tool_use_id == "tu_001"
+
+    def test_tool_start_contains_input_summary(self):
+        """TOOL_START 事件的 input_summary 包含关键参数。"""
+        events: list[PipelineEvent] = []
+        d = self._make_dispatcher(event_callback=events.append)
+
+        block = ToolUseBlock(
+            id="tu_002",
+            name="Bash",
+            input={"command": "manim -qh scene.py Scene"},
+        )
+        d._handle_assistant(_make_assistant_message(block))
+
+        start = [e for e in events if e.event_type == EventType.TOOL_START][0]
+        assert "command" in start.data.input_summary
+
+    # ── TOOL_RESULT ────────────────────────────────────────
+
+    def test_tool_result_emits_tool_result_event(self):
+        """ToolResultBlock 触发 TOOL_RESULT 事件。"""
+        events: list[PipelineEvent] = []
+        d = self._make_dispatcher(event_callback=events.append)
+
+        block = ToolResultBlock(
+            tool_use_id="tu_001",
+            content="Rendered in 8.5s",
+            is_error=False,
+        )
+        d._handle_assistant(_make_assistant_message(block))
+
+        result_events = [
+            e for e in events if e.event_type == EventType.TOOL_RESULT
+        ]
+        assert len(result_events) == 1
+        assert result_events[0].data.is_error is False
+        assert "8.5s" in result_events[0].data.content
+
+    def test_tool_result_error_flag(self):
+        """错误工具结果 is_error=True。"""
+        events: list[PipelineEvent] = []
+        d = self._make_dispatcher(event_callback=events.append)
+
+        block = ToolResultBlock(
+            tool_use_id="tu_003",
+            content="Exit code 1",
+            is_error=True,
+        )
+        d._handle_assistant(_make_assistant_message(block))
+
+        result = [e for e in events
+                  if e.event_type == EventType.TOOL_RESULT][0]
+        assert result.data.is_error is True
+
+    # ── THINKING ──────────────────────────────────────────
+
+    def test_thinking_block_emits_thinking_event(self):
+        """ThinkingBlock 触发 THINKING 事件。"""
+        events: list[PipelineEvent] = []
+        d = self._make_dispatcher(event_callback=events.append)
+
+        block = ThinkingBlock(
+            thinking="I need to create a Fourier transform animation...",
+            signature="sig-abc",
+        )
+        d._handle_assistant(_make_assistant_message(block))
+
+        think_events = [
+            e for e in events if e.event_type == EventType.THINKING
+        ]
+        assert len(think_events) == 1
+        assert "Fourier" in think_events[0].data.thinking
+
+    def test_thinking_preview_auto_truncated(self):
+        """长思考文本的 preview 自动截断。"""
+        events: list[PipelineEvent] = []
+        d = self._make_dispatcher(event_callback=events.append)
+
+        long_text = "x" * 200
+        block = ThinkingBlock(thinking=long_text, signature="s")
+        d._handle_assistant(_make_assistant_message(block))
+
+        think = [e for e in events
+                 if e.event_type == EventType.THINKING][0]
+        assert think.data.preview is not None
+        assert len(think.data.preview) <= 100
+
+    # ── PROGRESS ──────────────────────────────────────────
+
+    def test_task_progress_emits_progress_event(self):
+        """TaskProgressMessage 触发 PROGRESS 事件。"""
+        events: list[PipelineEvent] = []
+        d = self._make_dispatcher(event_callback=events.append)
+
+        usage = TaskUsage(
+            total_tokens=5000,
+            tool_uses=3,
+            duration_ms=10000,
+        )
+        msg = TaskProgressMessage(
+            subtype="task_progress",
+            task_id="t1",
+            description="rendering",
+            usage=usage,
+            uuid="u1",
+            session_id="s1",
+            data={},
+        )
+        d.dispatch(msg)
+
+        prog_events = [
+            e for e in events if e.event_type == EventType.PROGRESS
+        ]
+        assert len(prog_events) >= 1
+        assert prog_events[0].data.total_tokens == 5000
+        assert prog_events[0].data.tool_uses == 3
+
+    # ── 向后兼容 ──────────────────────────────────────────
+
+    def test_log_callback_still_works_without_event_callback(self):
+        """不设置 event_callback 时，log_callback 正常工作。"""
+        logs: list[str] = []
+        d = self._make_dispatcher(log_callback=logs.append)
+
+        block = ToolUseBlock(
+            id="tu_1", name="Read",
+            input={"file_path": "config.json"},
+        )
+        d._handle_assistant(_make_assistant_message(block))
+        assert len(logs) > 0  # 至少有工具调用日志行
+
+    def test_no_crash_when_event_callback_is_none(self):
+        """event_callback 为 None 时不崩溃（默认行为）。"""
+        d = self._make_dispatcher()  # 无回调
+        block = ToolUseBlock(id="tu_1", name="Write", input={})
+        # 不应抛异常
+        d._handle_assistant(_make_assistant_message(block))
+
+    def test_both_callbacks_fire_together(self):
+        """log_callback 和 event_callback 同时触发。"""
+        logs: list[str] = []
+        events: list[PipelineEvent] = []
+        d = self._make_dispatcher(
+            log_callback=logs.append,
+            event_callback=events.append,
+        )
+
+        block = ThinkingBlock(thinking="hello", signature="s")
+        d._handle_assistant(_make_assistant_message(block))
+
+        assert len(logs) > 0  # 文本日志
+        assert any(e.event_type == EventType.THINKING
+                   for e in events)  # 结构化事件
