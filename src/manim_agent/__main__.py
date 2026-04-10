@@ -6,11 +6,12 @@
 """
 
 import argparse
+import asyncio
 import logging
 import sys
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -63,8 +64,13 @@ class _MessageDispatcher:
     RateLimitEvent / TaskProgressMessage 等消息类型。
     """
 
-    def __init__(self, verbose: bool = True) -> None:
+    def __init__(
+        self,
+        verbose: bool = True,
+        log_callback: Callable[[str], None] | None = None,
+    ) -> None:
         self.verbose = verbose
+        self.log_callback = log_callback
         self.turn_count = 0
         self.tool_use_count = 0
         self.tool_stats: dict[str, int] = {}
@@ -232,9 +238,11 @@ class _MessageDispatcher:
         return result
 
     def _print(self, message: str) -> None:
-        """条件打印：verbose=True 时输出。"""
+        """条件打印：verbose=True 时输出；同时调用回调（如有）。"""
         if self.verbose:
             print(message)
+        if self.log_callback:
+            self.log_callback(message)
 
 
 # ── CLI 参数解析 ──────────────────────────────────────────────
@@ -343,14 +351,17 @@ def _build_options(
     system_prompt: str | None,
     max_turns: int,
     prompt_file: str | None = None,
+    quality: str = "high",
 ) -> ClaudeAgentOptions:
     """构建 ClaudeAgentOptions，含会话隔离和日志回调。
 
     Args:
         cwd: 工作目录。
-        system_prompt: 系统提示词。
+        system_prompt: 系统提示词（优先级最高，若提供则直接使用）。
         max_turns: 最大交互轮次。
         prompt_file: 自定义提示词文件路径。
+        quality: 渲染质量 ("high" | "medium" | "low")，
+            仅在未提供 system_prompt 和 prompt_file 时生效。
 
     Returns:
         配置好的 options 对象。
@@ -361,7 +372,10 @@ def _build_options(
     elif system_prompt:
         final_system_prompt = system_prompt
     else:
-        final_system_prompt = prompts.SYSTEM_PROMPT
+        # 使用 prompts 模块构建含 quality 映射的完整提示词
+        final_system_prompt = prompts.SYSTEM_PROMPT.replace(
+            "-qh", prompts.QUALITY_FLAGS.get(quality, "-qh")
+        )
 
     return ClaudeAgentOptions(
         cwd=cwd,
@@ -389,6 +403,7 @@ async def run_pipeline(
     cwd: str = ".",
     prompt_file: str | None = None,
     max_turns: int = 50,
+    log_callback: Callable[[str], None] | None = None,
 ) -> str:
     """执行完整的视频生成 pipeline。
 
@@ -417,19 +432,20 @@ async def run_pipeline(
     Raises:
         RuntimeError: Claude 未输出 VIDEO_OUTPUT 标记。
     """
-    # 1. 构建 options（含会话隔离）
+    # 1. 构建 options（含会话隔离 + quality 映射）
     options = _build_options(
         cwd=cwd,
         system_prompt=None,  # 由 _build_options 内部决定
         max_turns=max_turns,
         prompt_file=prompt_file,
+        quality=quality,
     )
 
     # 用户提示词直接传递
     user_prompt = user_text
 
     # 2. 创建 dispatcher 并消费消息流
-    dispatcher = _MessageDispatcher(verbose=True)
+    dispatcher = _MessageDispatcher(verbose=True, log_callback=log_callback)
     dispatcher._print(f"\n{_LOG_SEPARATOR}")
     dispatcher._print(f"  Claude Agent 工作日志                              "
                    f"Session: {options.session_id[:8]}...")

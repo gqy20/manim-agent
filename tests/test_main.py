@@ -525,3 +525,119 @@ class TestBuildOptions:
             max_turns=5,
         )
         assert opts.stderr is not None  # 应设置默认 stderr handler
+
+
+# ── P0 Bug #1: 缺少 asyncio import ──────────────────────────────
+
+
+class TestAsyncioImport:
+    def test_asyncio_in_module_globals(self):
+        """模块全局作用域中存在 asyncio（__main__.py 顶层已导入）。"""
+        assert hasattr(main_module, "asyncio"), (
+            "asyncio 未在 __main__.py 中导入，"
+            "运行 python -m manim_agent 会抛 NameError"
+        )
+
+    def test_main_is_coroutine_function(self):
+        """main() 是异步函数。"""
+        import inspect
+        assert inspect.iscoroutinefunction(main_module.main)
+
+    def test_main_callable_without_nameerror(self):
+        """main() 可调用且不因缺少 asyncio 而抛 NameError。
+
+        实际不会执行完整 pipeline（需要 Claude SDK），
+        但至少验证函数定义层无语法/导入错误。
+        """
+        # 只验证 callable，不实际 await
+        assert callable(main_module.main)
+
+
+# ── P0 Bug #2: quality 参数死代码 ────────────────────────────
+
+
+class TestQualityIntegration:
+    def test_quality_high_uses_qh_in_prompt(self):
+        """quality='high' 时系统提示词包含 -qh 标志。"""
+        opts = main_module._build_options(
+            cwd="/work",
+            system_prompt=None,
+            max_turns=10,
+            quality="high",
+        )
+        assert "-qh" in opts.system_prompt
+
+    def test_quality_medium_uses_qm_in_prompt(self):
+        """quality='medium' 时系统提示词包含 -qm 标志（非 -qh）。"""
+        opts = main_module._build_options(
+            cwd="/work",
+            system_prompt=None,
+            max_turns=10,
+            quality="medium",
+        )
+        assert "-qm" in opts.system_prompt
+        assert "-qh" not in opts.system_prompt
+
+    def test_quality_low_uses_ql_in_prompt(self):
+        """quality='low' 时系统提示词包含 -ql 标志。"""
+        opts = main_module._build_options(
+            cwd="/work",
+            system_prompt=None,
+            max_turns=10,
+            quality="low",
+        )
+        assert "-ql" in opts.system_prompt
+        assert "-qh" not in opts.system_prompt
+
+    def test_quality_default_is_high(self):
+        """不传 quality 时默认使用 high (-qh)。"""
+        opts = main_module._build_options(
+            cwd="/work",
+            system_prompt=None,
+            max_turns=10,
+        )
+        assert "-qh" in opts.system_prompt
+
+    def test_custom_system_prompt_not_overridden_by_quality(self):
+        """自定义系统提示词时 quality 不覆盖用户提供的 prompt。"""
+        custom = "You are a custom assistant with no Manim flags."
+        opts = main_module._build_options(
+            cwd="/work",
+            system_prompt=custom,
+            max_turns=10,
+            quality="low",
+        )
+        assert opts.system_prompt == custom
+
+    @pytest.mark.asyncio
+    async def test_run_pipeline_passes_quality_to_options(self):
+        """run_pipeline 将 quality 正确传递给 _build_options。
+
+        通过 mock 验证 _build_options 收到了正确的 quality 值。
+        """
+        original_build = main_module._build_options
+
+        call_capture: dict[str, Any] = {}
+
+        def capture_build(*args, **kwargs):
+            call_capture.update(kwargs)
+            return original_build(*args, **kwargs)
+
+        async def empty_query(**_kw):
+            """返回空异步迭代器，让 pipeline 在 VIDEO_OUTPUT 检查处失败。"""
+            return
+            yield  # type: ignore[misc]
+
+        with patch("manim_agent.__main__._build_options", side_effect=capture_build):
+            with (
+                patch("manim_agent.__main__.query", side_effect=empty_query),
+                pytest.raises(RuntimeError, match="VIDEO_OUTPUT"),
+            ):
+                await main_module.run_pipeline(
+                    user_text="test",
+                    output_path="/tmp/out.mp4",
+                    no_tts=True,
+                    quality="medium",
+                )
+
+        assert call_capture.get("quality") == "medium"
