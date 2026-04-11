@@ -10,9 +10,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
+from dotenv import load_dotenv
 
 from .routes import router, set_store, init_r2_client, _r2_client
 from .task_store import TaskStore
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_PROJECT_ROOT / ".env")
 
 # ── 日志文件配置 ───────────────────────────────────────────────
 _log_dir = Path("backend/logs")
