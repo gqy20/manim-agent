@@ -526,6 +526,37 @@ class TestRunPipeline:
             )
 
     @pytest.mark.asyncio
+    async def test_failure_before_video_output_stops_status_phase_progression(self):
+        """Failure before output resolution should emit only init/render phases."""
+        from manim_agent.pipeline_events import EventType
+
+        events = []
+        mock_messages = [
+            _make_assistant_message(_make_text_block("no markers here")),
+        ]
+
+        with (
+            patch("manim_agent.__main__.query") as mock_query,
+            pytest.raises(RuntimeError, match="VIDEO_OUTPUT"),
+        ):
+            async def mock_query_gen(*args, **kwargs):
+                for msg in mock_messages:
+                    yield msg
+
+            mock_query.side_effect = mock_query_gen
+
+            await main_module.run_pipeline(
+                user_text="test",
+                output_path="output/out.mp4",
+                no_tts=True,
+                event_callback=events.append,
+            )
+
+        status_events = [e for e in events if e.event_type == EventType.STATUS]
+        assert [e.data.phase for e in status_events] == ["init", "render"]
+        assert all(e.data.task_status == "running" for e in status_events)
+
+    @pytest.mark.asyncio
     async def test_full_flow_emits_authoritative_status_phases_in_order(self):
         """Full pipeline should emit authoritative status phases in execution order."""
         from manim_agent.pipeline_events import EventType
