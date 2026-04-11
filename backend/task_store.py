@@ -181,12 +181,44 @@ def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
     return d
 
 
+def _jsonish_to_dict(value: Any) -> dict[str, Any]:
+    """Normalize a JSON-like DB field into a plain dict for API responses."""
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _datetime_to_iso(value: Any) -> str | None:
+    """Normalize datetime-ish values to ISO 8601 strings for API responses."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
 @staticmethod
 def to_response(task: dict[str, Any]) -> TaskResponse:
     """Build a TaskResponse from a raw task dict (kept as static method)."""
-    return TaskResponse(
-        **{k: task.get(k) for k in TaskResponse.model_fields}
-    )
+    payload = {k: task.get(k) for k in TaskResponse.model_fields}
+    payload["created_at"] = _datetime_to_iso(task.get("created_at")) or ""
+    payload["completed_at"] = _datetime_to_iso(task.get("completed_at"))
+    payload["options"] = _jsonish_to_dict(task.get("options"))
+    pipeline_output = task.get("pipeline_output")
+    if pipeline_output is not None:
+        payload["pipeline_output"] = _jsonish_to_dict(pipeline_output)
+
+    return TaskResponse(**payload)
 
 
 # Attach static method to class for backward compatibility

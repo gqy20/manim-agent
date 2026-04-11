@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import os
 import pytest
@@ -362,6 +363,30 @@ class TestTaskStore:
         response = _store.to_response(task)
         assert response.id == task["id"]
         assert response.user_text == "test"
+        assert isinstance(response.created_at, str)
+        assert isinstance(response.options, dict)
+
+    def test_to_response_normalizes_db_native_types(self):
+        store = TaskStore()
+        task = {
+            "id": "task-1",
+            "user_text": "test",
+            "status": "completed",
+            "created_at": datetime.datetime(2026, 4, 11, 13, 0, 0, tzinfo=datetime.timezone.utc),
+            "completed_at": datetime.datetime(2026, 4, 11, 13, 5, 0, tzinfo=datetime.timezone.utc),
+            "video_path": "/out.mp4",
+            "error": None,
+            "options": '{"voice_id":"female-tianmei","quality":"high"}',
+            "pipeline_output": '{"video_output":"/out.mp4","scene_file":"scene.py"}',
+        }
+
+        response = store.to_response(task)
+
+        assert response.created_at == "2026-04-11T13:00:00+00:00"
+        assert response.completed_at == "2026-04-11T13:05:00+00:00"
+        assert response.options["voice_id"] == "female-tianmei"
+        assert response.pipeline_output is not None
+        assert response.pipeline_output.video_output == "/out.mp4"
 
 
 class TestSSEManager:
