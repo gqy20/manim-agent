@@ -178,6 +178,12 @@ def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
     # Ensure logs field exists (from the JOIN subquery or default)
     if "logs" not in d:
         d["logs"] = []
+    if "pipeline_output" in d:
+        d["pipeline_output"] = (
+            None if d["pipeline_output"] is None else _jsonish_to_dict(d["pipeline_output"])
+        )
+    if "options" in d:
+        d["options"] = _jsonish_to_dict(d["options"])
     return d
 
 

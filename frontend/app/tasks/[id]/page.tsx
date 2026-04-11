@@ -13,6 +13,7 @@ import { PipelineProgress } from "@/components/pipeline-progress";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getTask, getVideoUrl } from "@/lib/api";
 import { connectTaskEvents } from "@/lib/sse-client";
+import { logger } from "@/lib/logger";
 import type { SSEEvent, Task, TaskStatus } from "@/types";
 import { isStatusPayload } from "@/types";
 
@@ -66,7 +67,7 @@ export default function TaskDetailPage() {
         setTask(data);
       })
       .catch((err) => {
-        console.error("[TaskDetail] failed to load task", taskId, err);
+        logger.error("task-detail", "Failed to load task", { taskId });
         setEventsError("Failed to load task details.");
         setTask(null);
       })
@@ -84,16 +85,16 @@ export default function TaskDetailPage() {
         setLogs((prev) => [...prev, event]);
         if (event.type === "status" && typeof event.data === "string") {
           setTask((prev) =>
-            prev ? { ...prev, status: event.data as TaskStatus } : prev,
+            prev && prev.status !== event.data ? { ...prev, status: event.data as TaskStatus } : prev,
           );
         } else if (isStatusPayload(event)) {
           setTask((prev) =>
-            prev ? { ...prev, status: event.data.task_status } : prev,
+            prev && prev.status !== event.data.task_status ? { ...prev, status: event.data.task_status } : prev,
           );
         }
       },
       (error) => {
-        console.error("[TaskDetail] SSE error", task.id, error);
+        logger.error("task-detail", "SSE connection error", { taskId: task.id });
         setEventsError("SSE disconnected. Front-end is retrying; check backend SSE logs.");
       },
       () => {
@@ -102,7 +103,7 @@ export default function TaskDetailPage() {
     );
 
     return cleanup;
-  }, [task]);
+  }, [task?.id]);
 
   // GSAP Entry Animation Orchestration
   useGSAP(() => {
@@ -289,4 +290,3 @@ export default function TaskDetailPage() {
     </main>
   );
 }
-
