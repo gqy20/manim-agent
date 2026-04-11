@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from manim_agent import __main__ as main_module
 from manim_agent.__main__ import _MessageDispatcher
+from manim_agent.hooks import create_hook_state
 from claude_agent_sdk import (
     AssistantMessage, ResultMessage, RateLimitEvent, RateLimitInfo,
     TaskProgressMessage, TaskNotificationMessage, TaskUsage,
@@ -727,6 +728,47 @@ class TestCodeCapture:
         po = d.get_pipeline_output()
         assert po is not None
         assert po.source_code is None
+
+
+    def test_dispatcher_uses_injected_hook_state(self):
+        """Dispatcher should retain access to its own hook state snapshot."""
+        hook_state = create_hook_state()
+        hook_state.captured_source_code["scene.py"] = "print('scene 1')"
+        d = _MessageDispatcher(verbose=False, hook_state=hook_state)
+        d.dispatch(_make_assistant_message(
+            _make_text_block(
+                "VIDEO_OUTPUT: /out.mp4\n"
+                "SCENE_FILE: scene.py\n"
+            ),
+        ))
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.source_code == "print('scene 1')"
+
+    def test_dispatchers_do_not_share_injected_hook_state(self):
+        """Different dispatchers should not see each other's hook captures."""
+        hook_state_a = create_hook_state()
+        hook_state_b = create_hook_state()
+        hook_state_a.captured_source_code["scene_a.py"] = "print('A')"
+        hook_state_b.captured_source_code["scene_b.py"] = "print('B')"
+
+        dispatcher_a = _MessageDispatcher(verbose=False, hook_state=hook_state_a)
+        dispatcher_b = _MessageDispatcher(verbose=False, hook_state=hook_state_b)
+
+        dispatcher_a.dispatch(_make_assistant_message(
+            _make_text_block("VIDEO_OUTPUT: /a.mp4\nSCENE_FILE: scene_a.py\n"),
+        ))
+        dispatcher_b.dispatch(_make_assistant_message(
+            _make_text_block("VIDEO_OUTPUT: /b.mp4\nSCENE_FILE: scene_b.py\n"),
+        ))
+
+        po_a = dispatcher_a.get_pipeline_output()
+        po_b = dispatcher_b.get_pipeline_output()
+        assert po_a is not None
+        assert po_b is not None
+        assert po_a.source_code == "print('A')"
+        assert po_b.source_code == "print('B')"
 
 
 # ── Phase 4: Narration + TTS 集成 ───────────────────────────────

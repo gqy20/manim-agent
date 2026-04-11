@@ -19,7 +19,7 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from .hooks import _hook_state
+from .hooks import _HookState, get_hook_state
 from .output_schema import PipelineOutput
 from .pipeline_events import (
     EventType,
@@ -63,10 +63,12 @@ class _MessageDispatcher:
         verbose: bool = True,
         log_callback: Callable[[str], None] | None = None,
         output_cwd: str | None = None,
+        hook_state: _HookState | None = None,
     ) -> None:
         self.verbose = verbose
         self.log_callback = log_callback
         self.output_cwd = Path(output_cwd).resolve() if output_cwd else None
+        self._hook_state = hook_state or get_hook_state()
         self.event_callback: Callable[[PipelineEvent], None] | None = None
         self.turn_count = 0
         self.tool_use_count = 0
@@ -91,7 +93,7 @@ class _MessageDispatcher:
     @property
     def captured_source_code(self) -> dict[str, str]:
         """委托到 hook 状态的源码字典（向后兼容）。"""
-        return _hook_state.captured_source_code
+        return self._hook_state.captured_source_code
 
     # ── 公共接口 ──────────────────────────────────────────────
 
@@ -257,9 +259,9 @@ class _MessageDispatcher:
                 # 关联 Hook 捕获的源代码
                 if (
                     output_for_linking.scene_file
-                    and output_for_linking.scene_file in _hook_state.captured_source_code
+                    and output_for_linking.scene_file in self._hook_state.captured_source_code
                 ):
-                    output_for_linking.source_code = _hook_state.captured_source_code[
+                    output_for_linking.source_code = self._hook_state.captured_source_code[
                         output_for_linking.scene_file
                     ]
                     logger.debug(
@@ -450,7 +452,7 @@ class _MessageDispatcher:
         """Infer the scene file from hook-captured Python files under the task cwd."""
         if self.scene_file:
             return self.scene_file
-        captured_paths = [Path(p).resolve() for p in _hook_state.captured_source_code]
+        captured_paths = [Path(p).resolve() for p in self._hook_state.captured_source_code]
         if self.output_cwd is not None:
             captured_paths = [
                 p for p in captured_paths
@@ -471,9 +473,9 @@ class _MessageDispatcher:
 
         if (
             self.pipeline_output.scene_file
-            and self.pipeline_output.scene_file in _hook_state.captured_source_code
+            and self.pipeline_output.scene_file in self._hook_state.captured_source_code
         ):
-            self.pipeline_output.source_code = _hook_state.captured_source_code[
+            self.pipeline_output.source_code = self._hook_state.captured_source_code[
                 self.pipeline_output.scene_file
             ]
             logger.debug("%s: source code linked from hook state", context)
@@ -482,7 +484,7 @@ class _MessageDispatcher:
                 "%s: scene_file=%r, hook captured keys=%s",
                 context,
                 self.pipeline_output.scene_file,
-                list(_hook_state.captured_source_code.keys()),
+                list(self._hook_state.captured_source_code.keys()),
             )
 
     def _emit_event(self, event: PipelineEvent) -> None:

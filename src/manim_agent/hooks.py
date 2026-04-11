@@ -1,24 +1,71 @@
-"""SDK Hook 回调：捕获 Write/Edit 工具的源码。"""
+"""SDK hook callbacks and per-pipeline hook state."""
 
+from __future__ import annotations
+
+import contextvars
 import logging
+from dataclasses import dataclass, field
+from typing import Any
 
-from claude_agent_sdk.types import (
-    PostToolUseHookSpecificOutput,
-    SyncHookJSONOutput,
-)
+from claude_agent_sdk.types import PostToolUseHookSpecificOutput, SyncHookJSONOutput
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
 class _HookState:
-    """Hook 共享状态，用于在多个 hook 调用间传递数据。"""
+    """Hook state scoped to a single pipeline execution."""
 
-    def __init__(self) -> None:
-        self.captured_source_code: dict[str, str] = {}
-        self.event_callback = None
+    captured_source_code: dict[str, str] = field(default_factory=dict)
+    event_callback: Any = None
 
 
-_hook_state = _HookState()
+_hook_state_var: contextvars.ContextVar[_HookState | None] = contextvars.ContextVar(
+    "manim_agent_hook_state",
+    default=None,
+)
+
+
+def create_hook_state(
+    *,
+    event_callback: Any = None,
+) -> _HookState:
+    """Create a fresh hook state for one pipeline run."""
+    state = _HookState()
+    state.event_callback = event_callback
+    return state
+
+
+def get_hook_state() -> _HookState:
+    """Return the current hook state, creating one lazily when needed."""
+    state = _hook_state_var.get()
+    if state is None:
+        state = _HookState()
+        _hook_state_var.set(state)
+    return state
+
+
+def activate_hook_state(state: _HookState | None = None) -> contextvars.Token:
+    """Bind a hook state to the current async context."""
+    return _hook_state_var.set(state or _HookState())
+
+
+def reset_hook_state(token: contextvars.Token) -> None:
+    """Restore the previous hook state binding."""
+    _hook_state_var.reset(token)
+
+
+class _HookStateProxy:
+    """Backward-compatible proxy for code that still imports _hook_state."""
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(get_hook_state(), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(get_hook_state(), name, value)
+
+
+_hook_state = _HookStateProxy()
 
 
 async def _on_post_tool_use(
@@ -26,16 +73,15 @@ async def _on_post_tool_use(
     tool_use_id: str | None,
     context,
 ) -> SyncHookJSONOutput:
-    """PostToolUse hook：捕获 Write/Edit 工具的源码。
-
-    使用 SDK 原生 Hook 系统替代手动遍历 ToolUseBlock。
-    """
+    """Capture Python source written via Write/Edit tools."""
     tool_name = input_data.get("tool_name", "")
     tool_input = input_data.get("tool_input", {})
+    hook_state = get_hook_state()
 
     logger.debug(
         "PostToolUse: tool_name=%r, tool_use_id=%r",
-        tool_name, tool_use_id,
+        tool_name,
+        tool_use_id,
     )
 
     if tool_name in ("Write", "Edit") and isinstance(tool_input, dict):
@@ -43,17 +89,19 @@ async def _on_post_tool_use(
         content = tool_input.get("content", "")
         logger.debug(
             "PostToolUse: %s file_path=%r, content_length=%s",
-            tool_name, file_path, len(content) if content else 0,
+            tool_name,
+            file_path,
+            len(content) if content else 0,
         )
         if file_path.endswith(".py") and content:
-            _hook_state.captured_source_code[file_path] = content
+            hook_state.captured_source_code[file_path] = content
             logger.debug(
                 "Captured source: %s, total_files=%d",
-                file_path, len(_hook_state.captured_source_code),
+                file_path,
+                len(hook_state.captured_source_code),
             )
-    else:
-        if tool_name:
-            logger.debug("PostToolUse: skipping non-target tool: %s", tool_name)
+    elif tool_name:
+        logger.debug("PostToolUse: skipping non-target tool: %s", tool_name)
 
     return SyncHookJSONOutput(
         hookSpecificOutput=PostToolUseHookSpecificOutput(

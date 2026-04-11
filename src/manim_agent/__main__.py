@@ -51,7 +51,7 @@ from .pipeline_events import (
 )
 
 
-from .hooks import _hook_state, _on_post_tool_use
+from .hooks import _on_post_tool_use, activate_hook_state, create_hook_state, reset_hook_state
 
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 
@@ -335,42 +335,14 @@ async def run_pipeline(
     _dispatcher_ref: list[Any] | None = None,
     event_callback: Callable[[PipelineEvent], None] | None = None,
 ) -> str:
-    """执行完整的视频生成 pipeline。
-
-    流程：
-    1. 构建提示词和 options（含会话隔离）
-    2. 调用 Claude Agent SDK (query)，通过 dispatcher 消费消息流
-    3. 从 dispatcher 中提取 VIDEO_OUTPUT 路径
-    4. （可选）TTS 语音合成
-    5. （可选）FFmpeg 视频合成
-    6. 返回最终视频路径
-
-    Args:
-        user_text: 用户输入的自然语言描述。
-        output_path: 输出视频路径。
-        voice_id: TTS 音色 ID。
-        model: TTS 模型。
-        quality: 渲染质量。
-        no_tts: 是否跳过 TTS。
-        cwd: 工作目录。
-        prompt_file: 自定义提示词文件路径。
-        max_turns: Claude 最大交互轮次。
-
-    Returns:
-        最终视频文件路径。
-
-    Raises:
-        RuntimeError: Claude 未输出 VIDEO_OUTPUT 标记。
-    """
-    # 1. 构建 options（含会话隔离 + quality + preset 映射）
-    # 使用 prompts.get_prompt() 将 preset 后缀追加到系统提示词
+    """Run the full Claude -> TTS -> mux pipeline."""
     full_system_prompt = prompts.get_prompt(
-        user_text="",  # 用户文本单独作为 query prompt 传入
+        user_text="",
         preset=preset,
         quality=quality,
     )
-    # 去掉 get_prompt 追加的 "# 用户需求" 段落，只保留系统提示词部分
-    system_prompt = full_system_prompt.rsplit("\n\n# 用户需求", 1)[0]
+    marker = "\n\n# "
+    system_prompt = full_system_prompt.split(marker, 1)[0] if marker in full_system_prompt else full_system_prompt
 
     options = _build_options(
         cwd=cwd,
@@ -380,33 +352,27 @@ async def run_pipeline(
         quality=quality,
         log_callback=log_callback,
     )
-
-    # 用户提示词直接传递
     user_prompt = user_text
 
-    # 2. 创建 dispatcher 并消费消息流
+    hook_state = create_hook_state(event_callback=event_callback)
+    hook_state_token = activate_hook_state(hook_state)
     dispatcher = _MessageDispatcher(
         verbose=True,
         log_callback=log_callback,
         output_cwd=cwd,
+        hook_state=hook_state,
     )
     if event_callback is not None:
         dispatcher.event_callback = event_callback
-        _hook_state.event_callback = event_callback
-    # ── 阶段标记：初始化完成，即将启动 SDK query ──
+
     dispatcher._print(f"\n{_LOG_SEPARATOR}")
     dispatcher._print(
-        f"  Claude Agent 工作日志                              Session: {options.session_id[:8]}..."
+        f"  Claude Agent Log                              Session: {options.session_id[:8]}..."
     )
     dispatcher._print(_LOG_SEPARATOR)
-    dispatcher._print(f"  {_EMOJI['gear']} Phase 1/4: 启动 Claude Agent SDK...")
+    dispatcher._print(f"  {_EMOJI['gear']} Phase 1/4: start Claude Agent SDK")
     dispatcher._print(f"  quality={quality} preset={preset} max_turns={max_turns}")
 
-    # ── Transport 层调试：通过包装 query() 捕获进程退出信息 ──
-    # 使用 contextlib.wrap 或直接 patch SDK 内部 client 来拦截 close() 阶段
-    import contextlib as _ctx
-
-    # 统计 CLI stderr 行数（通过包装 log_callback）
     _cli_stderr_lines: list[str] = []
     _orig_log_callback = log_callback
 
@@ -415,108 +381,91 @@ async def run_pipeline(
         if _orig_log_callback:
             _orig_log_callback(line)
 
-    # 用带计数的回调临时替换 options.stderr（仅用于本次调用）
-    _saved_stderr = options.stderr
     options.stderr = _counting_log_callback
 
-    # ── 查询循环：捕获 SDK 层面的任何异常 ──
-    _sdk_exception: BaseException | None = None
     try:
         async for message in query(prompt=user_prompt, options=options):
             dispatcher.dispatch(message)
-    except Exception as exc:
-        _sdk_exception = exc
-        logger.debug(' run_pipeline: === SDK QUERY LOOP EXCEPTION ===')
-        logger.debug(' run_pipeline: exception type={type(exc).__name__}')
-        logger.debug(' run_pipeline: exception message={exc}')
-        import traceback as _tb
-        for _line in _tb.format_exception(type(exc), exc, exc.__traceback__):
-            for _ll in _line.rstrip().splitlines():
-                logger.debug(' run_pipeline: TRACE {_ll}')
-        raise  # re-raise so existing error handling works
 
-    # ── 盲区5: 消息流结束总结 ──
-    _report_stream_statistics(dispatcher, _cli_stderr_lines)
+        _report_stream_statistics(dispatcher, _cli_stderr_lines)
 
+        if _dispatcher_ref is not None:
+            _dispatcher_ref.append(dispatcher)
 
-    # 将 dispatcher 传给调用方（用于提取 pipeline_output 等元数据）
-    if _dispatcher_ref is not None:
-        _dispatcher_ref.append(dispatcher)
+        dispatcher._print(f"  {_EMOJI['gear']} Phase 2/4: resolve render output")
+        logger.debug(
+            "run_pipeline: dispatcher.video_output before extraction = %r",
+            dispatcher.video_output,
+        )
+        logger.debug(
+            "run_pipeline: hook captured source code keys = %s",
+            list(hook_state.captured_source_code.keys()),
+        )
+        po = dispatcher.get_pipeline_output()
+        logger.debug("run_pipeline: PipelineOutput after get_pipeline_output: %r", po)
+        video_output = dispatcher.get_video_output()
+        logger.debug("run_pipeline: video_output from get_video_output = %r", video_output)
 
-    # 3. 从 dispatcher 提取结果
-    # ── 阶段标记：SDK 对话结束，提取输出 ──
-    dispatcher._print(f"  {_EMOJI['gear']} Phase 2/4: 提取渲染结果...")
-    dispatcher._print(
-        logger.debug(' run_pipeline: dispatcher.video_output (before get_pipeline_output) = {dispatcher.video_output!r}')
-    )
-    dispatcher._print(
-        logger.debug(' run_pipeline: hook captured source code keys = {list(_hook_state.captured_source_code.keys())}')
-    )
-    po = dispatcher.get_pipeline_output()
-    logger.debug(' run_pipeline: PipelineOutput after get_pipeline_output: {po!r}')
-    video_output = dispatcher.get_video_output()
-    dispatcher._print(
-        logger.debug(' run_pipeline: video_output from get_video_output = {video_output!r}')
-    )
+        if not video_output:
+            dispatcher._print("")
+            dispatcher._print(f"{_EMOJI['cross']} Claude did not report a VIDEO_OUTPUT marker.")
+            dispatcher._print("  The agent may have failed to render the scene.")
+            if dispatcher.result_summary:
+                s = dispatcher.result_summary
+                dispatcher._print(f"  Turns: {s.get('turns', '?')} | Error: {s.get('is_error', '?')}")
+            collected = "\n".join(dispatcher.collected_text)
+            if collected.strip():
+                dispatcher._print("  --- Agent text output (first 2000 chars) ---")
+                dispatcher._print(collected[:2000])
+                if len(collected) > 2000:
+                    dispatcher._print(f"  ... ({len(collected)} chars total)")
+                dispatcher._print("  --- Output end ---")
+            else:
+                dispatcher._print("  (Agent produced no text output)")
+            raise RuntimeError(
+                "Claude did not produce a VIDEO_OUTPUT marker. "
+                "The agent may have failed to render the scene."
+            )
 
-    if not video_output:
-        dispatcher._print("")
-        dispatcher._print(f"{_EMOJI['cross']} Claude 未生成 VIDEO_OUTPUT 标记。")
-        dispatcher._print(f"  Agent 可能未能成功渲染场景。")
-        if dispatcher.result_summary:
-            s = dispatcher.result_summary
-            dispatcher._print(f"  Turns: {s.get('turns', '?')} | Error: {s.get('is_error', '?')}")
-        # 调试：打印 Agent 的完整文本输出，帮助定位问题
-        collected = "\n".join(dispatcher.collected_text)
-        if collected.strip():
-            dispatcher._print(f"  --- Agent 文本输出（前 2000 字符）---")
-            dispatcher._print(collected[:2000])
-            if len(collected) > 2000:
-                dispatcher._print(f"  ... (共 {len(collected)} 字符)")
-            dispatcher._print(f"  --- 输出结束 ---")
-        else:
-            dispatcher._print(f"  (Agent 没有产生任何文本输出)")
-        raise RuntimeError(
-            "Claude did not produce a VIDEO_OUTPUT marker. "
-            "The agent may have failed to render the scene."
+        if no_tts:
+            dispatcher._print(f"\n{_EMOJI['video']} Output silent video: {video_output}")
+            return video_output
+
+        dispatcher._print(f"  {_EMOJI['gear']} Phase 3/4: synthesize TTS")
+        po = dispatcher.get_pipeline_output()
+        narration_text = po.narration if po and po.narration else user_text
+        dispatcher._print(f"\n{_EMOJI['tts']} TTS in progress... (voice={voice_id}, model={model})")
+        tts_result = await tts_client.synthesize(
+            text=narration_text,
+            voice_id=voice_id,
+            model=model,
+            output_dir=str(Path(output_path).parent),
+        )
+        dispatcher._print(f"  TTS done: {tts_result.duration_ms}ms, {tts_result.word_count} chars")
+
+        dispatcher._print("[MUX] Phase 4/4: mux final video")
+        dispatcher._print("[MUX] FFmpeg in progress... (video + audio + subtitle)")
+        final_video = await video_builder.build_final_video(
+            video_path=video_output,
+            audio_path=tts_result.audio_path,
+            subtitle_path=tts_result.subtitle_path,
+            output_path=output_path,
         )
 
-    # 4-5. TTS + FFmpeg（可选）
-    if no_tts:
-        dispatcher._print(f"\n{_EMOJI['video']} 输出静音视频: {video_output}")
-        return video_output
+        dispatcher._print(f"\n{_EMOJI['check']} Video generation complete: {final_video}")
+        return final_video
+    except Exception as exc:
+        logger.debug("run_pipeline: === SDK QUERY LOOP EXCEPTION ===")
+        logger.debug("run_pipeline: exception type=%s", type(exc).__name__)
+        logger.debug("run_pipeline: exception message=%s", exc)
+        import traceback as _tb
 
-    # ── 阶段标记：TTS 语音合成 ──
-    dispatcher._print(f"  {_EMOJI['gear']} Phase 3/4: TTS 语音合成...")
-
-    # TTS 合成（优先使用 Claude 生成的解说词，fallback 到用户原始输入）
-    po = dispatcher.get_pipeline_output()
-    narration_text = po.narration if po and po.narration else user_text
-    dispatcher._print(f"\n{_EMOJI['tts']} TTS 合成中... (voice={voice_id}, model={model})")
-    tts_result = await tts_client.synthesize(
-        text=narration_text,
-        voice_id=voice_id,
-        model=model,
-        output_dir=str(Path(output_path).parent),
-    )
-    dispatcher._print(f"  TTS 完成: {tts_result.duration_ms}ms, {tts_result.word_count} chars")
-
-    # FFmpeg 合成
-    # ── 阶段标记：最终合成 ──
-    dispatcher._print(f"[MUX] Phase 4/4: FFmpeg 视频合成...")
-    dispatcher._print(f"[MUX] FFmpeg 合成中... (video + audio + subtitle)")
-    final_video = await video_builder.build_final_video(
-        video_path=video_output,
-        audio_path=tts_result.audio_path,
-        subtitle_path=tts_result.subtitle_path,
-        output_path=output_path,
-    )
-
-    dispatcher._print(f"\n{_EMOJI['check']} 视频生成完成: {final_video}")
-    return final_video
-
-
-# ── 入口点 ────────────────────────────────────────────────────
+        for _line in _tb.format_exception(type(exc), exc, exc.__traceback__):
+            for _ll in _line.rstrip().splitlines():
+                logger.debug("run_pipeline: TRACE %s", _ll)
+        raise
+    finally:
+        reset_hook_state(hook_state_token)
 
 
 async def main() -> None:
