@@ -83,6 +83,7 @@ class _MessageDispatcher:
         self._structured_output_candidate: PipelineOutput | None = None
         self._result_text_candidate: PipelineOutput | None = None
         self._pipeline_output_source: str | None = None
+        self._saw_completed_task_notification = False
         # ── 视频输出路径（从 TaskNotificationMessage.output_file 获取）──
         self.video_output: str | None = None
         # ── 向后兼容的旧属性 ──
@@ -143,6 +144,12 @@ class _MessageDispatcher:
             )
         except (ValueError, Exception) as e:
             logger.debug("get_pipeline_output: text markers failed: %s", e)
+            if not self._saw_completed_task_notification:
+                logger.debug(
+                    "get_pipeline_output: skipping filesystem fallback without "
+                    "completed task_notification"
+                )
+                return None
             discovered_video = self._discover_rendered_video_path()
             if not discovered_video:
                 return None
@@ -346,6 +353,8 @@ class _MessageDispatcher:
             "_handle_task_notification: output_file=%r, status=%s",
             msg.output_file, msg.status,
         )
+        if msg.status == "completed":
+            self._saw_completed_task_notification = True
         if msg.status == "completed" and msg.output_file:
             self.video_output = msg.output_file
             self.pipeline_output = PipelineOutput(
