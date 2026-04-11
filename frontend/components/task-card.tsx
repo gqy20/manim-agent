@@ -1,41 +1,15 @@
-"use client";
-
 import Link from "next/link";
 import { useRef, useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import type { Task } from "@/types";
-import { Clock, CheckCircle2, XCircle, Loader2, Film, ArrowUpRight } from "lucide-react";
-
-const STATUS_CONFIG: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
-  pending: {
-    color: "bg-yellow-500/15 text-yellow-400 border-yellow-500/20",
-    icon: <Clock className="h-3 w-3" />,
-    label: "等待中",
-  },
-  running: {
-    color: "bg-blue-500/15 text-blue-400 border-blue-500/20",
-    icon: <Loader2 className="h-3 w-3 animate-spin" />,
-    label: "生成中",
-  },
-  completed: {
-    color: "bg-green-500/15 text-green-400 border-green-500/20",
-    icon: <CheckCircle2 className="h-3 w-3" />,
-    label: "已完成",
-  },
-  failed: {
-    color: "bg-red-500/15 text-red-400 border-red-500/20",
-    icon: <XCircle className="h-3 w-3" />,
-    label: "失败",
-  },
-};
+import { Film, ArrowUpRight } from "lucide-react";
 
 interface TaskCardProps {
   task: Task;
 }
 
 export function TaskCard({ task }: TaskCardProps) {
-  const config = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.pending;
   const divRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [opacity, setOpacity] = useState(0);
@@ -87,10 +61,7 @@ export function TaskCard({ task }: TaskCardProps) {
                 {task.id}
               </span>
             </div>
-            <Badge variant="outline" className={`text-[10px] font-medium px-2 py-0.5 flex items-center gap-1 ${config.color}`}>
-              {config.icon}
-              {config.label}
-            </Badge>
+            <StatusBadge status={task.status} />
           </div>
 
           {/* Description */}

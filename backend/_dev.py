@@ -31,11 +31,12 @@ if __name__ == "__main__":
             os.path.join(_PROJECT_ROOT, "backend"),
             os.path.join(_PROJECT_ROOT, "src"),
         ],
+        # Use relative patterns — Windows pathlib.glob() rejects absolute paths.
         reload_excludes=[
-            os.path.join(_PROJECT_ROOT, "backend", "output"),
-            os.path.join(_PROJECT_ROOT, "backend", "data"),
-            os.path.join(_PROJECT_ROOT, ".venv"),
-            os.path.join(_PROJECT_ROOT, "frontend", ".next"),
-            os.path.join(_PROJECT_ROOT, "node_modules"),
+            "backend/output",
+            "backend/data",
+            ".venv",
+            "frontend/.next",
+            "node_modules",
         ],
     )

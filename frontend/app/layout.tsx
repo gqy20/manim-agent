@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import { History, Sparkles, Command } from "lucide-react";
 import { Logo } from "@/components/logo";
+import { ErrorBoundary } from "@/components/error-boundary";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -101,7 +102,7 @@ export default function RootLayout({
         </header>
 
         {/* Page content */}
-        {children}
+        <ErrorBoundary>{children}</ErrorBoundary>
 
         {/* Footer */}
         <Footer />

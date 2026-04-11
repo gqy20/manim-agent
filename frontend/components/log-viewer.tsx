@@ -318,19 +318,6 @@ function classifyLog(line: string): string {
   return "log-info";
 }
 
-function formatInputSummary(
-  summary: Record<string, unknown>,
-): string {
-  const parts: string[] = [];
-  for (const [k, v] of Object.entries(summary)) {
-    const vs = String(v);
-    parts.push(
-      vs.length > 50 ? `${k}=${vs.slice(0, 47)}...` : `${k}=${vs}`,
-    );
-  }
-  return parts.join(" ");
-}
-
 // ── 主组件 ────────────────────────────────────────────────
 
 export function LogViewer({ events, isRunning }: LogViewerProps) {
@@ -340,11 +327,24 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events]);
 
-  // 预计算阶段标记位置，避免重复渲染
-  const renderedPhases = useMemo(() => {
-    const phases = new Set<number>();
-    return phases;
+  // Pre-compute phase marker indices once per events change (O(n) instead of O(n²))
+  const phaseMarkers = useMemo(() => {
+    const markers: { index: number; marker: PhaseMarker }[] = [];
+    events.forEach((evt, i) => {
+      const phase = detectPhase(evt, i, events);
+      if (phase) markers.push({ index: i, marker: phase });
+    });
+    return markers;
   }, [events]);
+
+  const phaseIndexSet = useMemo(
+    () => new Set(phaseMarkers.map((m) => m.index)),
+    [phaseMarkers],
+  );
+  const phaseMap = useMemo(
+    () => new Map(phaseMarkers.map((m) => [m.index, m.marker])),
+    [phaseMarkers],
+  );
 
   return (
     <div className="relative rounded-xl overflow-hidden border border-white/10 bg-black/40 backdrop-blur-xl shadow-2xl transition-all duration-300 ring-1 ring-white/5">
@@ -387,15 +387,13 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
             </div>
           )}
           {events.map((evt, i) => {
-            // 检测并插入阶段标记
-            const phase = detectPhase(evt, i, events);
             const elements: React.ReactNode[] = [];
 
-            if (phase) {
-              elements.push(<PhaseDivider key={`phase-${i}`} marker={phase} />);
+            // O(1) lookup from pre-computed phase map
+            if (phaseIndexSet.has(i)) {
+              elements.push(<PhaseDivider key={`phase-${i}`} marker={phaseMap.get(i)!} />);
             }
 
-            // 事件本身
             elements.push(
               <EventRenderer key={`evt-${i}`} event={evt} index={i} />
             );

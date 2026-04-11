@@ -6,44 +6,19 @@ import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { LogViewer } from "@/components/log-viewer";
 import { VideoPlayer } from "@/components/video-player";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { getTask, getVideoUrl } from "@/lib/api";
 import { connectTaskEvents } from "@/lib/sse-client";
 import type { Task, SSEEvent, TaskStatus } from "@/types";
 import {
-  Clock,
-  CheckCircle2,
-  XCircle,
-  Loader2,
   ArrowLeft,
   Film,
+  Loader2,
   Terminal,
   Play,
+  XCircle,
 } from "lucide-react";
 import Link from "next/link";
-
-const STATUS_CONFIG: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
-  pending: {
-    color: "bg-yellow-500/15 text-yellow-400 border-yellow-500/20",
-    icon: <Clock className="h-3.5 w-3.5" />,
-    label: "等待中",
-  },
-  running: {
-    color: "bg-blue-500/15 text-blue-400 border-blue-500/20",
-    icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
-    label: "生成中",
-  },
-  completed: {
-    color: "bg-green-500/15 text-green-400 border-green-500/20",
-    icon: <CheckCircle2 className="h-3.5 w-3.5" />,
-    label: "已完成",
-  },
-  failed: {
-    color: "bg-red-500/15 text-red-400 border-red-500/20",
-    icon: <XCircle className="h-3.5 w-3.5" />,
-    label: "失败",
-  },
-};
 
 /* ── Skeleton for detail ─────────────────────────── */
 
@@ -172,7 +147,6 @@ export default function TaskDetailPage() {
 
   const isRunning = task.status === "running" || task.status === "pending";
   const showVideo = task.status === "completed" && task.video_path;
-  const config = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.pending;
 
   return (
     <main ref={containerRef} className="flex-1 w-full px-6 md:px-10 py-8 max-w-[1400px] mx-auto space-y-6">
@@ -198,10 +172,7 @@ export default function TaskDetailPage() {
             </div>
           </div>
         </div>
-        <Badge variant="outline" className={`gsap-header font-medium flex items-center gap-1.5 ${config.color} px-3 py-1`}>
-          {config.icon}
-          {config.label}
-        </Badge>
+        <StatusBadge status={task.status} size="md" className="gsap-header" />
       </div>
 
       {/* Error display */}
