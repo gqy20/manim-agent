@@ -6,6 +6,7 @@ import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { LogViewer } from "@/components/log-viewer";
 import { VideoPlayer } from "@/components/video-player";
+import { PipelineProgress } from "@/components/pipeline-progress";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getTask, getVideoUrl } from "@/lib/api";
 import { connectTaskEvents } from "@/lib/sse-client";
@@ -181,6 +182,9 @@ export default function TaskDetailPage() {
           <strong>错误：</strong>{task.error}
         </div>
       )}
+
+      {/* Pipeline Progress Bar */}
+      <PipelineProgress events={logs} taskStatus={task.status} />
 
       {/* Main content grid */}
       <div className="grid gap-6 lg:grid-cols-2">

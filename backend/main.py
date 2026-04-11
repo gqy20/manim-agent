@@ -9,7 +9,7 @@ from anyio import BrokenResourceError
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .routes import router, set_store
 from .task_store import TaskStore
@@ -20,8 +20,9 @@ _log_dir.mkdir(exist_ok=True)
 _log_file = _log_dir / f"manim-agent-{os.getpid()}.log"
 
 # 基础配置：同时输出到文件和控制台
+_log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=getattr(logging, _log_level, logging.INFO),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.FileHandler(_log_file, encoding="utf-8"),
@@ -36,7 +37,9 @@ def _is_benign_sse_disconnect(exc: BaseException) -> bool:
     if isinstance(exc, BrokenResourceError):
         return True
     if isinstance(exc, ExceptionGroup):
-        return all(_is_benign_sse_disconnect(child) for child in exc.exceptions)
+        return all(
+            _is_benign_sse_disconnect(child) for child in exc.exceptions
+        )
     return False
 
 
@@ -51,7 +54,12 @@ class _SSEDisconnectMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+    async def __call__(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+    ) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -60,7 +68,10 @@ class _SSEDisconnectMiddleware:
             await self.app(scope, receive, send)
         except BaseException as exc:
             if _is_benign_sse_disconnect(exc):
-                logger.debug("Suppressing benign SSE disconnect: %s", type(exc).__name__)
+                logger.debug(
+                    "Suppressing benign SSE disconnect: %s",
+                    type(exc).__name__,
+                )
                 return
             raise
 

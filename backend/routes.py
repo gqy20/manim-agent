@@ -82,6 +82,29 @@ def _safe_schedule(loop: asyncio.AbstractEventLoop, coro_factory) -> None:
         pass
 
 
+def _cleanup_output_dir(output_dir: Path) -> None:
+    """Remove non-essential files from a task's output directory.
+
+    Keeps ``final.mp4`` (if it exists) and log-like text files so the
+    frontend can still display diagnostic information.  Everything else
+    (partial renders, cache, media) is removed to prevent disk bloat.
+    """
+    _KEEP_EXTENSIONS = {".mp4", ".log", ".json", ".txt"}
+    try:
+        if not output_dir.is_dir():
+            return
+        for child in output_dir.iterdir():
+            if child.is_file() and child.suffix not in _KEEP_EXTENSIONS:
+                child.unlink()
+            elif child.is_dir():
+                # Remove subdirectories entirely (e.g. media/ cache)
+                import shutil
+
+                shutil.rmtree(child, ignore_errors=True)
+    except OSError:
+        logger.debug("Cleanup skipped for %s", output_dir)
+
+
 @router.post("", response_model=TaskResponse, status_code=201)
 async def create_task(req: TaskCreateRequest) -> TaskResponse:
     """Create a task & start the pipeline in background."""
@@ -198,6 +221,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 main_loop.call_soon_threadsafe(_sse_mgr.done, task_id)
             except RuntimeError:
                 pass  # loop closed during shutdown/test teardown
+            # Clean up partial outputs on failure to avoid disk bloat
+            _cleanup_output_dir(output_dir)
 
     async def _run_pipeline_inline() -> None:
         """Inline async pipeline — test mode only (no subprocess needed)."""
@@ -257,6 +282,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             )
         finally:
             _sse_mgr.done(task_id)
+            _cleanup_output_dir(output_dir)
 
     if _USE_PIPELINE_THREAD:
         # Production: dedicated thread with its own asyncio loop.
