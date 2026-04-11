@@ -123,24 +123,24 @@ this priority order:
 
 1. `TaskNotificationMessage.output_file`
 2. `ResultMessage.structured_output.video_output`
-3. parsed `ResultMessage.result`
-4. parsed assistant text markers
+3. compatibility fallback (legacy path): parsed `ResultMessage.result`
+4. compatibility fallback (legacy path): parsed assistant text markers
 5. filesystem fallback search under the task output directory
 
 Important:
 
-- Levels 1 to 4 are protocol-level signals.
-- Level 5 is only a recovery fallback.
-- A filesystem hit alone should not silently overwrite a stronger protocol
-  signal.
+- Levels 1 and 2 are protocol-level signals.
+- Levels 3 to 5 are compatibility/recovery fallbacks and must never silently
+  override stronger protocol signals.
+- A filesystem hit alone should not override a stronger protocol signal.
 
 ### Authoritative Narration / Metadata
 
 Metadata should be resolved in this priority order:
 
 1. `ResultMessage.structured_output`
-2. parsed `ResultMessage.result`
-3. parsed assistant text markers
+2. (optional compatibility) parsed `ResultMessage.result`
+3. (optional compatibility) parsed assistant text markers
 
 Filesystem artifacts should not be used to invent narration or scene metadata.
 
@@ -221,7 +221,7 @@ Use for:
 - tool lifecycle visualization
 - optional extraction of plain-text markers
 
-Do not use as the only success channel.
+Do not use as the only success channel in hot path.
 
 Notes:
 
@@ -465,7 +465,7 @@ Should stop owning:
 
 Before larger refactors, future changes should aim to satisfy this checklist:
 
-- `ResultMessage.result` is included in output resolution.
+- `ResultMessage.result` is included only as legacy compatibility fallback.
 - `structured_output` is treated as optional, not mandatory.
 - `TaskNotificationMessage.output_file` is treated as a first-class output
   signal.

@@ -90,7 +90,7 @@ A task should succeed if:
 
 - Claude produced a valid `output_file`, or
 - Claude produced a valid structured output, or
-- Claude produced a valid parseable final result text
+- (legacy compatibility path) Claude produced a valid parseable final result text
 
 The task should fail only when all supported protocol-level output channels are
 exhausted and final output still cannot be resolved.
@@ -111,7 +111,7 @@ Manual verification:
 
 ### Exit Criteria
 
-- false-negative failures caused by missing `structured_output` are eliminated
+- false-negative failures caused by missing `structured_output` in normal flow are eliminated
 - output resolution path is deterministic and logged
 
 ## Phase 2: Task-Local State Isolation
