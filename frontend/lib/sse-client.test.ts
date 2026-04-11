@@ -3,6 +3,7 @@ import type { SSEEvent } from "@/types";
 import { connectTaskEvents } from "./sse-client";
 
 type ErrorHandler = (error: Event) => void;
+type MessageHandler = (event: MessageEvent<string>) => void;
 
 class MockEventSource {
   static CONNECTING = 0;
@@ -19,6 +20,7 @@ class MockEventSource {
   url: string;
   readyState = MockEventSource.OPEN;
   onerror: ErrorHandler | null = null;
+  onmessage: MessageHandler | null = null;
   private handlers = new Map<string, Set<(event: MessageEvent<string>) => void>>();
   private closed = false;
 
@@ -60,6 +62,13 @@ class MockEventSource {
       return;
     }
     this.onerror(new Event("error"));
+  }
+
+  triggerMessage(data: string): void {
+    if (!this.onmessage) {
+      return;
+    }
+    this.onmessage(new MessageEvent("message", { data }));
   }
 }
 
@@ -149,5 +158,32 @@ describe("connectTaskEvents", () => {
     cleanup();
     rand.mockRestore();
   });
-});
 
+  it("unwraps backend-wrapped default message events", () => {
+    const events: SSEEvent[] = [];
+    const cleanup = connectTaskEvents("task-3", (evt) => events.push(evt));
+
+    const es = lastEventSource();
+    expect(es).toBeDefined();
+
+    es?.triggerMessage(
+      JSON.stringify({
+        event: "thinking",
+        data: JSON.stringify({
+          type: "thinking",
+          data: {
+            thinking: "Let me think...",
+            preview: "Let me think...",
+            signature: "",
+          },
+          timestamp: "2026-04-12T00:00:00.000Z",
+        }),
+      }),
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe("thinking");
+
+    cleanup();
+  });
+});

@@ -120,6 +120,19 @@ def _coerce_error(payload: dict[str, Any], base_resp: dict[str, Any]) -> str:
     return "Unknown failure"
 
 
+def _coerce_identifier(value: Any) -> str:
+    """Normalize task/file identifiers returned by MiniMax.
+
+    Official docs only guarantee an identifier is returned, not that it is
+    always a string. In practice this may be an int, so normalize eagerly.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
 def _build_payload(
     text: str,
     *,
@@ -211,14 +224,14 @@ async def _create_task(
 
     task_data = _extract_task_payload(data)
     return {
-        "task_id": task_data.get("task_id", ""),
-        "file_id": task_data.get("file_id", ""),
-        "file_id_subtitle": task_data.get("file_id_subtitle", ""),
-        "file_id_extra": task_data.get("file_id_extra", ""),
+        "task_id": _coerce_identifier(task_data.get("task_id")),
+        "file_id": _coerce_identifier(task_data.get("file_id")),
+        "file_id_subtitle": _coerce_identifier(task_data.get("file_id_subtitle")),
+        "file_id_extra": _coerce_identifier(task_data.get("file_id_extra")),
     }
 
 
-async def _poll_task(task_id: str) -> dict:
+async def _poll_task(task_id: Any) -> dict:
     """轮询任务状态直到完成或超时。
 
     Args:
@@ -231,7 +244,8 @@ async def _poll_task(task_id: str) -> dict:
         TimeoutError: 轮询超时。
         RuntimeError: 任务失败。
     """
-    if not task_id.strip():
+    task_id = _coerce_identifier(task_id)
+    if not task_id:
         raise RuntimeError("TTS polling failed: task_id is empty")
 
     api_key = _check_api_key()

@@ -392,3 +392,56 @@ class TestSynthesize:
         """空文本直接抛异常（在 payload 构建阶段）。"""
         with pytest.raises(ValueError):
             await tts_client.synthesize("")
+
+
+class TestIdentifierNormalization:
+    @pytest.mark.asyncio
+    async def test_create_task_normalizes_numeric_identifiers(self, mock_env):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "application/json"}
+        mock_resp.text = json.dumps({
+            "base_resp": {"status_code": 0},
+            "data": {
+                "task_id": 12345,
+                "file_id": 67890,
+                "file_id_subtitle": 67891,
+                "file_id_extra": 67892,
+            },
+        })
+        mock_resp.json.return_value = json.loads(mock_resp.text)
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("manim_agent.tts_client.httpx.AsyncClient", return_value=mock_client):
+            result = await tts_client._create_task("test text", {})
+
+        assert result["task_id"] == "12345"
+        assert result["file_id"] == "67890"
+        assert result["file_id_subtitle"] == "67891"
+        assert result["file_id_extra"] == "67892"
+
+    @pytest.mark.asyncio
+    async def test_poll_task_accepts_numeric_task_id(self, mock_env):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "application/json"}
+        mock_resp.text = json.dumps({
+            "base_resp": {"status_code": 0},
+            "data": {"task_status": "Success", "audio_length": 5000, "word_count": 100},
+        })
+        mock_resp.json.return_value = json.loads(mock_resp.text)
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("manim_agent.tts_client.httpx.AsyncClient", return_value=mock_client):
+            data = await tts_client._poll_task(12345)
+
+        assert data["task_status"] == "Success"
+        assert mock_client.get.call_args.kwargs["params"]["task_id"] == "12345"

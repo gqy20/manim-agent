@@ -27,6 +27,35 @@ interface ReconnectState {
   aborted: boolean;
 }
 
+function isSSEEventShape(value: unknown): value is SSEEvent {
+  return !!value && typeof value === "object" && "type" in value && "timestamp" in value;
+}
+
+function parseIncomingEvent(raw: string): SSEEvent | null {
+  const parsed = JSON.parse(raw) as unknown;
+
+  if (isSSEEventShape(parsed)) {
+    return parsed;
+  }
+
+  if (
+    parsed &&
+    typeof parsed === "object" &&
+    "event" in parsed &&
+    "data" in parsed
+  ) {
+    const wrapped = parsed as { event?: unknown; data?: unknown };
+    if (typeof wrapped.data === "string") {
+      const inner = JSON.parse(wrapped.data) as unknown;
+      if (isSSEEventShape(inner)) {
+        return inner;
+      }
+    }
+  }
+
+  return null;
+}
+
 export function connectTaskEvents(
   taskId: string,
   onEvent: (event: SSEEvent) => void,
@@ -68,7 +97,13 @@ export function connectTaskEvents(
       }
 
       try {
-        const parsed: SSEEvent = JSON.parse(e.data);
+        const parsed = parseIncomingEvent(e.data);
+        if (!parsed) {
+          logger.warn("sse-client", "Ignored unknown SSE payload shape", {
+            raw: e.data.slice(0, 120),
+          });
+          return;
+        }
         eventCount += 1;
         console.debug(`[SSE] received #${eventCount} task=${taskId} type=${parsed.type}`);
         onEvent(parsed);
@@ -85,6 +120,7 @@ export function connectTaskEvents(
     for (const evtType of ALL_EVENT_TYPES) {
       es.addEventListener(evtType, handleEvent);
     }
+    es.onmessage = handleEvent;
     registered = true;
 
     es.onerror = (e) => {
