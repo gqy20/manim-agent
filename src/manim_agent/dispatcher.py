@@ -82,6 +82,7 @@ class _MessageDispatcher:
         # ── PipelineOutput ──
         self.pipeline_output: PipelineOutput | None = None
         self._structured_output_candidate: PipelineOutput | None = None
+        self._result_output_candidate: PipelineOutput | None = None
         self._saw_completed_task_notification = False
         self.task_notification_status: str | None = None
         self.task_notification_summary: str | None = None
@@ -123,19 +124,25 @@ class _MessageDispatcher:
             logger.debug("dispatch: unhandled message type: %s, attrs=%s", msg_type, dir(message))
 
     def get_pipeline_output(self) -> PipelineOutput | None:
-        """返回验证后的 PipelineOutput（可能为 None）。
-
-        优先级：cached structured_output / task_notification > filesystem scan > None
-        """
+        """返回验证后的 PipelineOutput（可能为 None）。"""
         if self.pipeline_output is not None:
             logger.debug(
                 "get_pipeline_output: returning cached PipelineOutput, video_output=%r",
                 self.pipeline_output.video_output,
             )
             return self.pipeline_output
-        if not self._saw_completed_task_notification:
+        if self._result_output_candidate is not None:
+            self.pipeline_output = self._result_output_candidate
             logger.debug(
-                "get_pipeline_output: completed task notification not observed; "
+                "get_pipeline_output: using ResultMessage fallback, video_output=%r",
+                self.pipeline_output.video_output,
+            )
+            self._attach_captured_source_code("get_pipeline_output[result]")
+            self._sync_compat_attrs()
+            return self.pipeline_output
+        if not self._saw_completed_task_notification and not hasattr(self, "_result_message"):
+            logger.debug(
+                "get_pipeline_output: neither completed task notification nor ResultMessage observed; "
                 "text/structured fallback only",
             )
         # fallback：文件系统扫描已渲染的 mp4
@@ -230,21 +237,10 @@ class _MessageDispatcher:
         # ── 从 structured_output 构建 PipelineOutput（主路径）──
         if msg.structured_output is not None:
             try:
-                raw = msg.structured_output
-                logger.debug("_handle_result: raw type=%s", type(raw).__name__)
-                if isinstance(raw, str):
-                    raw = json.loads(raw)
-                    logger.debug("_handle_result: parsed JSON, type=%s", type(raw).__name__)
-                if not isinstance(raw, dict):
-                    raise ValueError(f"structured_output unexpected type: {type(raw).__name__}")
-                validated_output = PipelineOutput.model_validate(raw)
-                validated_output.video_output = normalize_path_string(
-                    validated_output.video_output
+                validated_output = self._build_pipeline_output_from_raw(
+                    msg.structured_output,
+                    source="structured_output",
                 )
-                if validated_output.scene_file:
-                    validated_output.scene_file = normalize_path_string(
-                        validated_output.scene_file
-                    )
                 self._structured_output_candidate = validated_output
                 logger.debug(
                     "_handle_result: PipelineOutput validated, video_output=%r",
@@ -271,6 +267,18 @@ class _MessageDispatcher:
                 logger.debug("_handle_result: validation failed: %s", e)
         else:
             logger.debug("_handle_result: no structured_output")
+        if msg.result:
+            try:
+                result_candidate = self._build_pipeline_output_from_result_text(msg.result)
+                if result_candidate is not None:
+                    self._result_output_candidate = result_candidate
+                    logger.debug(
+                        "_handle_result: ResultMessage.result produced fallback video_output=%r",
+                        result_candidate.video_output,
+                    )
+            except Exception as e:
+                logger.warning("result fallback parsing failed: %s", e)
+                logger.debug("_handle_result: result fallback validation failed: %s", e)
         self._log_result_summary()
 
     @property
@@ -403,12 +411,18 @@ class _MessageDispatcher:
         """Discover a rendered MP4 from SDK signals or task output artifacts."""
         if self.video_output:
             return normalize_path_string(self.video_output)
+        result_candidate = self._extract_video_path_from_result()
+        if result_candidate:
+            return result_candidate
         text_candidate = self._extract_video_path_from_text()
         if text_candidate:
             return text_candidate
-        if not self._saw_completed_task_notification:
+        if (
+            not self._saw_completed_task_notification
+            and not hasattr(self, "_result_message")
+        ):
             logger.debug(
-                "_discover_rendered_video_path: skip filesystem scan before completion signal"
+                "_discover_rendered_video_path: skip filesystem scan before completion signal/result"
             )
             return None
         if not self.output_cwd:
@@ -460,12 +474,77 @@ class _MessageDispatcher:
         )
         return best_str
 
+    def _build_pipeline_output_from_raw(
+        self,
+        raw: Any,
+        *,
+        source: str,
+    ) -> PipelineOutput:
+        logger.debug("_build_pipeline_output_from_raw[%s]: raw type=%s", source, type(raw).__name__)
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+            logger.debug(
+                "_build_pipeline_output_from_raw[%s]: parsed JSON, type=%s",
+                source,
+                type(raw).__name__,
+            )
+        if not isinstance(raw, dict):
+            raise ValueError(f"{source} unexpected type: {type(raw).__name__}")
+        validated_output = PipelineOutput.model_validate(raw)
+        validated_output.video_output = normalize_path_string(validated_output.video_output)
+        if validated_output.scene_file:
+            validated_output.scene_file = normalize_path_string(validated_output.scene_file)
+        return validated_output
+
+    def _build_pipeline_output_from_result_text(self, raw_result: str) -> PipelineOutput | None:
+        """Parse compatibility fallback output from ResultMessage.result."""
+        if not raw_result.strip():
+            return None
+
+        try:
+            candidate = self._build_pipeline_output_from_raw(raw_result, source="result")
+        except Exception:
+            candidate = None
+
+        if candidate is None:
+            video_path = self._extract_video_path(raw_result)
+            if not video_path:
+                return None
+            candidate = PipelineOutput(
+                video_output=video_path,
+                scene_file=self._infer_scene_file(),
+            )
+
+        self._attach_result_candidate_source_code(candidate)
+        return candidate
+
+    def _attach_result_candidate_source_code(self, candidate: PipelineOutput) -> None:
+        if not candidate.scene_file:
+            candidate.scene_file = self._infer_scene_file()
+        if candidate.scene_file:
+            candidate.scene_file = normalize_path_string(candidate.scene_file)
+        if (
+            candidate.scene_file
+            and candidate.scene_file in self._hook_state.captured_source_code
+        ):
+            candidate.source_code = self._hook_state.captured_source_code[candidate.scene_file]
+
     def _extract_video_path_from_text(self) -> str | None:
         """Parse MP4 paths from the assistant's final text summary."""
         text = "\n".join(self.collected_text)
         if not text.strip():
             return None
+        return self._extract_video_path(text)
 
+    def _extract_video_path_from_result(self) -> str | None:
+        result_text = getattr(getattr(self, "_result_message", None), "result", None)
+        if not result_text:
+            return None
+        return self._extract_video_path(result_text)
+
+    def _extract_video_path(self, text: str) -> str | None:
+        if not text.strip():
+            return None
         patterns = [
             r"([A-Za-z]:[\\/][^\s`\"']+?\.mp4)",
             r"(/[^`\s\"']+?\.mp4)",

@@ -31,6 +31,38 @@ class TestDispatcherPipelineOutput:
         d.dispatch(_make_result_message(num_turns=1))
         assert d.get_pipeline_output() is None
 
+    def test_get_pipeline_output_from_result_json_fallback(self):
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_result_message(
+            num_turns=1,
+            result=json.dumps({
+                "video_output": "/result/out.mp4",
+                "scene_file": "scene.py",
+                "narration": "hello",
+            }),
+        ))
+
+        po = d.get_pipeline_output()
+
+        assert po is not None
+        assert po.video_output == "/result/out.mp4"
+        assert po.scene_file.endswith("scene.py")
+        assert po.narration == "hello"
+
+    def test_get_pipeline_output_from_result_text_path_fallback(self):
+        video_path = Path("D:/tmp/rendered.mp4").resolve()
+        with patch("manim_agent.dispatcher.Path.exists", return_value=True):
+            d = _MessageDispatcher(verbose=False)
+            d.dispatch(_make_result_message(
+                num_turns=1,
+                result=f"Rendered successfully: {video_path}",
+            ))
+
+            po = d.get_pipeline_output()
+
+        assert po is not None
+        assert po.video_output == str(video_path)
+
     def test_get_video_output_from_task_notification_via_dispatch(self):
         """SDK task_notification 閫氳繃 dispatch 璁剧疆 pipeline_output 鍚庯紝get_video_output 杩斿洖姝ｇ‘鍊笺€?""
         d = _MessageDispatcher(verbose=False)
@@ -80,6 +112,20 @@ class TestDispatcherPipelineOutput:
 
 
 # 鈹€鈹€ TDD: get_video_output 鍗曡矾寰勫寲 + shadow field 娓呯悊 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+
+
+    def test_get_pipeline_output_scans_filesystem_after_result_message(self, tmp_path: Path):
+        video_path = tmp_path / "media" / "videos" / "scene" / "1080p60" / "demo.mp4"
+        video_path.parent.mkdir(parents=True, exist_ok=True)
+        video_path.write_bytes(b"fake-mp4")
+
+        d = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
+        d.dispatch(_make_result_message(num_turns=1, result="render finished"))
+
+        po = d.get_pipeline_output()
+
+        assert po is not None
+        assert po.video_output == str(video_path.resolve())
 
 
 class TestGetVideoOutputSinglePath:
