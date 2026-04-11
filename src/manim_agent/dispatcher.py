@@ -83,6 +83,9 @@ class _MessageDispatcher:
         self.pipeline_output: PipelineOutput | None = None
         self._structured_output_candidate: PipelineOutput | None = None
         self._saw_completed_task_notification = False
+        self.task_notification_status: str | None = None
+        self.task_notification_summary: str | None = None
+        self.task_notification_output_file: str | None = None
         # ── 视频输出路径（从 TaskNotificationMessage.output_file 获取）──
         self.video_output: str | None = None
         # ── 向后兼容的旧属性 ──
@@ -130,6 +133,11 @@ class _MessageDispatcher:
                 self.pipeline_output.video_output,
             )
             return self.pipeline_output
+        if not self._saw_completed_task_notification:
+            logger.debug(
+                "get_pipeline_output: completed task notification not observed; "
+                "text/structured fallback only",
+            )
         # fallback：文件系统扫描已渲染的 mp4
         discovered_video = self._discover_rendered_video_path()
         if not discovered_video:
@@ -318,11 +326,23 @@ class _MessageDispatcher:
         使用 SDK 原生的 TaskNotificationMessage.output_file 获取视频路径，
         无需解析文本标记。
         """
-        icon = _EMOJI["check"] if msg.status == "completed" else _EMOJI["cross"]
-        self._print(f"  {icon} Task {msg.status}: {msg.summary}")
+        if msg.status == "completed":
+            icon = _EMOJI["check"]
+            self._print(f"  {icon} Task completed: {msg.summary}")
+        elif msg.status == "stopped":
+            icon = _EMOJI["cross"]
+            self._print(f"  {icon} Task stopped: {msg.summary}")
+        else:
+            icon = _EMOJI["cross"]
+            self._print(f"  {icon} Task failed: {msg.summary}")
         logger.debug(
             "_handle_task_notification: output_file=%r, status=%s",
             msg.output_file, msg.status,
+        )
+        self.task_notification_status = msg.status
+        self.task_notification_summary = msg.summary
+        self.task_notification_output_file = (
+            normalize_path_string(msg.output_file) if msg.output_file else None
         )
         if msg.status == "completed":
             self._saw_completed_task_notification = True
@@ -386,26 +406,45 @@ class _MessageDispatcher:
         text_candidate = self._extract_video_path_from_text()
         if text_candidate:
             return text_candidate
+        if not self._saw_completed_task_notification:
+            logger.debug(
+                "_discover_rendered_video_path: skip filesystem scan before completion signal"
+            )
+            return None
         if not self.output_cwd:
             return None
 
-        candidate_dirs = [self.output_cwd, self.output_cwd / "media" / "videos"]
-        candidate_dirs.extend(
-            parent / "media" / "videos" for parent in self.output_cwd.parents[:3]
-        )
+        candidate_dirs = [
+            self.output_cwd,
+            self.output_cwd / "media",
+            self.output_cwd / "media" / "videos",
+        ]
         seen: set[Path] = set()
         candidates: list[Path] = []
         for base_dir in candidate_dirs:
             if not base_dir.exists():
+                logger.debug(
+                    "_discover_rendered_video_path: skip missing dir=%s",
+                    str(base_dir),
+                )
                 continue
+            dir_count = 0
             for path in base_dir.rglob("*.mp4"):
                 if "partial_movie_files" in path.parts:
+                    continue
+                if path.stat().st_size == 0:
                     continue
                 resolved = path.resolve()
                 if resolved in seen:
                     continue
                 seen.add(resolved)
                 candidates.append(resolved)
+                dir_count += 1
+            logger.debug(
+                "_discover_rendered_video_path: dir=%s matched=%d",
+                str(base_dir),
+                dir_count,
+            )
 
         if not candidates:
             logger.debug(

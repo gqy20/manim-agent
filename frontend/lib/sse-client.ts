@@ -35,6 +35,8 @@ export function connectTaskEvents(
 ): () => void {
   const cfg = { ...DEFAULT_RECONNECT, ...options };
   const state: ReconnectState = { attempt: 0, timerId: null, aborted: false };
+  const eventsUrl = `${API_BASE}/api/tasks/${taskId}/events`;
+  console.debug(`[SSE] connectTaskEvents called taskId=${taskId} url=${eventsUrl}`);
 
   let es: EventSource | null = null;
   let registered = false;
@@ -53,8 +55,10 @@ export function connectTaskEvents(
   function openConnection() {
     if (state.aborted) return;
 
-    es = new EventSource(`${API_BASE}/api/tasks/${taskId}/events`);
+    es = new EventSource(eventsUrl);
+    console.debug(`[SSE] opening ${eventsUrl} attempt=${state.attempt}`);
     registered = false;
+    let eventCount = 0;
 
     const handleEvent = (e: MessageEvent<string>) => {
       state.attempt = 0;
@@ -64,6 +68,8 @@ export function connectTaskEvents(
 
       try {
         const parsed: SSEEvent = JSON.parse(e.data);
+        eventCount += 1;
+        console.debug(`[SSE] received #${eventCount} task=${taskId} type=${parsed.type}`);
         onEvent(parsed);
 
         if (isTerminalStatus(parsed)) {
@@ -81,6 +87,7 @@ export function connectTaskEvents(
     registered = true;
 
     es.onerror = (e) => {
+      console.warn("[SSE] onerror", { taskId, readyState: es?.readyState });
       if ((!es || es.readyState === EventSource.CLOSED) && state.attempt === 0) {
         return;
       }

@@ -230,8 +230,18 @@ def _cleanup_output_dir(output_dir: Path, *, keep_mp4: bool = True) -> None:
 @router.post("", response_model=TaskResponse, status_code=201)
 async def create_task(req: TaskCreateRequest) -> TaskResponse:
     """Create a task & start the pipeline in background."""
+    logger.info(
+        "POST /api/tasks received: text_len=%d voice=%s model=%s quality=%s preset=%s no_tts=%s",
+        len(req.user_text),
+        req.voice_id,
+        req.model,
+        req.quality,
+        req.preset,
+        req.no_tts,
+    )
     task = await _store.create(req)
     task_id = task["id"]
+    logger.info("Task created: task_id=%s", task_id)
 
     output_dir = Path("backend/output") / task_id
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -246,6 +256,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
     main_loop = asyncio.get_event_loop()
 
     def log_callback(line: str) -> None:
+        logger.debug("task=%s log_callback line=%r", task_id, line)
         _safe_schedule(
             main_loop, lambda ln=line: _store.append_log(task_id, ln),
         )
@@ -261,12 +272,17 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
     def event_callback(event: Any) -> None:
         """将 Dispatcher 结构化事件推送到 SSE 队列。"""
         try:
+            logger.debug("task=%s event_callback type=%s", task_id, type(event).__name__)
             main_loop.call_soon_threadsafe(_sse_mgr.push, task_id, event)
         except RuntimeError:
+            logger.debug(
+                "task=%s event_callback failed to schedule to loop", task_id
+            )
             pass  # loop closed during shutdown/test teardown
 
     def _run_pipeline_thread() -> None:
         """Execute pipeline in a separate thread with its own event loop."""
+        logger.info("Task %s pipeline thread started", task_id)
         import asyncio as _asyncio
 
         log_callback("[SYS] Connecting to Claude Agent SDK...")
@@ -283,6 +299,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         )
 
         try:
+            logger.debug("Task %s calling pipeline_body", task_id)
             _video_url, po_data = _asyncio.run(
                 _pipeline_body(
                     req=req,
@@ -300,6 +317,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     r2_client=_r2_client,
                 )
             )
+            logger.info("Task %s pipeline body returned", task_id)
             _safe_schedule(
                 main_loop,
                 lambda: _store.update_status(
@@ -332,6 +350,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 ),
             )
         finally:
+            logger.debug("Task %s pipeline thread finalizing", task_id)
             try:
                 main_loop.call_soon_threadsafe(_sse_mgr.done, task_id)
             except RuntimeError:
@@ -341,6 +360,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
 
     async def _run_pipeline_inline() -> None:
         """Inline async pipeline — test mode only."""
+        logger.info("Task %s pipeline inline started", task_id)
         msg = "[SYS] Connecting to Claude Agent SDK..."
         _sse_mgr.push(task_id, msg)
         await _store.append_log(task_id, msg)
@@ -354,6 +374,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         )
 
         try:
+            logger.debug("Task %s calling pipeline_body inline", task_id)
             _video_url, po_data = await _pipeline_body(
                 req=req,
                 task_id=task_id,
@@ -369,6 +390,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 event_callback=event_callback,
                 r2_client=_r2_client,
             )
+            logger.info("Task %s inline pipeline completed video=%s", task_id, _video_url)
             await _store.update_status(
                 task_id,
                 TaskStatus.COMPLETED,
@@ -395,6 +417,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 ),
             )
         finally:
+            logger.debug("Task %s pipeline inline finalizing", task_id)
             _sse_mgr.done(task_id)
             _cleanup_output_dir(output_dir, keep_mp4=(_r2_client is None))
             _enforce_local_video_retention()
@@ -435,8 +458,10 @@ async def get_task(task_id: str) -> TaskResponse:
 @router.get("/{task_id}/events", response_class=EventSourceResponse)
 async def task_events(task_id: str):
     """SSE endpoint: stream real-time logs for a task with deduplicated replay."""
+    logger.debug("SSE events requested for task_id=%r", task_id)
     task = await _store.get(task_id)
     if not task:
+        logger.warning("SSE events request for missing task_id=%r", task_id)
         raise HTTPException(status_code=404, detail="Task not found")
 
     now = datetime.now(UTC).isoformat()
@@ -471,6 +496,13 @@ async def task_events(task_id: str):
             yield _make_sse_event("log", {"type": "log", "data": raw_text, "timestamp": now})
 
     status = task["status"]
+    logger.debug(
+        "SSE task=%s initial status=%s history_logs=%d buffered=%d",
+        task_id,
+        status,
+        len(task.get("logs", [])),
+        len(_sse_mgr.get_buffer(task_id)),
+    )
     if status in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value):
         payload = _terminal_status_payload(task)
         payload_key = json.dumps(payload, ensure_ascii=False, sort_keys=True)
@@ -485,11 +517,13 @@ async def task_events(task_id: str):
             )
         return
 
+    logger.debug("SSE task=%s waiting for queue subscription", task_id)
     queue = _sse_mgr.subscribe(task_id, replay=False)
     try:
         while True:
             item = await queue.get()
             if item is None:
+                logger.debug("SSE task=%s queue received done sentinel", task_id)
                 break
 
             event_ts = datetime.now(UTC).isoformat()
@@ -532,6 +566,7 @@ async def task_events(task_id: str):
                     },
                 )
     finally:
+        logger.debug("SSE task=%s unsubscribe queue", task_id)
         _sse_mgr.unsubscribe(task_id, queue)
 
 

@@ -106,6 +106,11 @@ export function TaskForm() {
           no_tts: noTts,
         })
           .then((task) => {
+            if (!task?.id) {
+              console.error("[TaskForm] createTask returned empty task id", task);
+              throw new Error("创建任务失败：服务返回空任务ID");
+            }
+            console.debug("[TaskForm] createTask success", task.id);
             router.push(`/tasks/${task.id}`);
           })
           .catch((err) => {

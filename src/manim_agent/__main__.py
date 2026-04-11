@@ -410,29 +410,67 @@ async def run_pipeline(
             _dispatcher_ref.append(dispatcher)
 
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2/4: resolve render output")
-        _emit_status(
-            event_callback,
-            task_status="running",
-            phase="render",
-            message="Resolving render output",
-        )
         logger.debug(
-            "run_pipeline: dispatcher.video_output before extraction = %r",
+            "run_pipeline: phase2: dispatcher.video_output before extraction = %r",
             dispatcher.video_output,
         )
         logger.debug(
-            "run_pipeline: hook captured source code keys = %s",
+            "run_pipeline: phase2: hook captured source code keys = %s",
             list(hook_state.captured_source_code.keys()),
         )
         po = dispatcher.get_pipeline_output()
         logger.debug("run_pipeline: PipelineOutput after get_pipeline_output: %r", po)
         video_output = po.video_output if po else None
+        render_status_message = (
+            "Resolving render output (pipeline_result -> structured output -> task_notification -> "
+            "filesystem scan)"
+        )
+        if dispatcher.task_notification_status in {"failed", "stopped"}:
+            note = (
+                f"Task ended with status={dispatcher.task_notification_status} "
+                f"before/while resolving output"
+            )
+            if dispatcher.task_notification_summary:
+                note = f"{note}: {dispatcher.task_notification_summary}"
+            render_status_message = note
+        elif video_output:
+            render_status_message = (
+                "Render output resolved. Proceeding according to pipeline mode."
+            )
+        _emit_status(
+            event_callback,
+            task_status="running",
+            phase="render",
+            message=render_status_message,
+        )
         logger.debug("run_pipeline: video_output = %r", video_output)
 
         if not video_output:
             dispatcher._print("")
             dispatcher._print(f"{_EMOJI['cross']} Claude did not produce a valid pipeline output.")
             dispatcher._print("  The agent may have failed to render the scene.")
+            if dispatcher.task_notification_status:
+                dispatcher._print(
+                    f"  Task notification status: {dispatcher.task_notification_status}"
+                )
+            if dispatcher.task_notification_summary:
+                dispatcher._print(f"  Notification summary: {dispatcher.task_notification_summary}")
+            if dispatcher.task_notification_output_file:
+                dispatcher._print(
+                    f"  Notification output_file: {dispatcher.task_notification_output_file}"
+                )
+            if dispatcher.result_summary:
+                s = dispatcher.result_summary
+                if s.get("is_error"):
+                    dispatcher._print(f"  SDK result flagged error: stop_reason={s.get('stop_reason')}")
+            if dispatcher.task_notification_status == "stopped":
+                dispatcher._print(
+                    "  Note: task status is 'stopped', so render was interrupted."
+                )
+            elif dispatcher.task_notification_status == "failed":
+                dispatcher._print(
+                    "  Note: task status is 'failed', so render likely did not finish."
+                )
             if dispatcher.result_summary:
                 s = dispatcher.result_summary
                 dispatcher._print(f"  Turns: {s.get('turns', '?')} | Error: {s.get('is_error', '?')}")
@@ -445,13 +483,23 @@ async def run_pipeline(
                 dispatcher._print("  --- Output end ---")
             else:
                 dispatcher._print("  (Agent produced no text output)")
+            failure_phase = dispatcher.task_notification_status or "unknown"
             raise RuntimeError(
                 "Claude did not produce a valid pipeline output. "
+                f"Phase 2/4 outcome status={failure_phase}. "
                 "The agent may have failed to render the scene."
             )
 
         if no_tts:
             dispatcher._print(f"\n{_EMOJI['video']} Output silent video: {video_output}")
+            dispatcher._print("  [SKIP] Phase 3/4 skipped: TTS synthesis disabled by no_tts option.")
+            dispatcher._print("  [SKIP] Phase 4/4 skipped: Video muxing requires TTS output and is disabled.")
+            _emit_status(
+                event_callback,
+                task_status="running",
+                phase="render",
+                message="Skipping TTS and mux because no_tts=true. Returning silent render output.",
+            )
             return video_output
 
         dispatcher._print(f"  {_EMOJI['gear']} Phase 3/4: synthesize TTS")
