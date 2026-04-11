@@ -309,16 +309,66 @@ class TestSSEManager:
         from backend.sse_manager import SSESubscriptionManager
 
         mgr = SSESubscriptionManager()
-        mgr.subscribe("t1")
-        assert "t1" in mgr._queues
-        mgr.unsubscribe("t1")
-        assert "t1" not in mgr._queues
+        q = mgr.subscribe("t1")
+        assert "t1" in mgr._subscribers
+        mgr.unsubscribe("t1", q)
+        assert len(mgr._subscribers.get("t1", [])) == 0
 
     def test_push_to_nonexistent_is_noop(self):
         from backend.sse_manager import SSESubscriptionManager
 
         mgr = SSESubscriptionManager()
         mgr.push("nonexistent", "should not crash")  # no error
+
+    def test_buffer_replay_on_subscribe(self):
+        """v2: push() 无订阅者时缓冲，subscribe() 时自动回放。"""
+        from backend.sse_manager import SSESubscriptionManager
+
+        mgr = SSESubscriptionManager()
+        import json
+
+        # 推送时无订阅者 → 进入缓冲区
+        mgr.push("t1", "buffered-1")
+        mgr.push("t1", "buffered-2")
+
+        # 订阅时回放缓冲事件
+        q = mgr.subscribe("t1")
+        assert json.loads(q.get_nowait())["data"] == "buffered-1"
+        assert json.loads(q.get_nowait())["data"] == "buffered-2"
+
+    def test_multiple_subscribers(self):
+        """v2: 多个订阅者各自收到独立副本。"""
+        from backend.sse_manager import SSESubscriptionManager
+
+        mgr = SSESubscriptionManager()
+        import json
+
+        q1 = mgr.subscribe("t1")
+        mgr.push("t1", "event-a")
+
+        q2 = mgr.subscribe("t1")  # q2 应收到回放（含 event-a）
+        mgr.push("t1", "event-b")
+
+        # q1 收到 event-a + event-b
+        assert json.loads(q1.get_nowait())["data"] == "event-a"
+        assert json.loads(q1.get_nowait())["data"] == "event-b"
+
+        # q2 收到回放(event-a) + event-b
+        assert json.loads(q2.get_nowait())["data"] == "event-a"
+        assert json.loads(q2.get_nowait())["data"] == "event-b"
+
+    def test_cleanup(self):
+        """cleanup() 清除所有状态。"""
+        from backend.sse_manager import SSESubscriptionManager
+
+        mgr = SSESubscriptionManager()
+        mgr.subscribe("t1")
+        mgr.push("t1", "x")
+        assert mgr.get_buffer("t1")
+
+        mgr.cleanup("t1")
+        assert mgr.get_buffer("t1") == []
+        assert "t1" not in mgr._subscribers
 
 
 # ── Phase 6: PipelineOutput 数据传播 ──────────────────────────

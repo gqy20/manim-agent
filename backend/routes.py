@@ -92,10 +92,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = str(output_dir / "final.mp4")
 
-    # Subscribe SSE queue for this task
-    _sse_mgr.subscribe(task_id)
-
-    # Capture the running event loop *before* spawning the thread.
+    # 注意：不再需要提前 subscribe() — SSESubscriptionManager v2 自动缓冲事件，
+    # 前端连接时通过 subscribe() 回放所有历史事件。
     # Pipeline executes in a dedicated thread with its own asyncio loop so
     # that SDK subprocess creation (create_subprocess_exec) works on
     # Windows / Python 3.13 where ProactorEventLoop forbids subprocess
@@ -295,96 +293,118 @@ async def get_task(task_id: str) -> TaskResponse:
 
 @router.get("/{task_id}/events", response_class=EventSourceResponse)
 async def task_events(task_id: str):
-    """SSE endpoint: stream real-time logs for a running/completed task."""
+    """SSE endpoint: stream real-time logs for a running/completed task.
+
+    数据流：
+    1. 回放 text logs（来自 TaskStore，纯文本日志）
+    2. 回放 structured events buffer（来自 SSESubscriptionManager，
+       包含 thinking / tool_start / tool_result / progress 等结构化事件）
+    3. 终态任务（completed/failed）发送 status 后结束
+    4. 运行中任务订阅 live queue 接收实时事件
+    """
     task = await _store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Replay existing logs first (supports reconnect)
     _now = datetime.now(UTC).isoformat()
-    for line in task.get("logs", []):
-        yield {
-            "event": "log",
-            "data": json.dumps(
-                {"type": "log", "data": line, "timestamp": _now},
-                ensure_ascii=False,
-            ),
-        }
 
+    # ── Phase 1: 回放文本日志（TaskStore 持久化） ────────────
+    for line in task.get("logs", []):
+        yield _make_sse_event("log", {"type": "log", "data": line, "timestamp": _now})
+
+    # ── Phase 2: 回放结构化事件缓冲区 ───────────────────────
+    # SSEManager v2 缓冲了所有 push() 的事件，subscribe() 时自动回放
+    buffered = _sse_mgr.get_buffer(task_id)
+    already_seen: set[int] = set()  # 避免与 text logs 重复（log 类型事件）
+    for raw_item in buffered:
+        try:
+            parsed = json.loads(raw_item)
+            event_name = parsed.get("type", parsed.get("event_type", "log"))
+            # 跳过已在 Phase 1 回放过的纯 log 事件（通过 data 内容去重）
+            if event_name == "log":
+                data_val = parsed.get("data", "")
+                data_hash = hash(str(data_val))
+                if data_hash in already_seen:
+                    continue
+                already_seen.add(data_hash)
+
+            yield _parse_and_yield(parsed, event_name, _now)
+        except (json.JSONDecodeError, TypeError):
+            # 非法 JSON 走兜底
+            yield _make_sse_event("log", {"type": "log", "data": raw_item, "timestamp": _now})
+
+    # ── Phase 3: 终态任务直接返回 ───────────────────────────
     status = task["status"]
     if status in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value):
-        yield {
-            "event": "status",
-            "data": json.dumps(
-                {"type": "status", "data": status, "timestamp": _now},
-                ensure_ascii=False,
-            ),
-        }
+        yield _make_sse_event("status", {"type": "status", "data": status, "timestamp": _now})
         return
 
-    # Live streaming from queue
+    # ── Phase 4: 实时流式推送 ───────────────────────────────
     queue = _sse_mgr.subscribe(task_id)
     try:
         while True:
             item = await queue.get()
-            if item is None:  # sentinel
+            if item is None:  # sentinel — pipeline 结束
                 break
             now = datetime.now(UTC).isoformat()
 
-            # 队列中的 item 已由 SSESubscriptionManager.push() 序列化为 JSON。
-            # 解析后重新包装为 {type, data, timestamp} 格式，确保前端
-            # JSON.parse(e.data) 能得到完整的 SSEEvent 对象。
             if isinstance(item, str) and item.strip().startswith("{"):
                 try:
                     parsed = json.loads(item)
-                    event_name = parsed.get(
-                        "event_type", parsed.get("type", "log"),
-                    )
-                    yield {
-                        "event": event_name,
-                        "data": json.dumps(
-                            {
-                                "type": event_name,
-                                "data": parsed.get("data", item),
-                                "timestamp": now,
-                            },
-                            ensure_ascii=False,
-                        ),
-                    }
+                    event_name = parsed.get("type", parsed.get("event_type", "log"))
+                    yield _parse_and_yield(parsed, event_name, now)
                     continue
                 except json.JSONDecodeError:
-                    pass  # 不是合法 JSON，走兜底
+                    pass
 
-            # 兜底：非 JSON 数据包装为 log 类型
-            yield {
-                "event": "log",
-                "data": json.dumps(
-                    {"type": "log", "data": item, "timestamp": now},
-                    ensure_ascii=False,
-                ),
-            }
+            # 兜底：非 JSON 数据
+            yield _make_sse_event("log", {"type": "log", "data": item, "timestamp": now})
 
-        # Send final status after sentinel
+        # Pipeline 结束后查询最终状态
         try:
             refreshed = await _store.get(task_id)
             if refreshed:
                 _final_ts = datetime.now(UTC).isoformat()
-                yield {
-                    "event": "status",
-                    "data": json.dumps(
-                        {
-                            "type": "status",
-                            "data": refreshed["status"],
-                            "timestamp": _final_ts,
-                        },
-                        ensure_ascii=False,
-                    ),
-                }
+                yield _make_sse_event(
+                    "status",
+                    {"type": "status", "data": refreshed["status"], "timestamp": _final_ts},
+                )
         except Exception:
-            # Task may have been cleaned up; ignore and let SSE stream end
             pass
     finally:
-        _sse_mgr.unsubscribe(task_id)
+        _sse_mgr.unsubscribe(task_id, queue)
+
+
+# ── SSE 事件构建辅助函数 ────────────────────────────────────
+
+
+def _make_sse_event(event_name: str, payload: dict) -> dict:
+    """构建一个 SSE yield 字典。"""
+    return {
+        "event": event_name,
+        "data": json.dumps(payload, ensure_ascii=False),
+    }
+
+
+def _parse_and_yield(
+    parsed: dict,
+    event_name: str,
+    ts: str,
+) -> dict:
+    """解析已序列化的 SSEEvent 并构造正确的 SSE yield 格式。
+
+    从队列/缓冲区取出的数据格式为：
+      {"type": "tool_start", "data": {...}, "timestamp": "..."}
+    需要透传给前端，保持 {type, data, timestamp} 结构。
+    """
+    inner_data = parsed.get("data", parsed)
+    return {
+        "event": event_name,
+        "data": json.dumps(
+            {"type": event_name, "data": inner_data, "timestamp": ts},
+            ensure_ascii=False,
+        ),
+    }
 
 
 @router.get("/{task_id}/video")

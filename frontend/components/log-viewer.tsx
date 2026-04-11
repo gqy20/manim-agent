@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type {
   SSEEvent,
@@ -34,6 +34,141 @@ function ToolIcon({ name }: { name: string }) {
   return <span>{iconMap[name] || "\u25b6"}</span>;
 }
 
+// ── 统计栏 ────────────────────────────────────────────────
+
+function StatsBar({ events }: { events: SSEEvent[] }) {
+  const stats = useMemo(() => {
+    let logs = 0, thinking = 0, toolStarts = 0, toolResults = 0,
+        progressEvents = 0, errors = 0;
+    let lastProgress: ProgressPayload | null = null;
+
+    for (const evt of events) {
+      switch (evt.type) {
+        case "log": logs++; break;
+        case "thinking": thinking++; break;
+        case "tool_start": toolStarts++; break;
+        case "tool_result": toolResults++; break;
+        case "progress":
+          progressEvents++;
+          if (typeof evt.data === "object" && evt.data !== null) {
+            lastProgress = evt.data as ProgressPayload;
+          }
+          break;
+        case "status": break;
+        default: break;
+      }
+      // 检测错误日志
+      if (evt.type === "log" && typeof evt.data === "string") {
+        const d = evt.data.toLowerCase();
+        if (d.includes("[err]") || d.includes("[trace]")) errors++;
+      }
+    }
+
+    return { logs, thinking, toolStarts, toolResults, progressEvents, errors, lastProgress };
+  }, [events]);
+
+  const p = stats.lastProgress;
+  return (
+    <div className="flex items-center gap-3 px-3 py-1.5 text-[10px] font-mono border-b border-border/20 bg-surface/40 text-muted-foreground/60 flex-wrap">
+      <span title="文本日志">
+        \ud83d\udcdd {stats.logs}
+      </span>
+      {stats.thinking > 0 && (
+        <span title="思考块">
+          \ud83e\udde0 {stats.thinking}
+        </span>
+      )}
+      {stats.toolStarts > 0 && (
+        <span title="工具调用">
+          \U0001f527 {stats.toolStarts}/{stats.toolResults}
+        </span>
+      )}
+      {p && (
+        <>
+          <span title="当前轮次">
+            \ud83d\udd02 Turn {p.turn}
+          </span>
+          <span title="Token 消耗">
+            \ud83d\udcca {p.total_tokens.toLocaleString()}
+          </span>
+          <span title="已用时间">
+            \u23f1 {(p.elapsed_ms / 1000).toFixed(1)}s
+          </span>
+        </>
+      )}
+      {stats.errors > 0 && (
+        <span className="text-red-400/70 ml-auto" title="错误数量">
+          \u274c {stats.errors}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── 阶段标记 ──────────────────────────────────────────────
+
+interface PhaseMarker {
+  id: string;
+  label: string;
+  icon: string;
+  className: string;
+}
+
+/** 从事件内容中检测 pipeline 阶段。 */
+function detectPhase(evt: SSEEvent, index: number, allEvents: SSEEvent[]): PhaseMarker | null {
+  if (evt.type !== "log" || typeof evt.data !== "string") return null;
+  const d = evt.data;
+
+  // 匹配已知阶段模式
+  if (d.includes("[PROGRESS]") || d.includes("Phase 1")) {
+    return { id: `phase-${index}`, label: "初始化", icon: "\U0001f504", className: "phase-init" };
+  }
+  if (d.includes("Phase 2") || d.toLowerCase().includes("scene") && d.toLowerCase().includes("generat")) {
+    return { id: `phase-${index}`, label: "场景生成", icon: "\U0001f3a8", className: "phase-scene" };
+  }
+  if (d.includes("Phase 3") || d.toLowerCase().includes("render")) {
+    return { id: `phase-${index}`, label: "视频渲染", icon: "\U0001f39e", className: "phase-render" };
+  }
+  if (d.includes("Phase 4") || d.includes("TTS") || d.toLowerCase().includes("narration") || d.toLowerCase().includes("voice")) {
+    return { id: `phase-${index}`, label: "语音合成", icon: "\U0001f3a4", className: "phase-tts" };
+  }
+  if (d.includes("[SUMMARY]") || d.includes("Session Summary")) {
+    return { id: `phase-${index}`, label: "完成摘要", icon: "\U0001f4cb", className: "phase-summary" };
+  }
+
+  // 检测工具调用密集区域 → 标记为执行阶段
+  if (isToolStart(evt)) {
+    // 检查前面几个事件是否也是 tool_start（连续工具调用）
+    const recentTools = allEvents.slice(Math.max(0, index - 3), index)
+      .filter(e => isToolStart(e));
+    if (recentTools.length === 0 || index < 3) {
+      // 第一个 tool_start 或间隔后的第一个
+      return { id: `phase-${index}`, label: "工具执行", icon: "\U0001f527", className: "phase-tools" };
+    }
+  }
+
+  return null;
+}
+
+function PhaseDivider({ marker }: { marker: PhaseMarker }) {
+  const colorMap: Record<string, string> = {
+    "phase-init": "border-cyan-500/30 text-cyan-400 bg-cyan-500/[0.04]",
+    "phase-scene": "border-purple-500/30 text-purple-400 bg-purple-500/[0.04]",
+    "phase-render": "border-green-500/30 text-green-400 bg-green-500/[0.04]",
+    "phase-tts": "border-orange-500/30 text-orange-400 bg-orange-500/[0.04]",
+    "phase-summary": "border-blue-500/30 text-blue-400 bg-blue-500/[0.04]",
+    "phase-tools": "border-blue-500/30 text-blue-400 bg-blue-500/[0.04]",
+  };
+  const cls = colorMap[marker.className] || colorMap["phase-tools"];
+
+  return (
+    <div key={marker.id} className={`flex items-center gap-2 py-1 px-3 my-2 rounded-md border ${cls}`}>
+      <span>{marker.icon}</span>
+      <span className="text-[11px] font-medium">{marker.label}</span>
+    </div>
+  );
+}
+
 // ── 子组件：各类事件渲染器 ────────────────────────────────
 
 function LogLine({ text }: { text: string }) {
@@ -45,18 +180,32 @@ function LogLine({ text }: { text: string }) {
 
 function ToolStartView({ payload }: { payload: ToolStartPayload }) {
   return (
-    <div className="flex items-start gap-2 py-1 px-2 rounded-md bg-blue-500/[0.04] border border-blue-500/10 my-0.5">
+    <div className="flex items-start gap-2 py-1.5 px-2 rounded-md bg-blue-500/[0.05] border border-blue-500/10 my-0.5">
       <span className="text-blue-400 shrink-0 mt-0.5">
         <ToolIcon name={payload.name} />
       </span>
       <div className="min-w-0 flex-1">
-        <span className="text-blue-300 font-medium text-[11px]">
-          {payload.name}
-        </span>
-        {Object.keys(payload.input_summary).length > 0 && (
-          <span className="text-blue-200/60 text-[11px] ml-2 truncate block">
-            {formatInputSummary(payload.input_summary)}
+        <div className="flex items-center gap-2">
+          <span className="text-blue-300 font-medium text-[11px]">
+            {payload.name}
           </span>
+          <span className="text-blue-500/40 text-[10px] font-mono">
+            {payload.tool_use_id.slice(-8)}
+          </span>
+        </div>
+        {Object.keys(payload.input_summary).length > 0 && (
+          <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+            {Object.entries(payload.input_summary).slice(0, 4).map(([k, v]) => (
+              <span key={k} className="text-blue-200/50 text-[10px] font-mono truncate max-w-[180px]">
+                {k}={typeof v === "string" ? v.slice(0, 40) + (v.length > 40 ? "..." : "") : JSON.stringify(v).slice(0, 30)}
+              </span>
+            ))}
+            {Object.keys(payload.input_summary).length > 4 && (
+              <span className="text-blue-300/40 text-[10px]">
+                +{Object.keys(payload.input_summary).length - 4} more
+              </span>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -78,7 +227,7 @@ function ToolResultView({ payload }: { payload: ToolResultPayload }) {
     >
       <span className={textColor}>{icon}</span>
       {payload.content && (
-        <span className={`${textColor}/70 text-[11px] truncate`}>
+        <span className={`${textColor}/70 text-[11px] truncate max-w-[280px]`}>
           {payload.content.length > 120
             ? payload.content.slice(0, 120) + "..."
             : payload.content}
@@ -98,7 +247,7 @@ function ThinkingView({ payload }: { payload: ThinkingPayload }) {
   const preview = payload.preview ?? payload.thinking.slice(0, 97) + "...";
 
   return (
-    <div className="my-0.5 border-l-2 border-purple-500/30 pl-3 py-1">
+    <div className="my-0.5 border-l-2 border-purple-500/25 pl-3 py-1">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
@@ -108,7 +257,12 @@ function ThinkingView({ payload }: { payload: ThinkingPayload }) {
           style={{ transform: expanded ? "rotate(90deg)" : "none" }}
         >&#9654;</span>
         <span>\U0001f4ad</span>
-        <span className="truncate">{preview}</span>
+        <span className="truncate flex-1">{preview}</span>
+        {payload.signature && (
+          <span className="text-purple-400/30 text-[10px] font-mono shrink-0">
+            {payload.signature.slice(0, 12)}
+          </span>
+        )}
       </button>
       {expanded && (
         <pre className="text-purple-200/50 text-[11px] mt-1 whitespace-pre-wrap break-words leading-relaxed">
@@ -121,13 +275,16 @@ function ThinkingView({ payload }: { payload: ThinkingPayload }) {
 
 function ProgressView({ payload }: { payload: ProgressPayload }) {
   return (
-    <div className="flex items-center gap-3 py-1 px-2 text-[11px] text-muted-foreground/60 my-0.5">
+    <div className="flex items-center gap-3 py-1 px-2 text-[11px] text-muted-foreground/60 my-0.5 bg-surface/30 rounded-sm">
       <span>\u2699\ufe0f</span>
       <span>Turn {payload.turn}</span>
-      <span className="text-cyan-400/70 font-mono">
+      <span className="text-cyan-400/70 font-mono font-medium">
         {payload.total_tokens.toLocaleString()} tokens
       </span>
       <span>{payload.tool_uses} tools</span>
+      {payload.last_tool_name && (
+        <span className="text-blue-400/50">{payload.last_tool_name}</span>
+      )}
       <span className="ml-auto text-[10px]">
         {(payload.elapsed_ms / 1000).toFixed(1)}s
       </span>
@@ -139,7 +296,7 @@ function ProgressView({ payload }: { payload: ProgressPayload }) {
 
 function classifyLog(line: string): string {
   const lower = line.toLowerCase();
-  if (lower.includes("error") || lower.includes("failed")
+  if (lower.includes("[err]") || lower.includes("error") || lower.includes("failed")
       || lower.includes("exception") || lower.includes("traceback")) {
     return "log-error";
   }
@@ -147,12 +304,14 @@ function classifyLog(line: string): string {
     return "log-warning";
   }
   if (lower.includes("\u2713") || lower.includes("done")
-      || lower.includes("complete") || lower.includes("success")) {
+      || lower.includes("complete") || lower.includes("success")
+      || lower.includes("[ok]")) {
     return "log-success";
   }
   if (/^(==|\u2192|\u25b8|\u25cf|\u25a0|\[.*?\])/.test(line)
       || lower.includes("step") || lower.includes("stage")
-      || lower.includes("phase")) {
+      || lower.includes("phase") || lower.includes("[progress]")
+      || lower.includes("[summary]")) {
     return "log-step";
   }
   if (line.trim().length === 0) return "log-dim";
@@ -181,10 +340,16 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events]);
 
+  // 预计算阶段标记位置，避免重复渲染
+  const renderedPhases = useMemo(() => {
+    const phases = new Set<number>();
+    return phases;
+  }, [events]);
+
   return (
     <div className="relative rounded-xl overflow-hidden border border-border/50 glow-border transition-all duration-300">
       {/* Terminal header bar */}
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-surface-elevated/80 border-b border-border/30">
+      <div className="flex items-center gap-2 px-4 py-2 bg-surface-elevated/80 border-b border-border/30">
         <div className="flex gap-1.5">
           <span className="w-3 h-3 rounded-full bg-red-500/70" />
           <span className="w-3 h-3 rounded-full bg-yellow-500/70" />
@@ -201,8 +366,11 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
         )}
       </div>
 
+      {/* Statistics bar */}
+      {events.length > 0 && <StatsBar events={events} />}
+
       {/* Event content */}
-      <ScrollArea className="h-[480px] w-full bg-zinc-950/90 p-4 font-mono text-xs leading-5">
+      <ScrollArea className={`h-[480px] w-full bg-zinc-950/90 p-4 font-mono text-xs leading-5 ${events.length > 0 ? "" : ""}`}>
         <div className="space-y-0">
           {events.length === 0 && (
             <div className="space-y-2 text-muted-foreground/50">
@@ -213,9 +381,22 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
               </div>
             </div>
           )}
-          {events.map((evt, i) => (
-            <EventRenderer key={i} event={evt} />
-          ))}
+          {events.map((evt, i) => {
+            // 检测并插入阶段标记
+            const phase = detectPhase(evt, i, events);
+            const elements: React.ReactNode[] = [];
+
+            if (phase) {
+              elements.push(<PhaseDivider key={`phase-${i}`} marker={phase} />);
+            }
+
+            // 事件本身
+            elements.push(
+              <EventRenderer key={`evt-${i}`} event={evt} index={i} />
+            );
+
+            return elements;
+          })}
           {isRunning && (
             <pre className="text-green-400 animate-pulse inline-block">
               &#9608;
@@ -230,7 +411,7 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
 
 // ── 事件分发渲染器 ────────────────────────────────────────
 
-function EventRenderer({ event }: { event: SSEEvent }) {
+function EventRenderer({ event, index }: { event: SSEEvent; index?: number }) {
   // 结构化事件
   if (isToolStart(event)) {
     return <ToolStartView payload={event.data} />;
@@ -247,7 +428,7 @@ function EventRenderer({ event }: { event: SSEEvent }) {
 
   // 向后兼容：纯文本日志 / status / error
   if (typeof event.data === "string") {
-    // status 事件也渲染为可见日志（消除 GAP 2）
+    // status 事件也渲染为可见日志
     if (event.type === "status") {
       const statusMap: Record<string, { icon: string; cls: string }> = {
         pending: { icon: "\u23F3", cls: "log-step" },
