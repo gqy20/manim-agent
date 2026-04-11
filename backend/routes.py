@@ -13,7 +13,10 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.sse import EventSourceResponse
+try:
+    from fastapi.sse import EventSourceResponse
+except ImportError:
+    from sse_starlette.sse import EventSourceResponse
 
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
 from .pipeline_runner import _pipeline_body

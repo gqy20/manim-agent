@@ -158,10 +158,6 @@ async def _pipeline_body(
                 obj_key = r2_object_key(task_id)
                 _video_url = r2_client.upload_file(final_video, obj_key)
                 log_callback(f"[SYS] Video uploaded to R2: {_video_url}")
-                try:
-                    Path(final_video).unlink()
-                except OSError:
-                    pass
             except Exception as exc:
                 logger.warning("R2 upload failed for task %s, falling back to local: %s", task_id, exc)
                 log_callback("[SYS] R2 upload failed, using local path")
