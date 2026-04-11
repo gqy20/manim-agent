@@ -170,9 +170,11 @@ class _MessageDispatcher:
         self,
         verbose: bool = True,
         log_callback: Callable[[str], None] | None = None,
+        output_cwd: str | None = None,
     ) -> None:
         self.verbose = verbose
         self.log_callback = log_callback
+        self.output_cwd = Path(output_cwd).resolve() if output_cwd else None
         self.event_callback: Callable[[PipelineEvent], None] | None = None
         self.turn_count = 0
         self.tool_use_count = 0
@@ -242,26 +244,28 @@ class _MessageDispatcher:
             )
         except (ValueError, Exception) as e:
             self._print(f"  [DEBUG] get_pipeline_output: text markers failed: {e}")
-            return None
-        # 关联 Hook 捕获的源代码
-        if (
-            self.pipeline_output.scene_file
-            and self.pipeline_output.scene_file in _hook_state.captured_source_code
-        ):
-            self.pipeline_output.source_code = _hook_state.captured_source_code[
-                self.pipeline_output.scene_file
-            ]
-            self._print(f"  [DEBUG] get_pipeline_output: source code linked from hook state")
-        else:
-            self._print(
-                f"  [DEBUG] get_pipeline_output: scene_file={self.pipeline_output.scene_file!r}, hook captured keys={list(_hook_state.captured_source_code.keys())}"
+            discovered_video = self._discover_rendered_video_path()
+            if not discovered_video:
+                return None
+            self.pipeline_output = PipelineOutput(
+                video_output=discovered_video,
+                scene_file=self._infer_scene_file(),
             )
+            self._print(
+                "  [DEBUG] get_pipeline_output: built fallback PipelineOutput "
+                f"from runtime artifacts, video_output={discovered_video!r}"
+            )
+        self._attach_captured_source_code("get_pipeline_output")
         # 同步向后兼容属性
         self._sync_compat_attrs()
         return self.pipeline_output
 
     def get_video_output(self) -> str | None:
         """返回提取到的视频输出路径（向后兼容接口）。"""
+        if self.pipeline_output is not None and self.pipeline_output.video_output:
+            return self.pipeline_output.video_output
+        if self.video_output:
+            return self.video_output
         po = self.get_pipeline_output()
         return po.video_output if po else None
 
@@ -375,6 +379,8 @@ class _MessageDispatcher:
                     self._print(
                         f"  [DEBUG] _handle_result: source code linked for {self.pipeline_output.scene_file}"
                     )
+                else:
+                    self._attach_captured_source_code("_handle_result")
                 self._sync_compat_attrs()
             except Exception as e:
                 logger.warning(
@@ -497,6 +503,76 @@ class _MessageDispatcher:
             self.video_output = self.pipeline_output.video_output
             self.scene_file = self.pipeline_output.scene_file
             self.scene_class = self.pipeline_output.scene_class
+
+    def _discover_rendered_video_path(self) -> str | None:
+        """Discover a rendered MP4 from SDK signals or task output artifacts."""
+        if self.video_output:
+            return self.video_output
+        if not self.output_cwd:
+            return None
+
+        candidate_dirs = [self.output_cwd / "media" / "videos"]
+        seen: set[Path] = set()
+        candidates: list[Path] = []
+        for base_dir in candidate_dirs:
+            if not base_dir.exists():
+                continue
+            for path in base_dir.rglob("*.mp4"):
+                resolved = path.resolve()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                candidates.append(resolved)
+
+        if not candidates:
+            self._print(
+                f"  [DEBUG] _discover_rendered_video_path: no mp4 found under {self.output_cwd}"
+            )
+            return None
+
+        best = max(candidates, key=lambda p: p.stat().st_mtime)
+        best_str = str(best)
+        self._print(
+            f"  [DEBUG] _discover_rendered_video_path: selected {best_str!r} from {len(candidates)} candidate(s)"
+        )
+        return best_str
+
+    def _infer_scene_file(self) -> str | None:
+        """Infer the scene file from hook-captured Python files under the task cwd."""
+        if self.scene_file:
+            return self.scene_file
+        captured_paths = [Path(p).resolve() for p in _hook_state.captured_source_code]
+        if self.output_cwd is not None:
+            captured_paths = [
+                p for p in captured_paths
+                if self.output_cwd in p.parents
+            ]
+        if len(captured_paths) == 1:
+            return str(captured_paths[0])
+        return None
+
+    def _attach_captured_source_code(self, context: str) -> None:
+        """Link hook-captured source into PipelineOutput when possible."""
+        if self.pipeline_output is None:
+            return
+
+        scene_file = self.pipeline_output.scene_file or self._infer_scene_file()
+        if scene_file:
+            self.pipeline_output.scene_file = scene_file
+
+        if (
+            self.pipeline_output.scene_file
+            and self.pipeline_output.scene_file in _hook_state.captured_source_code
+        ):
+            self.pipeline_output.source_code = _hook_state.captured_source_code[
+                self.pipeline_output.scene_file
+            ]
+            self._print(f"  [DEBUG] {context}: source code linked from hook state")
+        else:
+            self._print(
+                f"  [DEBUG] {context}: scene_file={self.pipeline_output.scene_file!r}, "
+                f"hook captured keys={list(_hook_state.captured_source_code.keys())}"
+            )
 
     def _emit_event(self, event: PipelineEvent) -> None:
         """通过 event_callback 发射结构化事件（如已注册）。"""
@@ -965,7 +1041,11 @@ async def run_pipeline(
     user_prompt = user_text
 
     # 2. 创建 dispatcher 并消费消息流
-    dispatcher = _MessageDispatcher(verbose=True, log_callback=log_callback)
+    dispatcher = _MessageDispatcher(
+        verbose=True,
+        log_callback=log_callback,
+        output_cwd=cwd,
+    )
     if event_callback is not None:
         dispatcher.event_callback = event_callback
         _hook_state.event_callback = event_callback

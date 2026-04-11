@@ -25,6 +25,17 @@ if __name__ == "__main__":
         host="127.0.0.1",
         port=int(os.environ.get("BE_PORT", "8471")),
         reload=True,
-        # Note: reload exclusions are handled by .watchfilesignore in project root.
-        # This is more reliable than reload_excludes on Windows.
+        # Watch only source directories so generated task output cannot trigger
+        # a backend restart in the middle of a Claude run.
+        reload_dirs=[
+            os.path.join(_PROJECT_ROOT, "backend"),
+            os.path.join(_PROJECT_ROOT, "src"),
+        ],
+        reload_excludes=[
+            os.path.join(_PROJECT_ROOT, "backend", "output"),
+            os.path.join(_PROJECT_ROOT, "backend", "data"),
+            os.path.join(_PROJECT_ROOT, ".venv"),
+            os.path.join(_PROJECT_ROOT, "frontend", ".next"),
+            os.path.join(_PROJECT_ROOT, "node_modules"),
+        ],
     )

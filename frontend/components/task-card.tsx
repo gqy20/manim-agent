@@ -87,8 +87,8 @@ export function TaskCard({ task }: TaskCardProps) {
                 {task.id}
               </span>
             </div>
-            <Badge variant="outline" className={`text-[10px] font-medium px-2 py-0.5 ${config.color}`}>
-              <span className="mr-1">{config.icon}</span>
+            <Badge variant="outline" className={`text-[10px] font-medium px-2 py-0.5 flex items-center gap-1 ${config.color}`}>
+              {config.icon}
               {config.label}
             </Badge>
           </div>

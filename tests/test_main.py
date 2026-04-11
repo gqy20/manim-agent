@@ -4,6 +4,7 @@
 """
 
 import json
+from pathlib import Path
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -691,6 +692,24 @@ class TestDispatcherPipelineOutput:
         d = _MessageDispatcher(verbose=False)
         d.collected_text = ["VIDEO_OUTPUT: /legacy/path.mp4"]
         assert d.get_video_output() == "/legacy/path.mp4"
+
+    def test_get_video_output_prefers_task_notification_output(self):
+        """SDK task_notification.output_file 应被视为有效视频结果。"""
+        d = _MessageDispatcher(verbose=False)
+        d.video_output = "/sdk/out.mp4"
+        assert d.get_video_output() == "/sdk/out.mp4"
+
+    def test_get_pipeline_output_falls_back_to_rendered_mp4(self, tmp_path: Path):
+        """无文本标记时，可从任务输出目录发现已渲染的 mp4。"""
+        video_path = tmp_path / "media" / "videos" / "scene" / "1080p60" / "demo.mp4"
+        video_path.parent.mkdir(parents=True, exist_ok=True)
+        video_path.write_bytes(b"fake-mp4")
+
+        d = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
+        po = d.get_pipeline_output()
+
+        assert po is not None
+        assert po.video_output == str(video_path.resolve())
 
     def test_extract_graceful_on_malformed_markers(self):
         """畸形标记文本不崩溃，pipeline_output 保持 None。"""

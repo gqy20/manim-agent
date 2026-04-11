@@ -347,21 +347,23 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
   }, [events]);
 
   return (
-    <div className="relative rounded-xl overflow-hidden border border-border/50 glow-border transition-all duration-300">
+    <div className="relative rounded-xl overflow-hidden border border-white/10 bg-black/40 backdrop-blur-xl shadow-2xl transition-all duration-300 ring-1 ring-white/5">
+      {/* 噪点纹理层 */}
+      <div className="absolute inset-0 pointer-events-none opacity-[0.04] mix-blend-screen bg-[url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E')]" />
+
       {/* Terminal header bar */}
-      <div className="flex items-center gap-2 px-4 py-2 bg-surface-elevated/80 border-b border-border/30">
-        <div className="flex gap-1.5">
-          <span className="w-3 h-3 rounded-full bg-red-500/70" />
-          <span className="w-3 h-3 rounded-full bg-yellow-500/70" />
-          <span className="w-3 h-3 rounded-full bg-green-500/70" />
+      <div className="relative z-10 flex items-center gap-2 px-4 py-3 bg-white/[0.02] border-b border-white/[0.05]">
+        <div className="flex gap-1 items-center">
+          <span className="w-1.5 h-3.5 bg-cyan-500/80 shrink-0 rounded-[1px]" />
+          <span className="w-1.5 h-3.5 bg-blue-500/40 shrink-0 rounded-[1px] animate-pulse" />
         </div>
-        <span className="text-xs text-muted-foreground font-mono ml-1">
-          流水线日志
+        <span className="text-[10px] text-cyan-400/80 font-mono tracking-widest uppercase ml-1 mt-0.5">
+          SYS.LOGS
         </span>
         {isRunning && (
-          <span className="ml-auto flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-xs text-green-400 font-mono">运行中</span>
+          <span className="ml-auto flex items-center gap-2">
+            <span className="w-1 h-3 bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
+            <span className="text-[10px] text-green-400 font-mono uppercase tracking-wider">Active</span>
           </span>
         )}
       </div>
@@ -370,14 +372,17 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
       {events.length > 0 && <StatsBar events={events} />}
 
       {/* Event content */}
-      <ScrollArea className={`h-[480px] w-full bg-zinc-950/90 p-4 font-mono text-xs leading-5 ${events.length > 0 ? "" : ""}`}>
+      <ScrollArea className={`h-[480px] w-full bg-transparent p-4 font-mono text-xs leading-5 relative z-10`}>
         <div className="space-y-0">
           {events.length === 0 && (
-            <div className="space-y-2 text-muted-foreground/50">
-              <span className="log-dim">等待流水线启动...</span>
-              <div className="flex items-center gap-1.5 text-[10px]">
-                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-                <span>正在初始化 Claude Agent SDK，请稍候</span>
+            <div className="flex flex-col gap-2 pt-2 px-1 text-white/30 font-mono text-[11px] uppercase tracking-widest">
+              <span className="log-dim">Awaiting system boot...</span>
+              <div className="flex items-center gap-2.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
+                </span>
+                <span className="animate-pulse text-cyan-500/70">Initializing Claude Agent SDK</span>
               </div>
             </div>
           )}

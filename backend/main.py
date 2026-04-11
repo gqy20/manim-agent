@@ -9,9 +9,7 @@ from anyio import BrokenResourceError
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .routes import router, set_store
 from .task_store import TaskStore
@@ -33,7 +31,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class _SSEDisconnectMiddleware(BaseHTTPMiddleware):
+def _is_benign_sse_disconnect(exc: BaseException) -> bool:
+    """Return True when the exception only contains SSE disconnect errors."""
+    if isinstance(exc, BrokenResourceError):
+        return True
+    if isinstance(exc, ExceptionGroup):
+        return all(_is_benign_sse_disconnect(child) for child in exc.exceptions)
+    return False
+
+
+class _SSEDisconnectMiddleware:
     """Suppress benign SSE disconnect errors when clients close connections.
 
     When SSE clients disconnect, Starlette's EventSourceResponse raises
@@ -41,17 +48,21 @@ class _SSEDisconnectMiddleware(BaseHTTPMiddleware):
     and should not surface as ERROR-level server logs.
     """
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
         try:
-            return await call_next(request)
-        except ExceptionGroup as exc:
-            # If *all* sub-exceptions are BrokenResourceError, suppress silently.
-            broken = exc.subgroup(BrokenResourceError)
-            if broken is not None and len(broken.exceptions) == len(exc.exceptions):
-                return Response(status_code=204)
+            await self.app(scope, receive, send)
+        except BaseException as exc:
+            if _is_benign_sse_disconnect(exc):
+                logger.debug("Suppressing benign SSE disconnect: %s", type(exc).__name__)
+                return
             raise
-        except BrokenResourceError:
-            return Response(status_code=204)
 
 
 @asynccontextmanager

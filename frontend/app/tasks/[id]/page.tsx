@@ -122,25 +122,20 @@ export default function TaskDetailPage() {
       { y: -20, opacity: 0, filter: "blur(5px)" },
       { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.6, stagger: 0.1 }
     )
-    .fromTo(".gsap-log",
-      { x: -30, opacity: 0 },
-      { x: 0, opacity: 1, duration: 0.6 },
+    .fromTo(".gsap-panel",
+      { y: 40, opacity: 0, scale: 0.98 },
+      { y: 0, opacity: 1, scale: 1, duration: 0.8, stagger: 0.15, ease: "power4.out" },
       "-=0.3"
-    )
-    .fromTo(".gsap-video",
-      { x: 30, opacity: 0, scale: 0.95 },
-      { x: 0, opacity: 1, scale: 1, duration: 0.6 },
-      "-=0.4"
     );
 
     // If the task is running, make the placeholder border breathe/pulse slightly
     if (task.status === "running" || task.status === "pending") {
       gsap.to(".gsap-video-placeholder", {
-        boxShadow: "0 0 20px rgba(139, 92, 246, 0.15)",
-        borderColor: "rgba(139, 92, 246, 0.4)",
+        boxShadow: "0 0 30px rgba(6, 182, 212, 0.15)",
+        borderColor: "rgba(6, 182, 212, 0.3)",
         repeat: -1,
         yoyo: true,
-        duration: 1.5,
+        duration: 2,
         ease: "sine.inOut",
         id: "detail-breathing",  // named for targeted kill
       });
@@ -203,8 +198,8 @@ export default function TaskDetailPage() {
             </div>
           </div>
         </div>
-        <Badge variant="outline" className={`gsap-header font-medium ${config.color} px-3 py-1`}>
-          <span className="mr-1.5">{config.icon}</span>
+        <Badge variant="outline" className={`gsap-header font-medium flex items-center gap-1.5 ${config.color} px-3 py-1`}>
+          {config.icon}
           {config.label}
         </Badge>
       </div>
@@ -219,31 +214,36 @@ export default function TaskDetailPage() {
       {/* Main content grid */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Left: Log viewer */}
-        <div className="gsap-log space-y-2.5 opacity-0">
+        <div className="gsap-panel gsap-log space-y-2.5 opacity-0">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Terminal className="h-3.5 w-3.5 text-muted-foreground/50" />
-              <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">流水线日志</h2>
+            <div className="flex items-center gap-2 text-cyan-500/70">
+              <Terminal className="h-3.5 w-3.5" />
+              <h2 className="text-[10px] font-mono uppercase tracking-widest">Logs</h2>
             </div>
             {logs.length > 0 && (
-              <span className="text-[11px] text-muted-foreground/50 font-mono bg-surface/60 px-2 py-0.5 rounded">{logs.length} 行</span>
+              <span className="text-[10px] text-cyan-400/50 font-mono bg-cyan-950/20 border border-cyan-500/10 px-2 py-0.5 rounded shadow-inner">{logs.length} EVTS</span>
             )}
           </div>
           <LogViewer events={logs} isRunning={isRunning} />
         </div>
 
         {/* Right: Video player or placeholder */}
-        <div className="gsap-video space-y-2.5 opacity-0">
-          <div className="flex items-center gap-2">
-            <Play className="h-3.5 w-3.5 text-muted-foreground/50" />
-            <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">输出视频</h2>
+        <div className="gsap-panel gsap-video space-y-2.5 opacity-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-cyan-500/70">
+              <Play className="h-3.5 w-3.5" />
+              <h2 className="text-[10px] font-mono uppercase tracking-widest">Output Video</h2>
+            </div>
           </div>
           {showVideo ? (
             <VideoPlayer src={getVideoUrl(taskId)} />
           ) : (
-            <div className="gsap-video-placeholder flex flex-col items-center justify-center border border-border/40 rounded-xl h-[480px] text-muted-foreground bg-surface/30 glow-border transition-colors duration-300 overflow-hidden relative">
+            <div className="gsap-video-placeholder group flex flex-col items-center justify-center border border-white/5 rounded-xl h-[480px] bg-black/40 backdrop-blur-xl shadow-2xl transition-all duration-300 overflow-hidden relative ring-1 ring-white/5">
+              {/* Animated subtle glow */}
+              <div className="absolute inset-0 bg-blue-500/5 blur-[100px] pointer-events-none group-hover:bg-cyan-500/10 transition-colors duration-1000" />
+              
               {/* Subtle grid background */}
-              <svg className="absolute inset-0 w-full h-full opacity-[0.02]" xmlns="http://www.w3.org/2000/svg">
+              <svg className="absolute inset-0 w-full h-full opacity-[0.03]" xmlns="http://www.w3.org/2000/svg">
                 <defs>
                   <pattern id="detail-grid" width="28" height="28" patternUnits="userSpaceOnUse">
                     <path d="M 28 0 L 0 0 0 28" fill="none" stroke="currentColor" strokeWidth="0.5"/>
@@ -252,32 +252,36 @@ export default function TaskDetailPage() {
                 <rect width="100%" height="100%" fill="url(#detail-grid)"/>
               </svg>
 
-              <div className="relative z-10 flex flex-col items-center gap-3">
+              <div className="relative z-10 flex flex-col items-center gap-4">
                 {isRunning ? (
                   <>
                     <div className="relative">
-                      <Loader2 className="h-10 w-10 animate-spin text-primary/60" />
-                      <div className="absolute inset-0 h-10 w-10 animate-ping opacity-10">
-                        <Loader2 className="h-full w-full text-primary" />
-                      </div>
+                      {/* Outer pulse ring */}
+                      <div className="absolute -inset-4 rounded-full bg-cyan-500/10 animate-ping" style={{ animationDuration: '3s' }} />
+                      <div className="absolute -inset-2 rounded-full bg-blue-500/20 animate-pulse" />
+                      <Loader2 className="h-10 w-10 animate-spin text-cyan-400 relative z-10" />
                     </div>
-                    <span className="text-sm font-medium text-foreground/70">正在生成动画...</span>
-                    <span className="text-xs text-muted-foreground/50">请耐心等待，通常需要几分钟</span>
+                    <div className="flex flex-col items-center text-center space-y-1">
+                      <span className="text-[11px] font-mono uppercase tracking-widest text-cyan-400/80">Rendering Animation</span>
+                      <span className="text-[10px] font-mono text-white/30">AWAITING OUTPUT FROM ENGINE</span>
+                    </div>
                   </>
                 ) : task.status === "failed" ? (
                   <>
-                    <div className="w-14 h-14 rounded-2xl bg-destructive/[0.06] flex items-center justify-center">
-                      <XCircle className="h-7 w-7 text-destructive/40" />
+                    <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-red-500/10 to-red-950/30 flex items-center justify-center border border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+                      <XCircle className="h-6 w-6 text-red-400/80" />
                     </div>
-                    <span className="text-sm font-medium text-foreground/70">生成失败</span>
-                    <span className="text-xs text-muted-foreground/50">请查看上方日志了解详情</span>
+                    <div className="flex flex-col items-center text-center space-y-1">
+                      <span className="text-[11px] font-mono uppercase tracking-widest text-red-400/80">Render Failed</span>
+                      <span className="text-[10px] font-mono text-white/30">CHECK LOGS FOR TRACEBACK</span>
+                    </div>
                   </>
                 ) : (
                   <>
-                    <div className="w-14 h-14 rounded-2xl bg-surface flex items-center justify-center">
-                      <Film className="h-7 w-7 text-muted-foreground/20" />
+                    <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-center">
+                      <Film className="h-6 w-6 text-white/20" />
                     </div>
-                    <span className="text-sm text-muted-foreground/60">暂无视频</span>
+                    <span className="text-[11px] font-mono uppercase tracking-widest text-white/20">NO MEDIA AVAILABLE</span>
                   </>
                 )}
               </div>
