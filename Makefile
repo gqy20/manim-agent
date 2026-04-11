@@ -20,7 +20,7 @@ dev: ## Start both backend and frontend in development mode
 	@make dev-backend & make dev-frontend
 
 dev-backend: ## Start FastAPI backend with hot-reload (uvicorn)
-	$(PYTHON) _dev_backend.py --host $(BE_HOST) --port $(BE_PORT)
+	$(PYTHON) -m uvicorn backend.main:app --host $(BE_HOST) --port $(BE_PORT) --reload
 
 dev-frontend: ## Start Next.js frontend dev server
 	cd frontend && npm run dev -- --port $(FE_PORT)
