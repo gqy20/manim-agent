@@ -18,7 +18,7 @@ export interface PipelinePhase {
   id: string;
   label: string;
   icon: React.ReactNode;
-  /** Keywords used to detect this phase from log events */
+  /** Legacy-only fallback keywords for older log-only backends */
   keywords: string[];
 }
 
@@ -76,6 +76,40 @@ interface PipelineProgressProps {
   taskStatus: string;
 }
 
+const PHASE_ORDER = ["init", "scene", "render", "tts", "done"] as const;
+
+function getActivePhaseIndexFromStatus(
+  phase: StatusPayload["phase"] | undefined,
+): number {
+  if (!phase) return -1;
+  if (phase === "mux" || phase === "done") {
+    return PHASE_ORDER.indexOf("done");
+  }
+  return PHASE_ORDER.indexOf(phase as (typeof PHASE_ORDER)[number]);
+}
+
+function detectLegacyPhaseFromLogs(events: SSEEvent[]): number {
+  const logText = events
+    .filter((e) => e.type === "log" && typeof e.data === "string")
+    .map((e) => (e.data as string).toLowerCase())
+    .join(" ");
+
+  let maxActiveIndex = -1;
+  for (let i = 0; i < PIPELINE_PHASES.length; i++) {
+    const phase = PIPELINE_PHASES[i];
+    const matched = phase.keywords.some((kw) => logText.includes(kw.toLowerCase()));
+    if (matched) {
+      maxActiveIndex = i;
+    }
+  }
+
+  if (maxActiveIndex === -1 && events.length > 0) {
+    return 0;
+  }
+
+  return maxActiveIndex;
+}
+
 // ── Phase Detection ────────────────────────────────────────
 
 /**
@@ -95,12 +129,6 @@ function detectCurrentPhases(
   const isTerminal = ["completed", "failed"].includes(taskStatus);
   const hasError = taskStatus === "failed";
 
-  // Build a flat text corpus from all log events for keyword matching
-  const logText = events
-    .filter((e) => e.type === "log" && typeof e.data === "string")
-    .map((e) => (e.data as string).toLowerCase())
-    .join(" ");
-
   // Also check structured event types
   const hasToolEvents = events.some((e) =>
     e.type === "tool_start" || e.type === "tool_result",
@@ -113,67 +141,20 @@ function detectCurrentPhases(
     status: "pending" as PhaseStatus,
   }));
 
-  if (latestStatusPayload?.phase) {
-    const phaseOrder = ["init", "scene", "render", "tts", "done"] as const;
-    let activeIndex = phaseOrder.indexOf(latestStatusPayload.phase as (typeof phaseOrder)[number]);
-    if (latestStatusPayload.phase === "mux") {
-      activeIndex = phaseOrder.indexOf("done");
-    }
+  let maxActiveIndex = getActivePhaseIndexFromStatus(latestStatusPayload?.phase);
 
-    if (activeIndex >= 0) {
-      states.forEach((state, index) => {
-        if (index < activeIndex) {
-          state.status = "done";
-        } else if (index === activeIndex) {
-          state.status = isTerminal
-            ? hasError
-              ? "error"
-              : "done"
-            : "active";
-        } else {
-          state.status = "pending";
-        }
-      });
-
-      if (taskStatus === "completed") {
-        states.forEach((state) => {
-          state.status = "done";
-        });
-      } else if (taskStatus === "failed" && activeIndex >= 0) {
-        states[activeIndex].status = "error";
-      }
-
-      return states;
-    }
+  // Prefer structured events over log text when status phase is not available yet.
+  if (maxActiveIndex === -1 && (hasToolEvents || hasThinkingEvents || hasProgressEvents)) {
+    maxActiveIndex = PHASE_ORDER.indexOf("scene");
   }
 
-  // Find the highest active phase
-  let maxActiveIndex = -1;
-
-  for (let i = 0; i < PIPELINE_PHASES.length; i++) {
-    const phase = PIPELINE_PHASES[i];
-    const matched = phase.keywords.some((kw) => logText.includes(kw.toLowerCase()));
-
-    // Special detection for scene phase via tool events
-    if (
-      phase.id === "scene" &&
-      (hasToolEvents || hasThinkingEvents || hasProgressEvents)
-    ) {
-      // Tool events strongly indicate scene generation is active
-      if (!matched && maxActiveIndex < i) {
-        // Don't override if already matched by text
-        // but use it to confirm activity
-      }
-    }
-
-    if (matched) {
-      maxActiveIndex = i;
-    }
+  // Legacy fallback for older servers that only emitted free-form logs.
+  if (maxActiveIndex === -1) {
+    maxActiveIndex = detectLegacyPhaseFromLogs(events);
   }
 
-  // If no phases detected at all but we have events, we're at least in init
-  if (maxActiveIndex === -1 && events.length > 0) {
-    maxActiveIndex = 0;
+  if (maxActiveIndex < 0 && isTerminal) {
+    maxActiveIndex = PHASE_ORDER.indexOf("done");
   }
 
   // Assign statuses
