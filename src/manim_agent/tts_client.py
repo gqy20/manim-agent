@@ -5,9 +5,11 @@
 """
 
 import asyncio
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -17,7 +19,10 @@ API_BASE_URL = "https://api.minimaxi.com"
 API_BASE_URL_BJ = "https://api-bj.minimaxi.com"
 
 CREATE_TASK_PATH = "/v1/t2a_async_v2"
-QUERY_TASK_PATH = "/v1/t2a_async/query"
+QUERY_TASK_PATHS = (
+    "/v1/query/t2a_async_query_v2",
+    "/v1/t2a_async/query",
+)
 FILE_INFO_PATH = "/v1/files/query"
 
 POLL_INTERVAL = 3  # 秒
@@ -66,6 +71,53 @@ def _check_api_key() -> str:
 def _get_base_url() -> str:
     """获取 API 基础 URL，支持备用地址。"""
     return os.environ.get("MINIMAX_API_BASE_URL", API_BASE_URL)
+
+
+def _safe_parse_json_response(resp: httpx.Response, context: str) -> dict[str, Any]:
+    """Parse JSON response and provide useful error context."""
+    if resp.status_code >= 400:
+        raise RuntimeError(f"{context} failed with HTTP {resp.status_code}: {resp.text[:512]}")
+
+    content_type = resp.headers.get("content-type", "").lower()
+    if "application/json" not in content_type:
+        raise RuntimeError(
+            f"{context} returned non-JSON content-type '{content_type}': {resp.text[:128]}"
+        )
+
+    try:
+        data = resp.json()
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{context} returned invalid JSON: {resp.text[:256]}") from exc
+
+    if not isinstance(data, dict):
+        raise RuntimeError(f"{context} returned non-object payload: {data!r}")
+    return data
+
+
+def _extract_task_payload(raw: dict[str, Any]) -> dict[str, Any]:
+    data = raw.get("data")
+    if isinstance(data, dict):
+        return data
+    return raw
+
+
+def _coerce_status(payload: dict[str, Any]) -> str:
+    status = payload.get("task_status") or payload.get("status")
+    if isinstance(status, str):
+        return status
+    return ""
+
+
+def _coerce_error(payload: dict[str, Any], base_resp: dict[str, Any]) -> str:
+    for field in ("error_message", "error", "msg"):
+        value = payload.get(field)
+        if isinstance(value, str) and value.strip():
+            return value
+
+    status_msg = base_resp.get("status_msg")
+    if isinstance(status_msg, str) and status_msg.strip():
+        return status_msg
+    return "Unknown failure"
 
 
 def _build_payload(
@@ -145,8 +197,10 @@ async def _create_task(
             headers=headers,
         )
 
-    data = resp.json()
+    data = _safe_parse_json_response(resp, "TTS task creation")
     base_resp = data.get("base_resp", {})
+    if not isinstance(base_resp, dict):
+        base_resp = {}
     status_code = base_resp.get("status_code", -1)
 
     if status_code != 0:
@@ -155,7 +209,7 @@ async def _create_task(
             f"TTS task creation failed: [{status_code}] {status_msg}"
         )
 
-    task_data = data.get("data", {})
+    task_data = _extract_task_payload(data)
     return {
         "task_id": task_data.get("task_id", ""),
         "file_id": task_data.get("file_id", ""),
@@ -177,6 +231,9 @@ async def _poll_task(task_id: str) -> dict:
         TimeoutError: 轮询超时。
         RuntimeError: 任务失败。
     """
+    if not task_id.strip():
+        raise RuntimeError("TTS polling failed: task_id is empty")
+
     api_key = _check_api_key()
     base_url = _get_base_url()
 
@@ -185,31 +242,62 @@ async def _poll_task(task_id: str) -> dict:
 
     async with httpx.AsyncClient(timeout=30) as client:
         while True:
-            resp = await client.get(
-                f"{base_url}{QUERY_TASK_PATH}",
-                params={"task_id": task_id},
-                headers=headers,
-            )
-            data = resp.json()
-            task_data = data.get("data", {})
-            status = task_data.get("task_status", "")
+            last_error: str | None = None
+            last_data: dict[str, Any] | None = None
+            last_status = ""
 
-            if status == "Success":
-                return task_data
+            for path in QUERY_TASK_PATHS:
+                try:
+                    resp = await client.get(
+                        f"{base_url}{path}",
+                        params={"task_id": task_id},
+                        headers=headers,
+                    )
+                except httpx.HTTPError as exc:
+                    last_error = str(exc)
+                    continue
 
-            if status == "Failed":
-                error_msg = task_data.get(
-                    "error_message", "Unknown failure"
-                )
-                raise RuntimeError(
-                    f"TTS task failed: {error_msg}"
-                )
+                try:
+                    data = _safe_parse_json_response(resp, "TTS task query")
+                except RuntimeError as exc:
+                    if resp.status_code == 404 and path == QUERY_TASK_PATHS[0]:
+                        last_error = str(exc)
+                        continue
+                    raise
+
+                base_resp = data.get("base_resp", {})
+                if not isinstance(base_resp, dict):
+                    base_resp = {}
+
+                if base_resp.get("status_code", 0) != 0:
+                    task_data = _extract_task_payload(data)
+                    raise RuntimeError(
+                        f"TTS task query failed: {base_resp.get('status_code')}: "
+                        f"{_coerce_error(task_data, base_resp)}"
+                    )
+
+                task_data = _extract_task_payload(data)
+                status = _coerce_status(task_data)
+                last_status = status
+                last_data = task_data
+
+                if status.lower() == "success":
+                    return task_data
+                if status.lower() == "failed":
+                    error_msg = _coerce_error(task_data, base_resp)
+                    raise RuntimeError(f"TTS task failed: {error_msg}")
+                break
+
+            if last_data is None:
+                if last_error:
+                    raise RuntimeError(f"TTS polling failed: {last_error}")
+                raise RuntimeError("TTS polling failed: no valid query response")
 
             # 检查超时
             if asyncio.get_event_loop().time() > deadline:
                 raise TimeoutError(
                     f"TTS polling timeout after {POLL_TIMEOUT}s "
-                    f"(task_id={task_id}, last_status={status})"
+                    f"(task_id={task_id}, last_status={last_status})"
                 )
 
             await asyncio.sleep(POLL_INTERVAL)

@@ -121,12 +121,19 @@ class TestBuildPayload:
 
 
 class TestCreateTask:
+    @staticmethod
+    def _mock_json_resp(payload, status_code: int = 200, content_type: str = "application/json"):
+        mock_resp = MagicMock()
+        mock_resp.status_code = status_code
+        mock_resp.headers = {"content-type": content_type}
+        mock_resp.text = json.dumps(payload)
+        mock_resp.json.return_value = payload
+        return mock_resp
+
     @pytest.mark.asyncio
     async def test_success_returns_task_info(self, mock_env):
         """成功创建任务返回 task_id 和 file_id。"""
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {
+        mock_resp = self._mock_json_resp({
             "base_resp": {"status_code": 0},
             "data": {
                 "task_id": "task-001",
@@ -134,7 +141,7 @@ class TestCreateTask:
                 "file_id_subtitle": "file-sub",
                 "file_id_extra": "file-extra",
             },
-        }
+        })
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_resp
@@ -151,11 +158,9 @@ class TestCreateTask:
     @pytest.mark.asyncio
     async def test_api_error_raises(self, mock_env):
         """API 返回错误时抛 RuntimeError。"""
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {
+        mock_resp = self._mock_json_resp({
             "base_resp": {"status_code": 40004, "status_msg": "Invalid API Key"},
-        }
+        })
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_resp
@@ -171,15 +176,31 @@ class TestCreateTask:
 
 
 class TestPollTask:
+    @staticmethod
+    def _mock_json_resp(payload, status_code: int = 200, content_type: str = "application/json"):
+        mock_resp = MagicMock()
+        mock_resp.status_code = status_code
+        mock_resp.headers = {"content-type": content_type}
+        mock_resp.text = json.dumps(payload)
+        mock_resp.json.return_value = payload
+        return mock_resp
+
+    @staticmethod
+    def _mock_non_json(status_code: int = 404, text: str = "404 Page not found"):
+        mock_resp = MagicMock()
+        mock_resp.status_code = status_code
+        mock_resp.headers = {"content-type": "text/plain"}
+        mock_resp.text = text
+        mock_resp.json.side_effect = json.JSONDecodeError("invalid", text, 0)
+        return mock_resp
+
     @pytest.mark.asyncio
     async def test_success_on_first_try(self, mock_env):
         """首次轮询即成功。"""
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {
+        mock_resp = self._mock_json_resp({
             "base_resp": {"status_code": 0},
             "data": {"task_status": "Success", "audio_length": 5000, "word_count": 100},
-        }
+        })
 
         mock_client = AsyncMock()
         mock_client.get.return_value = mock_resp
@@ -195,12 +216,10 @@ class TestPollTask:
     @pytest.mark.asyncio
     async def test_timeout_raises(self, mock_env):
         """轮询超时抛 TimeoutError。"""
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {
+        mock_resp = self._mock_json_resp({
             "base_resp": {"status_code": 0},
             "data": {"task_status": "Processing"},
-        }
+        })
 
         mock_client = AsyncMock()
         mock_client.get.return_value = mock_resp
@@ -218,12 +237,10 @@ class TestPollTask:
     @pytest.mark.asyncio
     async def test_task_failed_raises(self, mock_env):
         """任务失败抛 RuntimeError。"""
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {
+        mock_resp = self._mock_json_resp({
             "base_resp": {"status_code": 0},
             "data": {"task_status": "Failed", "error_message": "invalid chars"},
-        }
+        })
 
         mock_client = AsyncMock()
         mock_client.get.return_value = mock_resp
@@ -236,6 +253,55 @@ class TestPollTask:
 
 
 # ── 文件下载（函数级 mock） ────────────────────────────────────
+
+
+    @pytest.mark.asyncio
+    async def test_legacy_flat_payload(self, mock_env):
+        """支持顶层 status/task_status。"""
+        mock_resp = self._mock_json_resp({
+            "status_code": 0,
+            "status": "success",
+            "audio_length": 3000,
+            "word_count": 200,
+        })
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("manim_agent.tts_client.httpx.AsyncClient", return_value=mock_client):
+            data = await tts_client._poll_task("task-001")
+
+        assert data["status"] == "success"
+        assert data["audio_length"] == 3000
+
+    @pytest.mark.asyncio
+    async def test_query_path_fallback(self, mock_env):
+        """旧查询地址 404 时回退到历史地址。"""
+        legacy_404 = self._mock_non_json()
+        modern_ok = self._mock_json_resp({
+            "base_resp": {"status_code": 0},
+            "status": "Success",
+            "audio_length": 1200,
+        })
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [legacy_404, modern_ok]
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("manim_agent.tts_client.httpx.AsyncClient", return_value=mock_client):
+            data = await tts_client._poll_task("task-001")
+
+        assert data["audio_length"] == 1200
+        assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_empty_task_id_raises(self, mock_env):
+        """空 task_id 直接报错。"""
+        with pytest.raises(RuntimeError, match="task_id is empty"):
+            await tts_client._poll_task("   ")
 
 
 class TestDownloadFiles:
