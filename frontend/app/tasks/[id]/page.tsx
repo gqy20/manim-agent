@@ -211,7 +211,7 @@ export default function TaskDetailPage() {
             </div>
           </div>
           {showVideo ? (
-            <VideoPlayer src={getVideoUrl(taskId)} />
+            <VideoPlayer src={getVideoUrl(taskId, task.video_path)} />
           ) : (
             <div className="gsap-video-placeholder group flex flex-col items-center justify-center border border-white/5 rounded-xl h-[480px] bg-black/40 backdrop-blur-xl shadow-2xl transition-all duration-300 overflow-hidden relative ring-1 ring-white/5">
               {/* Animated subtle glow */}

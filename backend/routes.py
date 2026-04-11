@@ -12,8 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.sse import EventSourceResponse
+
+from .storage.r2_client import R2Client, is_r2_url, r2_object_key
 
 from manim_agent.pipeline_events import EventType, PipelineEvent
 
@@ -36,6 +38,25 @@ logger = logging.getLogger(__name__)
 
 _store: TaskStore  # set via set_store()
 _sse_mgr: SSESubscriptionManager = SSESubscriptionManager()
+
+_r2_client: R2Client | None = None
+
+
+def init_r2_client() -> None:
+    """Initialize the R2 client from environment variables.
+
+    Called once during app startup. Sets ``_r2_client`` global;
+    callers check ``if _r2_client:`` before use.
+    """
+    global _r2_client
+    _r2_client = R2Client.create()
+    if _r2_client:
+        logger.info(
+            "R2 storage enabled (bucket=%s)",
+            _r2_client._bucket_display,
+        )
+    else:
+        logger.info("R2 storage not configured — local filesystem only")
 
 
 def set_store(store: TaskStore) -> None:
@@ -82,19 +103,21 @@ def _safe_schedule(loop: asyncio.AbstractEventLoop, coro_factory) -> None:
         pass
 
 
-def _cleanup_output_dir(output_dir: Path) -> None:
+def _cleanup_output_dir(output_dir: Path, *, keep_mp4: bool = True) -> None:
     """Remove non-essential files from a task's output directory.
 
-    Keeps ``final.mp4`` (if it exists) and log-like text files so the
-    frontend can still display diagnostic information.  Everything else
-    (partial renders, cache, media) is removed to prevent disk bloat.
+    Keeps ``final.mp4`` and log-like text files when *keep_mp4* is True
+    (local serving mode).  When False (R2 active), removes everything since the
+    video has already been uploaded to cloud storage.
     """
-    _KEEP_EXTENSIONS = {".mp4", ".log", ".json", ".txt"}
+    extensions_to_keep = {".log", ".json", ".txt"}
+    if keep_mp4:
+        extensions_to_keep.add(".mp4")
     try:
         if not output_dir.is_dir():
             return
         for child in output_dir.iterdir():
-            if child.is_file() and child.suffix not in _KEEP_EXTENSIONS:
+            if child.is_file() and child.suffix not in extensions_to_keep:
                 child.unlink()
             elif child.is_dir():
                 # Remove subdirectories entirely (e.g. media/ cache)
@@ -185,12 +208,38 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 if po is not None:
                     po_data = po.model_dump()
 
+            # ── Upload to R2 if configured ──
+            _video_url: str = final_video  # default: local path
+            if _r2_client is not None and Path(final_video).exists():
+                try:
+                    obj_key = r2_object_key(task_id)
+                    _video_url = _r2_client.upload_file(
+                        final_video, obj_key,
+                    )
+                    log_callback(f"[SYS] Video uploaded to R2: {_video_url}")
+                    # Remove local copy to save disk space
+                    try:
+                        Path(final_video).unlink()
+                    except OSError:
+                        pass  # non-critical
+                except Exception as exc:
+                    logger.warning(
+                        "R2 upload failed for task %s, "
+                        "falling back to local: %s",
+                        task_id,
+                        exc,
+                    )
+                    log_callback(
+                        f"[SYS] R2 upload failed, using local path"
+                    )
+                    # Keep final_video as-is (local path fallback)
+
             _safe_schedule(
                 main_loop,
                 lambda: _store.update_status(
                     task_id,
                     TaskStatus.COMPLETED,
-                    video_path=final_video,
+                    video_path=_video_url,
                     pipeline_output=po_data,
                 ),
             )
@@ -222,7 +271,9 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             except RuntimeError:
                 pass  # loop closed during shutdown/test teardown
             # Clean up partial outputs on failure to avoid disk bloat
-            _cleanup_output_dir(output_dir)
+            _cleanup_output_dir(
+                output_dir, keep_mp4=(_r2_client is None),
+            )
 
     async def _run_pipeline_inline() -> None:
         """Inline async pipeline — test mode only (no subprocess needed)."""
@@ -256,10 +307,29 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 if po is not None:
                     po_data = po.model_dump()
 
+            # ── Upload to R2 if configured ──
+            _video_url: str = final_video
+            if _r2_client is not None and Path(final_video).exists():
+                try:
+                    obj_key = r2_object_key(task_id)
+                    _video_url = _r2_client.upload_file(
+                        final_video, obj_key,
+                    )
+                    log_callback(f"[SYS] Video uploaded to R2: {_video_url}")
+                    try:
+                        Path(final_video).unlink()
+                    except OSError:
+                        pass
+                except Exception as exc:
+                    logger.warning("R2 upload failed (inline): %s", exc)
+                    log_callback("[SYS] R2 upload failed, using local path")
+            else:
+                log_callback("[SYS] No R2 client, keeping local path")
+
             await _store.update_status(
                 task_id,
                 TaskStatus.COMPLETED,
-                video_path=final_video,
+                video_path=_video_url,
                 pipeline_output=po_data,
             )
         except Exception as exc:
@@ -282,7 +352,9 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             )
         finally:
             _sse_mgr.done(task_id)
-            _cleanup_output_dir(output_dir)
+            _cleanup_output_dir(
+                output_dir, keep_mp4=(_r2_client is None),
+            )
 
     if _USE_PIPELINE_THREAD:
         # Production: dedicated thread with its own asyncio loop.
@@ -434,14 +506,27 @@ def _parse_and_yield(
 
 
 @router.get("/{task_id}/video")
-async def get_video(task_id: str) -> FileResponse:
-    """Serve the generated video file."""
+async def get_video(task_id: str):
+    """Serve the generated video file.
+
+    If the stored video_path is an HTTP(S) URL (R2), redirects the
+    client to that URL (zero server bandwidth — CDN delivers directly).
+    Otherwise serves from local filesystem (legacy / dev mode).
+    """
     task = await _store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     video_path = task.get("video_path")
-    if not video_path or not Path(video_path).exists():
+    if not video_path:
         raise HTTPException(status_code=404, detail="Video not ready")
+
+    # R2 mode: redirect to public URL (CDN handles delivery)
+    if is_r2_url(video_path):
+        return RedirectResponse(url=video_path, status_code=302)
+
+    # Local mode: serve from disk
+    if not Path(video_path).exists():
+        raise HTTPException(status_code=404, detail="Video file not found on disk")
     return FileResponse(
         path=video_path,
         media_type="video/mp4",

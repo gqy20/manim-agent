@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .routes import router, set_store
+from .routes import router, set_store, init_r2_client
 from .task_store import TaskStore
 
 # ── 日志文件配置 ───────────────────────────────────────────────
@@ -83,17 +83,22 @@ async def lifespan(app: FastAPI):
     set_store(store)
     app.state.store = store
 
+    # Initialize R2 storage client (no-op if not configured)
+    init_r2_client()
+
     # Query task count from DB for startup banner
     try:
         count = len(await store.list_all(limit=9999))
     except Exception:
         count = 0
 
+    r2_mode = "R2 (cloud)" if _r2_client else "Local filesystem"
     # 启动横幅：让用户在终端中一眼识别后端就绪状态
     print()
     print("=" * 56)
     print("  Manim Agent Backend Ready")
     print(f"  Tasks in DB:   {count}")
+    print(f"  Storage:      {r2_mode}")
     print(f"  Output dir:   {Path('backend/output').resolve()}")
     print("=" * 56)
     print()

@@ -26,6 +26,13 @@ export async function listTasks(limit = 50): Promise<{ tasks: Task[]; total: num
   return res.json();
 }
 
-export function getVideoUrl(taskId: string): string {
+export function getVideoUrl(
+  taskId: string,
+  videoPath?: string | null,
+): string {
+  // If task already has a public R2 URL, use it directly (skip 302 redirect)
+  if (videoPath && /^https?:\/\//.test(videoPath)) {
+    return videoPath;
+  }
   return `${API_BASE}/api/tasks/${taskId}/video`;
 }
