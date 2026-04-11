@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from backend.main import app
 from backend.models import TaskCreateRequest, TaskStatus
-from backend.routes import get_sse_manager, set_store, task_events
+from backend.routes import _status_event, get_sse_manager, set_store, task_events
 from backend.task_store import TaskStore
 
 
@@ -174,17 +174,39 @@ class TestTaskCRUD:
         await store.update_status(task["id"], TaskStatus.COMPLETED)
 
         mgr = get_sse_manager()
-        mgr.push(
-            task["id"],
-            '{"type":"status","data":{"task_status":"completed","phase":"done","message":null},"timestamp":"2026-01-01T00:00:00Z"}',
-        )
+        mgr.push(task["id"], _status_event(TaskStatus.COMPLETED, phase="done"))
 
-        body_parts: list[str] = []
+        emitted_items: list[dict] = []
         async for item in task_events(task["id"]):
-            body_parts.append(json.dumps(item, ensure_ascii=False))
-        body = "".join(body_parts)
+            emitted_items.append(item)
+        body = "".join(json.dumps(item, ensure_ascii=False) for item in emitted_items)
 
         assert body.count('"event": "status"') == 1
+        status_item = next(item for item in emitted_items if item["event"] == "status")
+        status_payload = json.loads(status_item["data"])
+        assert status_payload["data"]["task_status"] == "completed"
+        assert status_payload["data"]["phase"] == "done"
+
+    @pytest.mark.asyncio
+    async def test_events_replay_failed_task_preserves_failed_payload(self, client, store):
+        req = TaskCreateRequest(user_text="stream me")
+        task = await store.create(req)
+        await store.update_status(task["id"], TaskStatus.FAILED, error="boom")
+
+        mgr = get_sse_manager()
+        mgr.push(task["id"], _status_event(TaskStatus.FAILED, message="boom"))
+
+        emitted_items: list[dict] = []
+        async for item in task_events(task["id"]):
+            emitted_items.append(item)
+        body = "".join(json.dumps(item, ensure_ascii=False) for item in emitted_items)
+
+        assert body.count('"event": "status"') == 1
+        status_item = next(item for item in emitted_items if item["event"] == "status")
+        status_payload = json.loads(status_item["data"])
+        assert status_payload["data"]["task_status"] == "failed"
+        assert status_payload["data"]["phase"] is None
+        assert status_payload["data"]["message"] == "boom"
 
     # ── Error-surface 测试：parametrize 替代 5 个重复方法 ───
 
