@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import pytest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
 from backend.main import app
 from backend.models import TaskCreateRequest, TaskStatus
-from backend.routes import _status_event, get_sse_manager, set_store, task_events
+from backend.routes import (
+    _status_event,
+    create_task,
+    get_sse_manager,
+    set_store,
+    task_events,
+)
 from backend.task_store import TaskStore
 
 
@@ -249,6 +257,39 @@ class TestTaskCRUD:
         else:
             for sub in expected_substrings:
                 assert sub in task["error"]
+
+    @pytest.mark.asyncio
+    async def test_failed_task_status_matches_terminal_sse_payload(self, store, sample_request):
+        async def failing_pipeline(**_kwargs):
+            raise RuntimeError("pipeline exploded")
+
+        with (
+            patch("manim_agent.__main__.run_pipeline", failing_pipeline),
+            patch.object(store, "to_response", lambda task: SimpleNamespace(id=task["id"])),
+        ):
+            resp = await create_task(sample_request)
+
+            task = None
+            for _ in range(20):
+                task = await store.get(resp.id)
+                if task and task["status"] == "failed":
+                    break
+                await asyncio.sleep(0)
+            assert task is not None
+            assert task["status"] == "failed"
+
+        raw_events = get_sse_manager().get_buffer(task["id"])
+        parsed_events = [json.loads(item) for item in raw_events]
+        status_payload = next(
+            event for event in parsed_events
+            if event["type"] == "status" and event["data"]["task_status"] == "failed"
+        )
+
+        assert task["status"] == "failed"
+        assert status_payload["data"]["task_status"] == task["status"]
+        assert status_payload["data"]["phase"] is None
+        assert status_payload["data"]["message"] == task["error"]
+        assert "pipeline exploded" in task["error"]
 
 
 class TestTaskStore:
