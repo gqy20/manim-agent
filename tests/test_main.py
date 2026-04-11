@@ -473,6 +473,36 @@ class TestRunPipeline:
             mock_video.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_no_tts_emits_authoritative_status_phases(self):
+        """No-TTS mode should emit only init/render structured status phases."""
+        from manim_agent.pipeline_events import EventType
+
+        events = []
+        mock_messages = [
+            _make_assistant_message(_make_text_block("VIDEO_OUTPUT: media/silent.mp4")),
+            _make_result_message(num_turns=1),
+        ]
+
+        with patch("manim_agent.__main__.query") as mock_query:
+            async def mock_query_gen(*args, **kwargs):
+                for msg in mock_messages:
+                    yield msg
+
+            mock_query.side_effect = mock_query_gen
+
+            result = await main_module.run_pipeline(
+                user_text="test",
+                output_path="output/out.mp4",
+                no_tts=True,
+                event_callback=events.append,
+            )
+
+        assert result == "media/silent.mp4"
+        status_events = [e for e in events if e.event_type == EventType.STATUS]
+        assert [e.data.phase for e in status_events] == ["init", "render"]
+        assert all(e.data.task_status == "running" for e in status_events)
+
+    @pytest.mark.asyncio
     async def test_no_video_output_raises(self):
         """Claude 未输出 VIDEO_OUTPUT 时抛 RuntimeError。"""
         mock_messages = [
@@ -494,6 +524,47 @@ class TestRunPipeline:
                 output_path="output/out.mp4",
                 no_tts=True,
             )
+
+    @pytest.mark.asyncio
+    async def test_full_flow_emits_authoritative_status_phases_in_order(self):
+        """Full pipeline should emit authoritative status phases in execution order."""
+        from manim_agent.pipeline_events import EventType
+
+        events = []
+        mock_messages = [
+            _make_assistant_message(_make_text_block("VIDEO_OUTPUT: media/out.mp4")),
+            _make_result_message(num_turns=1),
+        ]
+
+        with (
+            patch("manim_agent.__main__.query") as mock_query,
+            patch("manim_agent.__main__.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+        ):
+            async def mock_query_gen(*args, **kwargs):
+                for msg in mock_messages:
+                    yield msg
+
+            mock_query.side_effect = mock_query_gen
+            mock_tts.return_value = MagicMock(
+                audio_path="out/audio.mp3",
+                subtitle_path="out/sub.srt",
+                duration_ms=30000,
+                word_count=128,
+            )
+            mock_video.return_value = "output/final.mp4"
+
+            result = await main_module.run_pipeline(
+                user_text="test content",
+                output_path="output/final.mp4",
+                no_tts=False,
+                event_callback=events.append,
+            )
+
+        assert result == "output/final.mp4"
+        status_events = [e for e in events if e.event_type == EventType.STATUS]
+        assert [e.data.phase for e in status_events] == ["init", "render", "tts", "mux"]
+        assert all(e.data.task_status == "running" for e in status_events)
 
 
 class TestBuildOptions:
