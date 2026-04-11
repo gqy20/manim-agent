@@ -30,6 +30,7 @@ class R2Client:
         public_url: str | None = None,
     ) -> None:
         import boto3
+        from botocore.config import Config
 
         endpoint_url = f"https://{account_id}.r2.cloudflarestorage.com"
         self._s3 = boto3.client(
@@ -38,6 +39,11 @@ class R2Client:
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
             region_name="auto",
+            config=Config(
+                connect_timeout=5,
+                read_timeout=20,
+                retries={"max_attempts": 1},
+            ),
         )
         self._bucket = bucket_name
         # User-supplied public URL (e.g. custom CDN domain).

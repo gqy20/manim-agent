@@ -52,7 +52,13 @@ from .pipeline_events import (
 )
 
 
-from .hooks import _on_post_tool_use, activate_hook_state, create_hook_state, reset_hook_state
+from .hooks import (
+    _on_post_tool_use,
+    _on_pre_tool_use,
+    activate_hook_state,
+    create_hook_state,
+    reset_hook_state,
+)
 
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 
@@ -221,6 +227,12 @@ def _build_options(
 
     # ── 配置 SDK Hook 系统用于源码捕获 ──
     hooks = {
+        "PreToolUse": [
+            HookMatcher(
+                matcher="Read|Write|Edit|Bash",
+                hooks=[_on_pre_tool_use],
+            ),
+        ],
         "PostToolUse": [
             HookMatcher(
                 matcher="Write|Edit",
@@ -231,6 +243,7 @@ def _build_options(
 
     options = ClaudeAgentOptions(
         cwd=cwd,
+        add_dirs=[cwd],
         system_prompt=final_system_prompt,
         permission_mode="bypassPermissions",
         max_turns=max_turns,
@@ -337,6 +350,7 @@ async def run_pipeline(
         user_text="",
         preset=preset,
         quality=quality,
+        cwd=cwd,
     )
     marker = "\n\n# "
     system_prompt = full_system_prompt.split(marker, 1)[0] if marker in full_system_prompt else full_system_prompt

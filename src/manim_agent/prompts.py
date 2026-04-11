@@ -85,6 +85,7 @@ def get_prompt(
     user_text: str,
     preset: str = "default",
     quality: str = "high",
+    cwd: str | None = None,
 ) -> str:
     """构建完整的用户 prompt。
 
@@ -113,6 +114,15 @@ def get_prompt(
     # 构建基础 prompt
     quality_flag = QUALITY_FLAGS[quality]
     base = SYSTEM_PROMPT.replace("-qh", quality_flag)
+    if cwd:
+        base += (
+            "\n# Task Directory\n"
+            f"Your only writable workspace for this run is:\n{cwd}\n"
+            "You must create the script, run Manim, and keep the final video inside this directory.\n"
+            "Do not write files to the repository root or any sibling directory.\n"
+            "Do not use absolute paths outside the task directory.\n"
+            "If you use Bash, change into this directory first and keep all paths relative to it.\n"
+        )
 
     # 追加预设特定指令
     suffix = PRESET_SUFFIXES.get(preset, "")

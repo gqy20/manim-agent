@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import shutil
 import traceback
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,53 @@ from manim_agent.pipeline_events import EventType, PipelineEvent
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
 
 logger = logging.getLogger(__name__)
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _canonicalize_pipeline_artifacts(
+    *,
+    task_dir: Path,
+    output_path: Path,
+    final_video: str,
+    pipeline_output: dict[str, Any] | None,
+    log_callback,
+) -> tuple[str, dict[str, Any] | None]:
+    """Import successful artifacts back into the task directory when needed."""
+    task_dir = task_dir.resolve()
+    output_path = output_path.resolve()
+    final_video_path = Path(final_video).resolve()
+    po_data = dict(pipeline_output) if pipeline_output is not None else None
+
+    canonical_video = final_video_path
+    if final_video_path.exists() and not _is_relative_to(final_video_path, task_dir):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(final_video_path, output_path)
+        canonical_video = output_path
+        log_callback(
+            f"[SYS] Imported rendered video into task directory: {canonical_video}"
+        )
+
+    if po_data is not None:
+        po_data["video_output"] = str(canonical_video)
+        scene_file = po_data.get("scene_file")
+        if scene_file:
+            scene_path = Path(scene_file).resolve()
+            if scene_path.exists() and not _is_relative_to(scene_path, task_dir):
+                imported_scene = task_dir / scene_path.name
+                shutil.copy2(scene_path, imported_scene)
+                po_data["scene_file"] = str(imported_scene.resolve())
+                log_callback(
+                    f"[SYS] Imported scene script into task directory: {imported_scene.resolve()}"
+                )
+
+    return str(canonical_video), po_data
 
 
 def _format_exception_message(exc: Exception) -> str:
@@ -71,6 +119,8 @@ async def _pipeline_body(
     from manim_agent.__main__ import run_pipeline
 
     dispatcher_ref: list[Any] = []
+    task_dir = Path(cwd).resolve()
+    final_output_path = Path(output_path).resolve()
     try:
         final_video = await run_pipeline(
             user_text=req.user_text,
@@ -95,6 +145,13 @@ async def _pipeline_body(
                 po_data = po.model_dump()
 
         # ── Upload to R2 if configured ──
+        final_video, po_data = _canonicalize_pipeline_artifacts(
+            task_dir=task_dir,
+            output_path=final_output_path,
+            final_video=final_video,
+            pipeline_output=po_data,
+            log_callback=log_callback,
+        )
         _video_url: str = final_video  # default: local path
         if r2_client is not None and Path(final_video).exists():
             try:

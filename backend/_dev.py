@@ -20,11 +20,12 @@ os.environ["PYTHONPATH"] = _prefix
 import uvicorn
 
 if __name__ == "__main__":
+    reload_flag = os.environ.get("RELOAD", "false").lower() in {"1", "true", "yes", "on"}
     uvicorn.run(
         "backend.main:app",
         host="127.0.0.1",
         port=int(os.environ.get("BE_PORT", "8471")),
-        reload=True,
+        reload=reload_flag,
         # Watch only source directories so generated task output cannot trigger
         # a backend restart in the middle of a Claude run.
         reload_dirs=[

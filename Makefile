@@ -5,6 +5,8 @@ PYTHON ?= uv run python
 BE_HOST ?= 127.0.0.1
 BE_PORT ?= 8471
 FE_PORT ?= 3147
+# Backend reloader default is off for stability.
+RELOAD ?= false
 
 # ── Help ──────────────────────────────────────────────────
 help: ## Show available targets
@@ -27,13 +29,20 @@ dev: ## Start both backend and frontend in development mode (auto-kills old proc
 	@$(call kill-port,$(FE_PORT))
 	@make dev-backend & make dev-frontend
 
-dev-backend: ## Start FastAPI backend with hot-reload (uvicorn, excludes output dirs)
+dev-backend: ## Start FastAPI backend with stable settings (reload disabled by default)
 	@$(call kill-port,$(BE_PORT))
-	$(PYTHON) backend/_dev.py
+	RELOAD=$(RELOAD) $(PYTHON) backend/_dev.py
+
+dev-backend-reload: ## Start FastAPI backend with reload enabled (for short config/code checks)
+	@$(call kill-port,$(BE_PORT))
+	RELOAD=true $(PYTHON) backend/_dev.py
 
 dev-frontend: ## Start Next.js frontend dev server
 	@$(call kill-port,$(FE_PORT))
 	cd frontend && API_URL=http://$(BE_HOST):$(BE_PORT) npm run dev -- --port $(FE_PORT)
+
+stop-backend: ## Stop backend processes bound to BE_PORT
+	@$(call kill-port,$(BE_PORT))
 
 # ── Build & Production ─────────────────────────────────────
 build: ## Build frontend for production
@@ -58,3 +67,6 @@ test: ## Run all tests
 
 test-cov: ## Run tests with coverage report
 	uv run pytest tests/ backend/tests/ -v --cov=src --cov=backend --cov-report=term-missing
+
+clean-backend-tasks: ## Mark stale backend tasks as failed and optionally clean logs/output
+	@$(PYTHON) backend/cleanup_tasks.py

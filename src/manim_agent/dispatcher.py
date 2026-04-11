@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -19,7 +20,7 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from .hooks import _HookState, get_hook_state
+from .hooks import _HookState, get_hook_state, normalize_path_string
 from .output_schema import PipelineOutput
 from .pipeline_events import (
     EventType,
@@ -130,13 +131,9 @@ class _MessageDispatcher:
             )
             return self.pipeline_output
         # fallback：文件系统扫描已渲染的 mp4
-        if not self._saw_completed_task_notification:
-            logger.debug(
-                "get_pipeline_output: no cached output and no completed task_notification"
-            )
-            return None
         discovered_video = self._discover_rendered_video_path()
         if not discovered_video:
+            logger.debug("get_pipeline_output: unable to discover rendered video")
             return None
         self.pipeline_output = PipelineOutput(
             video_output=discovered_video,
@@ -233,6 +230,13 @@ class _MessageDispatcher:
                 if not isinstance(raw, dict):
                     raise ValueError(f"structured_output unexpected type: {type(raw).__name__}")
                 validated_output = PipelineOutput.model_validate(raw)
+                validated_output.video_output = normalize_path_string(
+                    validated_output.video_output
+                )
+                if validated_output.scene_file:
+                    validated_output.scene_file = normalize_path_string(
+                        validated_output.scene_file
+                    )
                 self._structured_output_candidate = validated_output
                 logger.debug(
                     "_handle_result: PipelineOutput validated, video_output=%r",
@@ -323,14 +327,15 @@ class _MessageDispatcher:
         if msg.status == "completed":
             self._saw_completed_task_notification = True
         if msg.status == "completed" and msg.output_file:
-            self.video_output = msg.output_file
+            normalized_output = normalize_path_string(msg.output_file)
+            self.video_output = normalized_output
             self.pipeline_output = PipelineOutput(
-                video_output=msg.output_file,
+                video_output=normalized_output,
                 scene_file=self._infer_scene_file(),
             )
             self._sync_compat_attrs()
             self._print(
-                f"  {_EMOJI['video']} Video output from task_notification: {msg.output_file}"
+                f"  {_EMOJI['video']} Video output from task_notification: {normalized_output}"
             )
         elif msg.status == "completed" and not msg.output_file:
             logger.debug("_handle_task_notification: completed but no output_file")
@@ -377,17 +382,25 @@ class _MessageDispatcher:
     def _discover_rendered_video_path(self) -> str | None:
         """Discover a rendered MP4 from SDK signals or task output artifacts."""
         if self.video_output:
-            return self.video_output
+            return normalize_path_string(self.video_output)
+        text_candidate = self._extract_video_path_from_text()
+        if text_candidate:
+            return text_candidate
         if not self.output_cwd:
             return None
 
-        candidate_dirs = [self.output_cwd / "media" / "videos"]
+        candidate_dirs = [self.output_cwd, self.output_cwd / "media" / "videos"]
+        candidate_dirs.extend(
+            parent / "media" / "videos" for parent in self.output_cwd.parents[:3]
+        )
         seen: set[Path] = set()
         candidates: list[Path] = []
         for base_dir in candidate_dirs:
             if not base_dir.exists():
                 continue
             for path in base_dir.rglob("*.mp4"):
+                if "partial_movie_files" in path.parts:
+                    continue
                 resolved = path.resolve()
                 if resolved in seen:
                     continue
@@ -408,16 +421,39 @@ class _MessageDispatcher:
         )
         return best_str
 
+    def _extract_video_path_from_text(self) -> str | None:
+        """Parse MP4 paths from the assistant's final text summary."""
+        text = "\n".join(self.collected_text)
+        if not text.strip():
+            return None
+
+        patterns = [
+            r"([A-Za-z]:[\\/][^\s`\"']+?\.mp4)",
+            r"(/[^`\s\"']+?\.mp4)",
+        ]
+        for pattern in patterns:
+            for match in re.findall(pattern, text):
+                normalized = normalize_path_string(match.rstrip(".,)"))
+                if normalized and Path(normalized).exists():
+                    logger.debug("_extract_video_path_from_text: matched %r", normalized)
+                    return normalized
+        return None
+
     def _infer_scene_file(self) -> str | None:
         """Infer the scene file from hook-captured Python files under the task cwd."""
         if self.scene_file:
-            return self.scene_file
-        captured_paths = [Path(p).resolve() for p in self._hook_state.captured_source_code]
+            return normalize_path_string(self.scene_file)
+        captured_paths = [
+            Path(normalize_path_string(p)).resolve()
+            for p in self._hook_state.captured_source_code
+        ]
         if self.output_cwd is not None:
-            captured_paths = [
+            scoped_paths = [
                 p for p in captured_paths
                 if self.output_cwd in p.parents
             ]
+            if len(scoped_paths) == 1:
+                return str(scoped_paths[0])
         if len(captured_paths) == 1:
             return str(captured_paths[0])
         return None
@@ -429,7 +465,7 @@ class _MessageDispatcher:
 
         scene_file = self.pipeline_output.scene_file or self._infer_scene_file()
         if scene_file:
-            self.pipeline_output.scene_file = scene_file
+            self.pipeline_output.scene_file = normalize_path_string(scene_file)
 
         if (
             self.pipeline_output.scene_file
