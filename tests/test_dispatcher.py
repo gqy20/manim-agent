@@ -544,10 +544,19 @@ class TestDispatcherPipelineOutput:
         d.dispatch(_make_result_message(num_turns=1))
         assert d.get_pipeline_output() is None
 
-    def test_get_video_output_prefers_task_notification_output(self):
-        """SDK task_notification.output_file 应被视为有效视频结果。"""
+    def test_get_video_output_from_task_notification_via_dispatch(self):
+        """SDK task_notification 通过 dispatch 设置 pipeline_output 后，get_video_output 返回正确值。"""
         d = _MessageDispatcher(verbose=False)
-        d.video_output = "/sdk/out.mp4"
+        d.dispatch(TaskNotificationMessage(
+            subtype="task_notification",
+            task_id="t1",
+            status="completed",
+            output_file="/sdk/out.mp4",
+            summary="done",
+            uuid="u1",
+            session_id="s1",
+            data={},
+        ))
         assert d.get_video_output() == "/sdk/out.mp4"
 
     def test_get_pipeline_output_falls_back_to_rendered_mp4(self, tmp_path: Path):
@@ -581,6 +590,121 @@ class TestDispatcherPipelineOutput:
         d = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
 
         assert d.get_pipeline_output() is None
+
+
+# ── TDD: get_video_output 单路径化 + shadow field 清理 ───────────
+
+
+class TestGetVideoOutputSinglePath:
+    """验证 get_video_output() 是 get_pipeline_output() 的纯便捷包装。
+
+    重构目标：移除 self.video_output 影子字段的三路 fallback，
+    使 get_video_output() 仅委托给 get_pipeline_output().video_output。
+    """
+
+    def test_delegates_to_pipeline_output(self):
+        """pipeline_output 已设置时，直接返回其 video_output。"""
+        from manim_agent.output_schema import PipelineOutput
+
+        d = _MessageDispatcher(verbose=False)
+        d.pipeline_output = PipelineOutput(video_output="/out.mp4")
+        assert d.get_video_output() == "/out.mp4"
+
+    def test_returns_none_when_no_pipeline_output(self):
+        """pipeline_output 为 None 时返回 None，不回退到影子字段。"""
+        d = _MessageDispatcher(verbose=False)
+        # 不设置 pipeline_output，也不设置 video_output 影子字段
+        assert d.get_video_output() is None
+
+    def test_returns_none_even_if_shadow_field_set(self):
+        """即使直接设置 video_output 影子字段，get_video_output 也不应依赖它。
+
+        这是重构后的行为：影子字段不再是独立数据源。
+        """
+        from manim_agent.output_schema import PipelineOutput
+
+        d = _MessageDispatcher(verbose=False)
+        # 直接设置影子字段（旧模式允许的）
+        d.video_output = "/shadow.mp4"
+        # 但 pipeline_output 为 None → 应返回 None（重构后行为）
+        # 注意：此测试在重构前会 FAIL（旧代码返回 /shadow.mp4）
+        assert d.get_video_output() is None
+
+    def test_task_notification_sets_pipeline_output_correctly(self):
+        """task_notification 通过 dispatch 正确设置 pipeline_output。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(TaskNotificationMessage(
+            subtype="task_notification",
+            task_id="t1",
+            status="completed",
+            output_file="/task/out.mp4",
+            summary="render done",
+            uuid="u1",
+            session_id="s1",
+            data={},
+        ))
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output == "/task/out.mp4"
+        # get_video_output 应通过 pipeline_output 获取同一值
+        assert d.get_video_output() == "/task/out.mp4"
+
+    def test_structured_output_does_not_overwrite_existing_pipeline_output(self):
+        """当 pipeline_output 已被 task_notification 设置后，
+        structured_output 不应覆盖它。"""
+        from manim_agent.output_schema import PipelineOutput
+
+        d = _MessageDispatcher(verbose=False)
+        # 1. 先 dispatch task_notification（设置 pipeline_output）
+        d.dispatch(TaskNotificationMessage(
+            subtype="task_notification",
+            task_id="t1",
+            status="completed",
+            output_file="/task/out.mp4",
+            summary="render done",
+            uuid="u1",
+            session_id="s1",
+            data={},
+        ))
+        first_video = d.get_video_output()
+        assert first_video == "/task/out.mp4"
+        # 2. 再 dispatch structured_output 的 ResultMessage
+        d.dispatch(_make_result_message(
+            num_turns=1,
+            **{"structured_output": {"video_output": "/structured/out.mp4"}},
+        ))
+        # 3. pipeline_output 应保持 task_notification 的值
+        assert d.get_video_output() == "/task/out.mp4"
+
+
+class TestShadowFieldCleanup:
+    """验证影子字段（video_output/scene_file/scene_class）的清理。
+
+    重构目标：这些字段不再作为独立数据源存在，
+    所有数据统一通过 pipeline_output 访问。
+    """
+
+    def test_sync_compat_attrs_populates_from_pipeline_output(self):
+        """_sync_compat_attrs 将 pipeline_output 值同步到影子字段。"""
+        from manim_agent.output_schema import PipelineOutput
+
+        d = _MessageDispatcher(verbose=False)
+        d.pipeline_output = PipelineOutput(
+            video_output="/out.mp4",
+            scene_file="scene.py",
+            scene_class="MyScene",
+        )
+        d._sync_compat_attrs()
+        assert d.video_output == "/out.mp4"
+        assert d.scene_file == "scene.py"
+        assert d.scene_class == "MyScene"
+
+    def test_shadow_fields_default_to_none(self):
+        """未调用 _sync_compat_attrs 时，影子字段为 None。"""
+        d = _MessageDispatcher(verbose=False)
+        assert d.video_output is None
+        assert d.scene_file is None
+        assert d.scene_class is None
 
 
 # ── Phase 3: 源码捕获 ───────────────────────────────────────────

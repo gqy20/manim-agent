@@ -412,8 +412,8 @@ async def run_pipeline(
         )
         po = dispatcher.get_pipeline_output()
         logger.debug("run_pipeline: PipelineOutput after get_pipeline_output: %r", po)
-        video_output = dispatcher.get_video_output()
-        logger.debug("run_pipeline: video_output from get_video_output = %r", video_output)
+        video_output = po.video_output if po else None
+        logger.debug("run_pipeline: video_output = %r", video_output)
 
         if not video_output:
             dispatcher._print("")
@@ -447,7 +447,6 @@ async def run_pipeline(
             phase="tts",
             message="Synthesizing narration",
         )
-        po = dispatcher.get_pipeline_output()
         narration_text = po.narration if po and po.narration else user_text
         dispatcher._print(f"\n{_EMOJI['tts']} TTS in progress... (voice={voice_id}, model={model})")
         tts_result = await tts_client.synthesize(

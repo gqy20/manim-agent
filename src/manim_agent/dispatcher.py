@@ -81,7 +81,6 @@ class _MessageDispatcher:
         # ── PipelineOutput ──
         self.pipeline_output: PipelineOutput | None = None
         self._structured_output_candidate: PipelineOutput | None = None
-        self._pipeline_output_source: str | None = None
         self._saw_completed_task_notification = False
         # ── 视频输出路径（从 TaskNotificationMessage.output_file 获取）──
         self.video_output: str | None = None
@@ -153,11 +152,7 @@ class _MessageDispatcher:
         return self.pipeline_output
 
     def get_video_output(self) -> str | None:
-        """返回提取到的视频输出路径（向后兼容接口）。"""
-        if self.pipeline_output is not None and self.pipeline_output.video_output:
-            return self.pipeline_output.video_output
-        if self.video_output:
-            return self.video_output
+        """返回视频输出路径，纯便捷包装（委托给 get_pipeline_output）。"""
         po = self.get_pipeline_output()
         return po.video_output if po else None
 
@@ -256,9 +251,8 @@ class _MessageDispatcher:
                         validated_output.scene_file,
                     )
                 self._attach_captured_source_code("_handle_result")
-                if self._pipeline_output_source != "task_notification":
+                if self.pipeline_output is None:
                     self.pipeline_output = validated_output
-                    self._pipeline_output_source = "structured_output"
                     self._sync_compat_attrs()
             except Exception as e:
                 logger.warning("structured_output validation failed: %s", e)
@@ -334,7 +328,6 @@ class _MessageDispatcher:
                 video_output=msg.output_file,
                 scene_file=self._infer_scene_file(),
             )
-            self._pipeline_output_source = "task_notification"
             self._sync_compat_attrs()
             self._print(
                 f"  {_EMOJI['video']} Video output from task_notification: {msg.output_file}"
