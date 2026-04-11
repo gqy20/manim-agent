@@ -22,6 +22,10 @@ def clean_persistence(tmp_path, monkeypatch):
         "backend.task_store._PERSISTENCE_FILE",
         tmp_path / "tasks.json",
     )
+    # Enable inline (non-threaded) pipeline mode for TestClient compatibility.
+    # Production uses threading to work around Windows/Python 3.13 subprocess
+    # limitations; tests mock run_pipeline so no real subprocess is needed.
+    monkeypatch.setattr("backend.routes._USE_PIPELINE_THREAD", False)
 
 
 @pytest.fixture
@@ -117,19 +121,105 @@ class TestTaskCRUD:
         with patch("manim_agent.__main__.run_pipeline", failing_pipeline):
             resp = client.post("/api/tasks", json=sample_request.model_dump())
 
-        assert resp.status_code == 201
-        task_id = resp.json()["id"]
+            assert resp.status_code == 201
+            task_id = resp.json()["id"]
 
-        for _ in range(20):
+            for _ in range(20):
+                task_resp = client.get(f"/api/tasks/{task_id}")
+                assert task_resp.status_code == 200
+                task = task_resp.json()
+                if task["status"] == "failed":
+                    break
+            else:
+                pytest.fail("task did not transition to failed state")
+
+        assert "The system cannot find the file specified" in task["error"]
+
+    @staticmethod
+    def _wait_for_failed(client, task_id: str, timeout: int = 20) -> dict:
+        """轮询任务直到 failed 状态，返回最终 task dict。"""
+        for _ in range(timeout):
             task_resp = client.get(f"/api/tasks/{task_id}")
             assert task_resp.status_code == 200
             task = task_resp.json()
             if task["status"] == "failed":
-                break
-        else:
-            pytest.fail("task did not transition to failed state")
+                return task
+        pytest.fail(f"task {task_id} did not transition to failed state")
 
-        assert "The system cannot find the file specified" in task["error"]
+    def test_create_task_cli_connection_error_surfaces_details(self, client, sample_request):
+        """CLIConnectionError 包含根本原因信息（如 NotImplementedError 链）。
+
+        复现实际错误: CLIConnectionError: Failed to start Claude Code ->
+        NotImplementedError
+        """
+        from claude_agent_sdk import CLIConnectionError
+
+        async def cli_connection_error(**_kwargs):
+            raise CLIConnectionError(
+                "Failed to start Claude Code"
+            ) from NotImplementedError()
+
+        with patch("manim_agent.__main__.run_pipeline", cli_connection_error):
+            resp = client.post("/api/tasks", json=sample_request.model_dump())
+
+            assert resp.status_code == 201
+            task = self._wait_for_failed(client, resp.json()["id"])
+
+        # 错误消息应包含完整异常链
+        assert "CLIConnectionError" in task["error"]
+        assert "NotImplementedError" in task["error"]
+        assert "Failed to start Claude Code" in task["error"]
+
+    def test_create_task_cli_not_found_gives_install_hint(self, client, sample_request):
+        """CLINotFoundError 包含安装提示信息。"""
+        from claude_agent_sdk import CLINotFoundError
+
+        async def cli_not_found(**_kwargs):
+            raise CLINotFoundError("Claude Code not found")
+
+        with patch("manim_agent.__main__.run_pipeline", cli_not_found):
+            resp = client.post("/api/tasks", json=sample_request.model_dump())
+
+            assert resp.status_code == 201
+            task = self._wait_for_failed(client, resp.json()["id"])
+
+        assert "CLINotFoundError" in task["error"]
+        assert "not found" in task["error"].lower() or "install" in task["error"].lower()
+
+    def test_create_task_process_error_surfaces_exit_code(self, client, sample_request):
+        """ProcessError 包含退出码和 stderr 信息。"""
+        from claude_agent_sdk import ProcessError
+
+        async def process_error(**_kwargs):
+            raise ProcessError(
+                "Command failed",
+                exit_code=1,
+                stderr="permission denied",
+            )
+
+        with patch("manim_agent.__main__.run_pipeline", process_error):
+            resp = client.post("/api/tasks", json=sample_request.model_dump())
+
+            assert resp.status_code == 201
+            task = self._wait_for_failed(client, resp.json()["id"])
+
+        assert "ProcessError" in task["error"]
+        assert "exit code" in task["error"].lower()
+        assert "1" in task["error"]
+
+    def test_create_task_generic_runtime_error_still_works(self, client, sample_request):
+        """普通 RuntimeError（非 SDK 异常）仍正常记录，无回归。"""
+        async def generic_error(**_kwargs):
+            raise RuntimeError("something went wrong")
+
+        with patch("manim_agent.__main__.run_pipeline", generic_error):
+            resp = client.post("/api/tasks", json=sample_request.model_dump())
+
+            assert resp.status_code == 201
+            task = self._wait_for_failed(client, resp.json()["id"])
+
+        assert "RuntimeError" in task["error"]
+        assert "something went wrong" in task["error"]
 
 
 class TestTaskStore:

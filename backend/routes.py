@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,11 @@ from .models import (
 )
 from .sse_manager import SSESubscriptionManager
 from .task_store import TaskStore
+
+# In production, pipeline runs in a dedicated thread with its own asyncio
+# event loop so SDK subprocess creation works on Windows/Python 3.13.
+# Tests set MANIM_AGENT_TEST_MODE=1 to run inline (no subprocess needed).
+_USE_PIPELINE_THREAD = os.environ.get("MANIM_AGENT_TEST_MODE") != "1"
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 logger = logging.getLogger(__name__)
@@ -60,6 +67,19 @@ def _format_exception_message(exc: Exception) -> str:
     return " -> ".join(parts)
 
 
+def _safe_schedule(loop: asyncio.AbstractEventLoop, coro_factory) -> None:
+    """Thread-safe: schedule an async callable on *loop*.
+
+    Silently drops the callback if the loop is already closed (e.g. during
+    test teardown or server shutdown).
+    """
+    try:
+        loop.call_soon_threadsafe(lambda: asyncio.create_task(coro_factory()))
+    except RuntimeError:
+        # Loop closed — acceptable during shutdown / test cleanup
+        pass
+
+
 @router.post("", response_model=TaskResponse, status_code=201)
 async def create_task(req: TaskCreateRequest) -> TaskResponse:
     """Create a task & start the pipeline in background."""
@@ -73,32 +93,114 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
     # Subscribe SSE queue for this task
     _sse_mgr.subscribe(task_id)
 
+    # Capture the running event loop *before* spawning the thread.
+    # Pipeline executes in a dedicated thread with its own asyncio loop so
+    # that SDK subprocess creation (create_subprocess_exec) works on
+    # Windows / Python 3.13 where ProactorEventLoop forbids subprocess
+    # creation inside an already-running loop.
+    main_loop = asyncio.get_event_loop()
+
     def log_callback(line: str) -> None:
-        _sse_mgr.push(task_id, line)
-        # Also store in task logs for replay on reconnect
-        asyncio.get_event_loop().call_soon_threadsafe(
-            lambda: asyncio.create_task(_store.append_log(task_id, line))
-        )
+        _safe_schedule(main_loop, lambda ln=line: _store.append_log(task_id, ln))
+        try:
+            main_loop.call_soon_threadsafe(_sse_mgr.push, task_id, line)
+        except RuntimeError:
+            pass  # loop closed during shutdown/test teardown
 
     # 立即推送启动日志（消除 GAP 1）
     _sse_mgr.push(task_id, f"[SYS] Task {task_id} created")
-    _store.append_log(task_id, f"[SYS] Task {task_id} created")
+    await _store.append_log(task_id, f"[SYS] Task {task_id} created")
 
     def event_callback(event: Any) -> None:
         """将 Dispatcher 结构化事件推送到 SSE 队列。"""
-        _sse_mgr.push(task_id, event)
+        try:
+            main_loop.call_soon_threadsafe(_sse_mgr.push, task_id, event)
+        except RuntimeError:
+            pass  # loop closed during shutdown/test teardown
 
-    async def run_pipeline_background() -> None:
+    def _run_pipeline_thread() -> None:
+        """Execute pipeline in a separate thread with its own event loop."""
+        import asyncio as _asyncio
+
         from manim_agent.__main__ import run_pipeline
 
-        # 推送启动日志（后台任务已开始执行）
-        _sse_mgr.push(task_id, "[SYS] Connecting to Claude Agent SDK...")
-        await _store.append_log(
-            task_id,
-            "[SYS] Connecting to Claude Agent SDK...",
+        log_callback("[SYS] Connecting to Claude Agent SDK...")
+        _safe_schedule(
+            main_loop,
+            lambda: _store.update_status(task_id, TaskStatus.RUNNING),
         )
+
+        dispatcher_ref: list[Any] = []
+        try:
+            final_video = _asyncio.run(
+                run_pipeline(
+                    user_text=req.user_text,
+                    output_path=output_path,
+                    voice_id=req.voice_id,
+                    model=req.model,
+                    quality=req.quality,
+                    no_tts=req.no_tts,
+                    cwd=str(output_dir),
+                    max_turns=50,
+                    log_callback=log_callback,
+                    preset=req.preset,
+                    _dispatcher_ref=dispatcher_ref,
+                    event_callback=event_callback,
+                )
+            )
+            # 提取 pipeline 结构化输出
+            po_data = None
+            if dispatcher_ref:
+                dispatcher = dispatcher_ref[0]
+                po = dispatcher.get_pipeline_output()
+                if po is not None:
+                    po_data = po.model_dump()
+
+            _safe_schedule(
+                main_loop,
+                lambda: _store.update_status(
+                    task_id,
+                    TaskStatus.COMPLETED,
+                    video_path=final_video,
+                    pipeline_output=po_data,
+                ),
+            )
+        except Exception as exc:
+            error_message = _format_exception_message(exc)
+            logger.exception(
+                "Task %s failed: %s [type=%s args=%s]",
+                task_id,
+                error_message,
+                type(exc).__name__,
+                getattr(exc, "args", None),
+            )
+            # 将完整错误链写入 log stream（前端可展示）
+            log_callback(f"[ERR] {error_message}")
+            import traceback as tb
+
+            for line in tb.format_exception(type(exc), exc, exc.__traceback__):
+                for ll in line.rstrip().splitlines():
+                    log_callback(f"[TRACE] {ll}")
+            _safe_schedule(
+                main_loop,
+                lambda: _store.update_status(
+                    task_id, TaskStatus.FAILED, error=error_message
+                ),
+            )
+        finally:
+            try:
+                main_loop.call_soon_threadsafe(_sse_mgr.done, task_id)
+            except RuntimeError:
+                pass  # loop closed during shutdown/test teardown
+
+    async def _run_pipeline_inline() -> None:
+        """Inline async pipeline — test mode only (no subprocess needed)."""
+        from manim_agent.__main__ import run_pipeline
+
+        _sse_mgr.push(task_id, "[SYS] Connecting to Claude Agent SDK...")
+        await _store.append_log(task_id, "[SYS] Connecting to Claude Agent SDK...")
         await _store.update_status(task_id, TaskStatus.RUNNING)
-        # 用于从 run_pipeline 内部获取 dispatcher 实例
+
         dispatcher_ref: list[Any] = []
         try:
             final_video = await run_pipeline(
@@ -115,7 +217,6 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 _dispatcher_ref=dispatcher_ref,
                 event_callback=event_callback,
             )
-            # 提取 pipeline 结构化输出
             po_data = None
             if dispatcher_ref:
                 dispatcher = dispatcher_ref[0]
@@ -137,9 +238,9 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 type(exc).__name__,
                 getattr(exc, "args", None),
             )
-            # 将完整错误链写入 log stream（前端可展示）
             log_callback(f"[ERR] {error_message}")
             import traceback as tb
+
             for line in tb.format_exception(type(exc), exc, exc.__traceback__):
                 for ll in line.rstrip().splitlines():
                     log_callback(f"[TRACE] {ll}")
@@ -149,7 +250,15 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         finally:
             _sse_mgr.done(task_id)
 
-    asyncio.create_task(run_pipeline_background())
+    if _USE_PIPELINE_THREAD:
+        # Production: dedicated thread with its own asyncio loop.
+        # Required for Windows/Python 3.13 where ProactorEventLoop
+        # forbids subprocess creation inside a running loop.
+        threading.Thread(target=_run_pipeline_thread, daemon=True).start()
+    else:
+        # Test mode: run inline on the event loop (no subprocess needed).
+        asyncio.create_task(_run_pipeline_inline())
+
     return _store.to_response(task)
 
 

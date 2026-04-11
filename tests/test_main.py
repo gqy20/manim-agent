@@ -3,6 +3,7 @@
 覆盖：CLI 参数解析、结果提取、消息分发器、会话隔离、Pipeline 编排。
 """
 
+import json
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1012,6 +1013,104 @@ class TestStructuredOutput:
 
         po = d.get_pipeline_output()
         assert po.video_output == "/struct.mp4"
+
+    def test_handle_result_structured_output_as_json_string(self):
+        """SDK 返回 JSON 字符串格式的 structured_output 时正确解析。
+
+        某些 CLI 版本将 structured_output 作为 JSON 字符串返回
+        而非已解析的 dict，dispatcher 应能处理此情况。
+        """
+        d = _MessageDispatcher(verbose=False)
+        msg = _make_result_message(
+            num_turns=2,
+            **{"structured_output": json.dumps({
+                "video_output": "/string/out.mp4",
+                "scene_file": "s.py",
+                "scene_class": "SScene",
+                "duration_seconds": 15,
+                "narration": "字符串格式解说",
+            })},
+        )
+        d.dispatch(msg)
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output == "/string/out.mp4"
+        assert po.scene_file == "s.py"
+        assert po.narration == "字符串格式解说"
+
+    def test_handle_result_malformed_json_string_falls_back(self):
+        """structured_output 是畸形 JSON 字符串时优雅降级到 text markers。
+
+        复现 "Extra data: line 1 column 5 (char 4)" 场景：
+        CLI 返回的字符串含有效 JSON 前缀但后跟额外数据。
+        """
+        d = _MessageDispatcher(verbose=False)
+        # 畸形 JSON 字符串：有效 JSON 后跟垃圾数据
+        msg_bad = _make_result_message(
+            num_turns=1,
+            **{"structured_output": '{"video_output": "/x.mp4"} garbage'},
+        )
+        d.dispatch(msg_bad)
+        # fallback 到 text markers
+        d.dispatch(_make_assistant_message(
+            _make_text_block("VIDEO_OUTPUT: /fallback.mp4"),
+        ))
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output == "/fallback.mp4"
+
+    def test_handle_result_list_structured_output_falls_back(self):
+        """structured_output 为 list 类型时降级到 text markers。
+
+        SDK 不应返回 list，但防御性编程确保不崩溃。
+        """
+        d = _MessageDispatcher(verbose=False)
+        msg_bad = _make_result_message(
+            num_turns=1,
+            **{"structured_output": [{"video_output": "/x.mp4"}]},
+        )
+        d.dispatch(msg_bad)
+        d.dispatch(_make_assistant_message(
+            _make_text_block("VIDEO_OUTPUT: /list_fallback.mp4"),
+        ))
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output == "/list_fallback.mp4"
+
+    def test_handle_result_empty_dict_falls_back(self):
+        """structured_output={} 因缺少必填 video_output 而 fallback。"""
+        d = _MessageDispatcher(verbose=False)
+        msg_bad = _make_result_message(
+            num_turns=1,
+            **{"structured_output": {}},
+        )
+        d.dispatch(msg_bad)
+        d.dispatch(_make_assistant_message(
+            _make_text_block("VIDEO_OUTPUT: /empty_dict_fallback.mp4"),
+        ))
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output == "/empty_dict_fallback.mp4"
+
+    def test_handle_result_int_structured_output_falls_back(self):
+        """structured_output 为 int 等标量类型时降级。"""
+        d = _MessageDispatcher(verbose=False)
+        msg_bad = _make_result_message(
+            num_turns=1,
+            **{"structured_output": 42},
+        )
+        d.dispatch(msg_bad)
+        d.dispatch(_make_assistant_message(
+            _make_text_block("VIDEO_OUTPUT: /int_fallback.mp4"),
+        ))
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output == "/int_fallback.mp4"
 
 
 class TestBuildOptionsOutputFormat:

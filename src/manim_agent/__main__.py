@@ -7,6 +7,7 @@
 
 import argparse
 import asyncio
+import json
 import logging
 import sys
 import uuid
@@ -203,9 +204,15 @@ class _MessageDispatcher:
         # ── 尝试从 structured_output 构建 PipelineOutput（主路径）──
         if msg.structured_output is not None:
             try:
-                self.pipeline_output = PipelineOutput.model_validate(
-                    msg.structured_output
-                )
+                raw = msg.structured_output
+                # 类型归一化：SDK 可能返回 str/dict/其他类型
+                if isinstance(raw, str):
+                    raw = json.loads(raw)
+                if not isinstance(raw, dict):
+                    raise ValueError(
+                        f"structured_output unexpected type: {type(raw).__name__}"
+                    )
+                self.pipeline_output = PipelineOutput.model_validate(raw)
                 # 关联捕获的源代码
                 if (
                     self.pipeline_output.scene_file
