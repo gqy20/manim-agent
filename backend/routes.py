@@ -183,9 +183,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     log_callback(f"[TRACE] {ll}")
             _safe_schedule(
                 main_loop,
-                lambda: _store.update_status(
-                    task_id, TaskStatus.FAILED, error=error_message
-                ),
+                lambda: _store.update_status(task_id, TaskStatus.FAILED, error=error_message),
             )
         finally:
             try:
@@ -225,7 +223,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     po_data = po.model_dump()
 
             await _store.update_status(
-                task_id, TaskStatus.COMPLETED,
+                task_id,
+                TaskStatus.COMPLETED,
                 video_path=final_video,
                 pipeline_output=po_data,
             )
@@ -244,9 +243,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             for line in tb.format_exception(type(exc), exc, exc.__traceback__):
                 for ll in line.rstrip().splitlines():
                     log_callback(f"[TRACE] {ll}")
-            await _store.update_status(
-                task_id, TaskStatus.FAILED, error=error_message
-            )
+            await _store.update_status(task_id, TaskStatus.FAILED, error=error_message)
         finally:
             _sse_mgr.done(task_id)
 
@@ -323,21 +320,24 @@ async def task_events(task_id: str):
             now = datetime.now(timezone.utc).isoformat()
             yield {
                 "event": "log",
-                "data": SSEEvent(event_type="log", data=item, timestamp=now)
-                .model_dump_json(),
+                "data": SSEEvent(event_type="log", data=item, timestamp=now).model_dump_json(),
             }
 
         # Send final status after sentinel
-        refreshed = await _store.get(task_id)
-        if refreshed:
-            yield {
-                "event": "status",
-                "data": SSEEvent(
-                    event_type="status",
-                    data=refreshed["status"],
-                    timestamp=datetime.now(timezone.utc).isoformat(),
-                ).model_dump_json(),
-            }
+        try:
+            refreshed = await _store.get(task_id)
+            if refreshed:
+                yield {
+                    "event": "status",
+                    "data": SSEEvent(
+                        event_type="status",
+                        data=refreshed["status"],
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                    ).model_dump_json(),
+                }
+        except Exception:
+            # Task may have been cleaned up; ignore and let SSE stream end
+            pass
     finally:
         _sse_mgr.unsubscribe(task_id)
 

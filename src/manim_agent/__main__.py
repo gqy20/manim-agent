@@ -23,7 +23,10 @@ load_dotenv()
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
+    HookContext,
+    HookMatcher,
     Message,
+    PostToolUseHookInput,
     RateLimitEvent,
     ResultMessage,
     StreamEvent,
@@ -34,6 +37,10 @@ from claude_agent_sdk import (
     ToolResultBlock,
     ToolUseBlock,
     query,
+)
+from claude_agent_sdk.types import (
+    PostToolUseHookSpecificOutput,
+    SyncHookJSONOutput,
 )
 
 from . import prompts
@@ -48,6 +55,55 @@ from .pipeline_events import (
     ToolResultPayload,
     ToolStartPayload,
 )
+
+
+# ── Hook 回调：使用 SDK 原生 Hook 系统替代手动 ToolUseBlock 迭代 ───────
+
+
+class _HookState:
+    """Hook 共享状态，用于在多个 hook 调用间传递数据。"""
+
+    def __init__(self) -> None:
+        self.captured_source_code: dict[str, str] = {}
+        self.event_callback: Callable[[PipelineEvent], None] | None = None
+
+
+_hook_state = _HookState()
+
+
+async def _on_post_tool_use(
+    input_data: PostToolUseHookInput,
+    tool_use_id: str | None,
+    context: HookContext,
+) -> SyncHookJSONOutput:
+    """PostToolUse hook：捕获 Write/Edit 工具的源码。
+
+    使用 SDK 原生 Hook 系统替代手动遍历 ToolUseBlock。
+    """
+    tool_name = input_data.get("tool_name", "")
+    tool_input = input_data.get("tool_input", {})
+    logger.debug(f"[HOOK] PostToolUse: tool_name={tool_name}, tool_use_id={tool_use_id}")
+
+    if tool_name in ("Write", "Edit") and isinstance(tool_input, dict):
+        file_path = tool_input.get("file_path", "")
+        content = tool_input.get("content", "")
+        logger.debug(
+            f"[HOOK] PostToolUse: {tool_name} file_path={file_path}, content length={len(content) if content else 0}"
+        )
+        if file_path.endswith(".py") and content:
+            _hook_state.captured_source_code[file_path] = content
+            logger.debug(
+                f"[HOOK] Captured source code for {file_path}, total captured: {list(_hook_state.captured_source_code.keys())}"
+            )
+    else:
+        logger.debug(f"[HOOK] PostToolUse: ignoring {tool_name} (not Write/Edit or not a dict)")
+
+    return SyncHookJSONOutput(
+        hookSpecificOutput=PostToolUseHookSpecificOutput(
+            hookEventName="PostToolUse",
+        )
+    )
+
 
 logger = logging.getLogger(__name__)
 
@@ -93,9 +149,9 @@ _EMOJI = {
 class _MessageDispatcher:
     """分发 query() 消息流中的各类消息，提取结构化信息并输出实时日志。
 
-    将当前内联的 hasattr 逻辑替换为基于 isinstance 的类型安全分发，
-    完整利用 SDK 提供的 ToolUseBlock / ToolResultBlock / ResultMessage /
-    RateLimitEvent / TaskProgressMessage 等消息类型。
+    利用 SDK 原生 Hook 系统（PostToolUseHookInput）捕获源码，
+    使用 TaskNotificationMessage.output_file 获取视频输出路径，
+    直接使用 ResultMessage 原生字段替代手动构建 result_summary。
     """
 
     def __init__(
@@ -110,15 +166,14 @@ class _MessageDispatcher:
         self.tool_use_count = 0
         self.tool_stats: dict[str, int] = {}
         self.collected_text: list[str] = []
-        # ── PipelineOutput (替代裸字符串属性) ──
+        # ── PipelineOutput ──
         self.pipeline_output: PipelineOutput | None = None
-        # ── 源码捕获：file_path → content ──
-        self.captured_source_code: dict[str, str] = {}
-        # ── 向后兼容的旧属性（由 pipeline_output 填充）──
+        # ── 视频输出路径（从 TaskNotificationMessage.output_file 获取）──
         self.video_output: str | None = None
+        # ── 向后兼容的旧属性 ──
         self.scene_file: str | None = None
         self.scene_class: str | None = None
-        self.result_summary: dict[str, Any] | None = None
+        # ── 直接使用 ResultMessage 原生字段，不再手动构建 ──
 
     # ── 公共接口 ──────────────────────────────────────────────
 
@@ -141,23 +196,41 @@ class _MessageDispatcher:
     def get_pipeline_output(self) -> PipelineOutput | None:
         """返回验证后的 PipelineOutput（可能为 None）。
 
-        优先级：structured_output > text markers > None
+        优先级：structured_output > Hook 捕获源码 > None
         """
+        self._print(
+            f"  [DEBUG] get_pipeline_output: self.pipeline_output is {'not None' if self.pipeline_output is not None else 'None'}"
+        )
         if self.pipeline_output is not None:
+            self._print(
+                f"  [DEBUG] get_pipeline_output: returning cached PipelineOutput, video_output={self.pipeline_output.video_output!r}"
+            )
             return self.pipeline_output
         # fallback：从 collected_text 的标记中解析
+        self._print(
+            f"  [DEBUG] get_pipeline_output: trying text markers fallback, collected_text length={len(self.collected_text)}"
+        )
         try:
             self.pipeline_output = PipelineOutput.from_text_markers("\n".join(self.collected_text))
-        except (ValueError, Exception):
+            self._print(
+                f"  [DEBUG] get_pipeline_output: text markers parsed, video_output={self.pipeline_output.video_output!r}"
+            )
+        except (ValueError, Exception) as e:
+            self._print(f"  [DEBUG] get_pipeline_output: text markers failed: {e}")
             return None
-        # 自动关联捕获的源代码
+        # 关联 Hook 捕获的源代码
         if (
             self.pipeline_output.scene_file
-            and self.pipeline_output.scene_file in self.captured_source_code
+            and self.pipeline_output.scene_file in _hook_state.captured_source_code
         ):
-            self.pipeline_output.source_code = self.captured_source_code[
+            self.pipeline_output.source_code = _hook_state.captured_source_code[
                 self.pipeline_output.scene_file
             ]
+            self._print(f"  [DEBUG] get_pipeline_output: source code linked from hook state")
+        else:
+            self._print(
+                f"  [DEBUG] get_pipeline_output: scene_file={self.pipeline_output.scene_file!r}, hook captured keys={list(_hook_state.captured_source_code.keys())}"
+            )
         # 同步向后兼容属性
         self._sync_compat_attrs()
         return self.pipeline_output
@@ -170,7 +243,11 @@ class _MessageDispatcher:
     # ── 消息处理器 ──────────────────────────────────────────────
 
     def _handle_assistant(self, msg: AssistantMessage) -> None:
-        """处理 AssistantMessage，遍历所有 content block。"""
+        """处理 AssistantMessage，遍历所有 content block。
+
+        注意：源码捕获已移至 SDK Hook 系统（PostToolUseHookInput）。
+        """
+        self._print(f"  [DEBUG] _handle_assistant: content blocks count={len(msg.content)}")
         for block in msg.content:
             if isinstance(block, TextBlock):
                 self._log_text(block.text)
@@ -181,12 +258,10 @@ class _MessageDispatcher:
                 self.tool_use_count += 1
                 name = block.name
                 self.tool_stats[name] = self.tool_stats.get(name, 0) + 1
-                # ── 源码捕获：Write/Edit 工具的 .py 文件内容 ──
-                if name in ("Write", "Edit") and isinstance(block.input, dict):
-                    file_path = block.input.get("file_path", "")
-                    content = block.input.get("content", "")
-                    if file_path.endswith(".py") and content:
-                        self.captured_source_code[file_path] = content
+                if name in ("Write", "Edit"):
+                    self._print(
+                        f"  [DEBUG] _handle_assistant: {name} tool called (hook will capture source)"
+                    )
 
             elif isinstance(block, ToolResultBlock):
                 self._log_tool_result(block)
@@ -195,8 +270,62 @@ class _MessageDispatcher:
                 self._log_thinking(block)
 
     def _handle_result(self, msg: ResultMessage) -> None:
-        """处理 ResultMessage，记录会话摘要并尝试解析 structured_output。"""
-        self.result_summary = {
+        """处理 ResultMessage，记录会话摘要并尝试解析 structured_output。
+
+        直接使用 ResultMessage 原生字段，通过 result_summary property 提供向后兼容访问。
+        """
+        self._result_message = msg
+        self._print(
+            f"  [DEBUG] _handle_result: stop_reason={msg.stop_reason!r}, is_error={msg.is_error}"
+        )
+        self._print(
+            f"  [DEBUG] _handle_result: structured_output is {'not None' if msg.structured_output is not None else 'None'}"
+        )
+        # ── 尝试从 structured_output 构建 PipelineOutput（主路径）──
+        if msg.structured_output is not None:
+            try:
+                raw = msg.structured_output
+                self._print(f"  [DEBUG] _handle_result: raw type={type(raw).__name__}")
+                # 类型归一化：SDK 可能返回 str/dict/其他类型
+                if isinstance(raw, str):
+                    raw = json.loads(raw)
+                    self._print(f"  [DEBUG] _handle_result: parsed JSON, type={type(raw).__name__}")
+                if not isinstance(raw, dict):
+                    raise ValueError(f"structured_output unexpected type: {type(raw).__name__}")
+                self.pipeline_output = PipelineOutput.model_validate(raw)
+                self._print(
+                    f"  [DEBUG] _handle_result: PipelineOutput validated, video_output={self.pipeline_output.video_output!r}"
+                )
+                # 关联 Hook 捕获的源代码
+                if (
+                    self.pipeline_output.scene_file
+                    and self.pipeline_output.scene_file in _hook_state.captured_source_code
+                ):
+                    self.pipeline_output.source_code = _hook_state.captured_source_code[
+                        self.pipeline_output.scene_file
+                    ]
+                    self._print(
+                        f"  [DEBUG] _handle_result: source code linked for {self.pipeline_output.scene_file}"
+                    )
+                self._sync_compat_attrs()
+            except Exception as e:
+                logger.warning(
+                    "structured_output validation failed, falling back to text markers: %s", e
+                )
+                self._print(f"  [DEBUG] _handle_result: validation failed: {e}")
+        else:
+            self._print(
+                f"  [DEBUG] _handle_result: no structured_output, will try text markers fallback"
+            )
+        self._log_result_summary()
+
+    @property
+    def result_summary(self) -> dict[str, Any] | None:
+        """返回 ResultMessage 字段的字典视图（向后兼容）。"""
+        if not hasattr(self, "_result_message") or self._result_message is None:
+            return None
+        msg = self._result_message
+        return {
             "turns": msg.num_turns,
             "cost_usd": msg.total_cost_usd,
             "duration_ms": msg.duration_ms,
@@ -204,28 +333,6 @@ class _MessageDispatcher:
             "stop_reason": msg.stop_reason,
             "errors": msg.errors,
         }
-        # ── 尝试从 structured_output 构建 PipelineOutput（主路径）──
-        if msg.structured_output is not None:
-            try:
-                raw = msg.structured_output
-                # 类型归一化：SDK 可能返回 str/dict/其他类型
-                if isinstance(raw, str):
-                    raw = json.loads(raw)
-                if not isinstance(raw, dict):
-                    raise ValueError(f"structured_output unexpected type: {type(raw).__name__}")
-                self.pipeline_output = PipelineOutput.model_validate(raw)
-                # 关联捕获的源代码
-                if (
-                    self.pipeline_output.scene_file
-                    and self.pipeline_output.scene_file in self.captured_source_code
-                ):
-                    self.pipeline_output.source_code = self.captured_source_code[
-                        self.pipeline_output.scene_file
-                    ]
-                self._sync_compat_attrs()
-            except Exception:
-                logger.warning("structured_output validation failed, falling back to text markers")
-        self._log_result_summary()
 
     def _handle_rate_limit(self, event: RateLimitEvent) -> None:
         """处理限流事件。"""
@@ -260,9 +367,24 @@ class _MessageDispatcher:
         )
 
     def _handle_task_notification(self, msg: TaskNotificationMessage) -> None:
-        """处理任务完成/失败通知。"""
+        """处理任务完成/失败通知。
+
+        使用 SDK 原生的 TaskNotificationMessage.output_file 获取视频路径，
+        无需解析文本标记。
+        """
         icon = _EMOJI["check"] if msg.status == "completed" else _EMOJI["cross"]
         self._print(f"  {icon} Task {msg.status}: {msg.summary}")
+        self._print(
+            f"  [DEBUG] _handle_task_notification: output_file={msg.output_file!r}, status={msg.status}"
+        )
+        # 从 TaskNotificationMessage.output_file 获取视频输出路径
+        if msg.status == "completed" and msg.output_file:
+            self.video_output = msg.output_file
+            self._print(
+                f"  {_EMOJI['video']} Video output from task_notification: {msg.output_file}"
+            )
+        elif msg.status == "completed" and not msg.output_file:
+            self._print(f"  [DEBUG] _handle_task_notification: completed but no output_file")
 
     def _handle_stream_event(self, msg: StreamEvent) -> None:
         """处理流式事件（token 级别的 API 增量更新）。
@@ -324,6 +446,7 @@ class _MessageDispatcher:
         icon = _EMOJI.get(block.name.lower(), "\u25b6")
         input_summary = self._summarize_input(block.input)
         self._print(f"  {icon} {block.name} \u2192 {input_summary}")
+        self._print(f"  [DEBUG] _log_tool_use: id={block.id}, name={block.name}")
         # 发射结构化事件
         self._emit_event(
             PipelineEvent(
@@ -338,6 +461,15 @@ class _MessageDispatcher:
 
     def _log_tool_result(self, block: ToolResultBlock) -> None:
         """打印工具执行结果 + 发射 TOOL_RESULT 结构化事件。"""
+        content_preview = ""
+        if block.content:
+            if isinstance(block.content, str):
+                content_preview = block.content[:100].replace("\n", "\\n")
+            elif isinstance(block.content, list):
+                content_preview = f"list[{len(block.content)}]"
+        self._print(
+            f"  [DEBUG] _log_tool_result: tool_use_id={block.tool_use_id}, is_error={block.is_error}, content_preview={content_preview!r}"
+        )
         if block.is_error:
             self._print(f"  {_EMOJI['cross']} Result Error (tool_use_id={block.tool_use_id})")
         # 成功结果通常静默（避免日志刷屏）
@@ -587,6 +719,16 @@ def _build_options(
         "PATH": os.pathsep.join(path_parts),
     }
 
+    # ── 配置 SDK Hook 系统用于源码捕获 ──
+    hooks = {
+        "PostToolUse": [
+            HookMatcher(
+                matcher="Write|Edit",
+                hooks=[_on_post_tool_use],
+            ),
+        ],
+    }
+
     return ClaudeAgentOptions(
         cwd=cwd,
         system_prompt=final_system_prompt,
@@ -610,6 +752,10 @@ def _build_options(
         ],
         # ── 环境变量：确保 manim 可被 Claude CLI 找到 ──
         env=venv_env,
+        # ── SDK Hook 系统：替代手动 ToolUseBlock 迭代 ──
+        hooks=hooks,
+        # ── 启用文件检查点以支持 rewind_files ──
+        enable_file_checkpointing=True,
     )
 
 
@@ -684,6 +830,7 @@ async def run_pipeline(
     dispatcher = _MessageDispatcher(verbose=True, log_callback=log_callback)
     if event_callback is not None:
         dispatcher.event_callback = event_callback
+        _hook_state.event_callback = event_callback
     # ── 阶段标记：初始化完成，即将启动 SDK query ──
     dispatcher._print(f"\n{_LOG_SEPARATOR}")
     dispatcher._print(
@@ -703,7 +850,18 @@ async def run_pipeline(
     # 3. 从 dispatcher 提取结果
     # ── 阶段标记：SDK 对话结束，提取输出 ──
     dispatcher._print(f"  {_EMOJI['gear']} Phase 2/4: 提取渲染结果...")
+    dispatcher._print(
+        f"  [DEBUG] run_pipeline: dispatcher.video_output (before get_pipeline_output) = {dispatcher.video_output!r}"
+    )
+    dispatcher._print(
+        f"  [DEBUG] run_pipeline: hook captured source code keys = {list(_hook_state.captured_source_code.keys())}"
+    )
+    po = dispatcher.get_pipeline_output()
+    dispatcher._print(f"  [DEBUG] run_pipeline: PipelineOutput after get_pipeline_output: {po!r}")
     video_output = dispatcher.get_video_output()
+    dispatcher._print(
+        f"  [DEBUG] run_pipeline: video_output from get_video_output = {video_output!r}"
+    )
 
     if not video_output:
         dispatcher._print("")
@@ -712,6 +870,16 @@ async def run_pipeline(
         if dispatcher.result_summary:
             s = dispatcher.result_summary
             dispatcher._print(f"  Turns: {s.get('turns', '?')} | Error: {s.get('is_error', '?')}")
+        # 调试：打印 Agent 的完整文本输出，帮助定位问题
+        collected = "\n".join(dispatcher.collected_text)
+        if collected.strip():
+            dispatcher._print(f"  --- Agent 文本输出（前 2000 字符）---")
+            dispatcher._print(collected[:2000])
+            if len(collected) > 2000:
+                dispatcher._print(f"  ... (共 {len(collected)} 字符)")
+            dispatcher._print(f"  --- 输出结束 ---")
+        else:
+            dispatcher._print(f"  (Agent 没有产生任何文本输出)")
         raise RuntimeError(
             "Claude did not produce a VIDEO_OUTPUT marker. "
             "The agent may have failed to render the scene."

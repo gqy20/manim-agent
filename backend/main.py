@@ -1,17 +1,57 @@
 """FastAPI application entry point for manim-agent web backend."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from anyio import BrokenResourceError
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
+from starlette.responses import Response
 
 from .routes import router, set_store
 from .task_store import TaskStore
 
+# ── 日志文件配置 ───────────────────────────────────────────────
+_log_dir = Path("backend/logs")
+_log_dir.mkdir(exist_ok=True)
+_log_file = _log_dir / f"manim-agent-{os.getpid()}.log"
+
+# 基础配置：同时输出到文件和控制台
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler(_log_file, encoding="utf-8"),
+        logging.StreamHandler(),
+    ],
+)
 logger = logging.getLogger(__name__)
+
+
+class _SSEDisconnectMiddleware(BaseHTTPMiddleware):
+    """Suppress benign SSE disconnect errors when clients close connections.
+
+    When SSE clients disconnect, Starlette's EventSourceResponse raises
+    BrokenResourceError (sometimes wrapped in ExceptionGroup). This is normal
+    and should not surface as ERROR-level server logs.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        try:
+            return await call_next(request)
+        except ExceptionGroup as exc:
+            # If *all* sub-exceptions are BrokenResourceError, suppress silently.
+            broken = exc.subgroup(BrokenResourceError)
+            if broken is not None and len(broken.exceptions) == len(exc.exceptions):
+                return Response(status_code=204)
+            raise
+        except BrokenResourceError:
+            return Response(status_code=204)
 
 
 @asynccontextmanager
@@ -45,6 +85,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Suppress benign SSE disconnect errors (BrokenResourceError from keepalive)
+app.add_middleware(_SSEDisconnectMiddleware)
 
 app.include_router(router)
 
