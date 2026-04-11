@@ -11,8 +11,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse, RedirectResponse, Response
 try:
     from fastapi.sse import EventSourceResponse
 except ImportError:
@@ -626,3 +626,32 @@ async def get_video(task_id: str):
         media_type="video/mp4",
         filename=f"{task_id}.mp4",
     )
+
+
+# ── 前端日志接收端点 ──────────────────────────────────────────
+_FRONTEND_LOG_DIR = Path("backend/logs")
+
+
+@router.post("/frontend-logs", status_code=204)
+async def receive_frontend_logs(request: Request):
+    """接收前端日志并按会话 ID 写入 backend/logs/frontend-{sessionId}.log (NDJSON)."""
+    body = await request.json()
+    entries = body if isinstance(body, list) else [body]
+
+    _FRONTEND_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 按 sessionId 分组写入不同文件
+    by_session: dict[str, list[dict]] = {}
+    for entry in entries:
+        sid = entry.get("sessionId", "unknown")
+        by_session.setdefault(sid, []).append(entry)
+
+    for sid, group in by_session.items():
+        log_file = _FRONTEND_LOG_DIR / f"frontend-{sid}.log"
+        with log_file.open("a", encoding="utf-8") as f:
+            for entry in group:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    logger.debug("Received %d frontend log entries across %d sessions",
+                 len(entries), len(by_session))
+    return Response(status_code=204)

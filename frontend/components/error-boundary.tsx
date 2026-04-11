@@ -2,6 +2,7 @@
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { AlertTriangle, RefreshCw, Home } from "lucide-react";
+import { logger } from "@/lib/logger";
 import Link from "next/link";
 
 interface Props {
@@ -27,7 +28,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     // Log to console for debugging; in production this would go to a service
-    console.error("[ErrorBoundary]", error, info.componentStack);
+    logger.error("error-boundary", "React rendering error caught", { message: error.message, stack: info.componentStack?.slice(0, 500) });
   }
 
   handleRetry = () => {

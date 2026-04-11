@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { TaskCard } from "@/components/task-card";
 import { listTasks } from "@/lib/api";
+import { logger } from "@/lib/logger";
 import type { Task } from "@/types";
 import { Loader2, History, Inbox, Sparkles, ArrowRight } from "lucide-react";
 import Link from "next/link";
@@ -40,7 +41,7 @@ export default function HistoryPage() {
   useEffect(() => {
     listTasks()
       .then((res) => setTasks(res.tasks))
-      .catch(console.error)
+      .catch((err: unknown) => logger.error("history", "Failed to load task list", { message: err instanceof Error ? err.message : String(err) }))
       .finally(() => setLoading(false));
   }, []);
 

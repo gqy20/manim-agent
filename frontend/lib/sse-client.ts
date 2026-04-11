@@ -1,5 +1,6 @@
 import type { SSEEvent, SSEEventType } from "@/types";
 import { isStatusPayload } from "@/types";
+import { logger } from "@/lib/logger";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -77,7 +78,7 @@ export function connectTaskEvents(
           onComplete?.();
         }
       } catch (err) {
-        console.warn("[SSE] failed to parse event:", err, "| raw:", e.data.slice(0, 120));
+        logger.warn("sse-client", "Failed to parse SSE event", { raw: e.data.slice(0, 120) });
       }
     };
 
@@ -87,7 +88,7 @@ export function connectTaskEvents(
     registered = true;
 
     es.onerror = (e) => {
-      console.warn("[SSE] onerror", { taskId, readyState: es?.readyState });
+      logger.warn("sse-client", "SSE onerror event", { taskId, readyState: es?.readyState });
       if ((!es || es.readyState === EventSource.CLOSED) && state.attempt === 0) {
         return;
       }
@@ -103,8 +104,10 @@ export function connectTaskEvents(
         const jitter = delay * cfg.jitterFactor * (Math.random() * 2 - 1);
         const finalDelay = Math.round(delay + jitter);
 
-        console.warn(
-          `[SSE] Connection lost (attempt ${state.attempt}/${cfg.maxAttempts}), reconnecting in ${finalDelay}ms...`,
+        logger.warn(
+          "sse-client",
+          `Connection lost (attempt ${state.attempt}/${cfg.maxAttempts}), reconnecting in ${finalDelay}ms`,
+          { taskId },
         );
 
         state.timerId = setTimeout(() => {
@@ -114,7 +117,7 @@ export function connectTaskEvents(
           openConnection();
         }, finalDelay);
       } else if (state.attempt >= cfg.maxAttempts) {
-        console.error(`[SSE] Max reconnection attempts (${cfg.maxAttempts}) reached.`);
+        logger.error("sse-client", `Max reconnection attempts (${cfg.maxAttempts}) reached`, { taskId });
         onEvent({
           type: "error",
           data: `SSE disconnected after ${cfg.maxAttempts} retries`,

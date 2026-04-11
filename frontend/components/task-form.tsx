@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { createTask } from "@/lib/api";
+import { logger } from "@/lib/logger";
 import type { TaskCreatePayload } from "@/types";
 import { Loader2, Wand2, ChevronDown, Sparkles } from "lucide-react";
 
@@ -107,7 +108,7 @@ export function TaskForm() {
         })
           .then((task) => {
             if (!task?.id) {
-              console.error("[TaskForm] createTask returned empty task id", task);
+              logger.error("task-form", "createTask returned empty task id", { task });
               throw new Error("创建任务失败：服务返回空任务ID");
             }
             console.debug("[TaskForm] createTask success", task.id);
