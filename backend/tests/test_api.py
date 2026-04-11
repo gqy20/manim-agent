@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from backend.main import app
 from backend.models import TaskCreateRequest, TaskStatus
-from backend.routes import set_store
+from backend.routes import get_sse_manager, set_store, task_events
 from backend.task_store import TaskStore
 
 
@@ -166,6 +166,25 @@ class TestTaskCRUD:
         assert "line 2" in body
         assert '"event": "status"' in body
         assert "completed" in body
+
+    @pytest.mark.asyncio
+    async def test_events_replay_completed_task_deduplicates_terminal_status(self, client, store):
+        req = TaskCreateRequest(user_text="stream me")
+        task = await store.create(req)
+        await store.update_status(task["id"], TaskStatus.COMPLETED)
+
+        mgr = get_sse_manager()
+        mgr.push(
+            task["id"],
+            '{"type":"status","data":{"task_status":"completed","phase":"done","message":null},"timestamp":"2026-01-01T00:00:00Z"}',
+        )
+
+        body_parts: list[str] = []
+        async for item in task_events(task["id"]):
+            body_parts.append(json.dumps(item, ensure_ascii=False))
+        body = "".join(body_parts)
+
+        assert body.count('"event": "status"') == 1
 
     # ── Error-surface 测试：parametrize 替代 5 个重复方法 ───
 
@@ -350,6 +369,20 @@ class TestSSEManager:
         # q2 收到回放(event-a) + event-b
         assert json.loads(q2.get_nowait())["data"] == "event-a"
         assert json.loads(q2.get_nowait())["data"] == "event-b"
+
+    def test_subscribe_without_replay(self):
+        """subscribe(replay=False) should only receive live events."""
+        from backend.sse_manager import SSESubscriptionManager
+
+        mgr = SSESubscriptionManager()
+        import json
+
+        mgr.push("t1", "buffered")
+        q = mgr.subscribe("t1", replay=False)
+        mgr.push("t1", "live")
+
+        assert json.loads(q.get_nowait())["data"] == "live"
+
 
     def test_cleanup(self):
         """cleanup() 清除所有状态。"""

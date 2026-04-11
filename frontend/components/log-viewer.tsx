@@ -14,6 +14,7 @@ import {
   isToolResult,
   isThinking,
   isProgress,
+  isStatusPayload,
 } from "@/types";
 
 interface LogViewerProps {
@@ -428,8 +429,24 @@ function EventRenderer({ event, index }: { event: SSEEvent; index?: number }) {
   if (isProgress(event)) {
     return <ProgressView payload={event.data} />;
   }
+  if (isStatusPayload(event)) {
+    const statusMap: Record<string, { icon: string }> = {
+      pending: { icon: "⏳" },
+      running: { icon: "▶" },
+      completed: { icon: "✅" },
+      failed: { icon: "❌" },
+    };
+    const s = statusMap[event.data.task_status] ?? { icon: "•" };
+    const phaseSuffix = event.data.phase ? ` (${event.data.phase})` : "";
+    const messageSuffix = event.data.message ? ` - ${event.data.message}` : "";
+    return (
+      <LogLine
+        text={`${s.icon} Status: ${event.data.task_status}${phaseSuffix}${messageSuffix}`}
+      />
+    );
+  }
 
-  // 向后兼容：纯文本日志 / status / error
+  // Backward compatibility: plain-text log / status / error events
   if (typeof event.data === "string") {
     // status 事件也渲染为可见日志
     if (event.type === "status") {

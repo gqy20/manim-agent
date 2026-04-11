@@ -61,6 +61,16 @@ def _status_event(
     )
 
 
+def _terminal_status_payload(task: dict[str, Any]) -> dict[str, Any]:
+    """Build the canonical terminal status payload from stored task state."""
+    status = task["status"]
+    return {
+        "task_status": status,
+        "phase": "done" if status == TaskStatus.COMPLETED.value else None,
+        "message": task.get("error"),
+    }
+
+
 def init_r2_client() -> None:
     """Initialize the R2 client from environment variables.
 
@@ -352,112 +362,105 @@ async def get_task(task_id: str) -> TaskResponse:
 
 @router.get("/{task_id}/events", response_class=EventSourceResponse)
 async def task_events(task_id: str):
-    """SSE endpoint: stream real-time logs for a running/completed task.
-
-    数据流：
-    1. 回放 text logs（来自 TaskStore，纯文本日志）
-    2. 回放 structured events buffer（来自 SSESubscriptionManager，
-       包含 thinking / tool_start / tool_result / progress 等结构化事件）
-    3. 终态任务（completed/failed）发送 status 后结束
-    4. 运行中任务订阅 live queue 接收实时事件
-    """
+    """SSE endpoint: stream real-time logs for a task with deduplicated replay."""
     task = await _store.get(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    _now = datetime.now(UTC).isoformat()
+    now = datetime.now(UTC).isoformat()
+    seen_log_payloads: set[str] = set()
+    seen_status_payloads: set[str] = set()
 
-    # ── Phase 1: 回放文本日志（TaskStore 持久化） ────────────
     for line in task.get("logs", []):
-        yield _make_sse_event("log", {"type": "log", "data": line, "timestamp": _now})
+        seen_log_payloads.add(str(line))
+        yield _make_sse_event("log", {"type": "log", "data": line, "timestamp": now})
 
-    # ── Phase 2: 回放结构化事件缓冲区 ───────────────────────
-    # SSEManager v2 缓冲了所有 push() 的事件，subscribe() 时自动回放
-    buffered = _sse_mgr.get_buffer(task_id)
-    already_seen: set[int] = set()  # 避免与 text logs 重复（log 类型事件）
-    for raw_item in buffered:
+    for raw_item in _sse_mgr.get_buffer(task_id):
         try:
             parsed = json.loads(raw_item)
             event_name = parsed.get("type", parsed.get("event_type", "log"))
-            # 跳过已在 Phase 1 回放过的纯 log 事件（通过 data 内容去重）
             if event_name == "log":
-                data_val = parsed.get("data", "")
-                data_hash = hash(str(data_val))
-                if data_hash in already_seen:
+                data_val = str(parsed.get("data", ""))
+                if data_val in seen_log_payloads:
                     continue
-                already_seen.add(data_hash)
+                seen_log_payloads.add(data_val)
+            elif event_name == "status":
+                payload_key = json.dumps(parsed.get("data", {}), ensure_ascii=False, sort_keys=True)
+                if payload_key in seen_status_payloads:
+                    continue
+                seen_status_payloads.add(payload_key)
 
-            yield _parse_and_yield(parsed, event_name, _now)
+            yield _parse_and_yield(parsed, event_name, now)
         except (json.JSONDecodeError, TypeError):
-            # 非法 JSON 走兜底
-            yield _make_sse_event("log", {"type": "log", "data": raw_item, "timestamp": _now})
+            raw_text = str(raw_item)
+            if raw_text in seen_log_payloads:
+                continue
+            seen_log_payloads.add(raw_text)
+            yield _make_sse_event("log", {"type": "log", "data": raw_text, "timestamp": now})
 
-    # ── Phase 3: 终态任务直接返回 ───────────────────────────
     status = task["status"]
     if status in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value):
-        yield _make_sse_event(
-            "status",
-            {
-                "type": "status",
-                "data": {
-                    "task_status": status,
-                    "phase": "done" if status == TaskStatus.COMPLETED.value else None,
-                    "message": None,
+        payload = _terminal_status_payload(task)
+        payload_key = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if payload_key not in seen_status_payloads:
+            yield _make_sse_event(
+                "status",
+                {
+                    "type": "status",
+                    "data": payload,
+                    "timestamp": now,
                 },
-                "timestamp": _now,
-            },
-        )
+            )
         return
 
-    # ── Phase 4: 实时流式推送 ───────────────────────────────
-    queue = _sse_mgr.subscribe(task_id)
+    queue = _sse_mgr.subscribe(task_id, replay=False)
     try:
         while True:
             item = await queue.get()
-            if item is None:  # sentinel — pipeline 结束
+            if item is None:
                 break
-            now = datetime.now(UTC).isoformat()
 
+            event_ts = datetime.now(UTC).isoformat()
             if isinstance(item, str) and item.strip().startswith("{"):
                 try:
                     parsed = json.loads(item)
                     event_name = parsed.get("type", parsed.get("event_type", "log"))
-                    yield _parse_and_yield(parsed, event_name, now)
+                    if event_name == "log":
+                        data_val = str(parsed.get("data", ""))
+                        if data_val in seen_log_payloads:
+                            continue
+                        seen_log_payloads.add(data_val)
+                    elif event_name == "status":
+                        payload_key = json.dumps(parsed.get("data", {}), ensure_ascii=False, sort_keys=True)
+                        if payload_key in seen_status_payloads:
+                            continue
+                        seen_status_payloads.add(payload_key)
+                    yield _parse_and_yield(parsed, event_name, event_ts)
                     continue
                 except json.JSONDecodeError:
                     pass
 
-            # 兜底：非 JSON 数据
-            yield _make_sse_event("log", {"type": "log", "data": item, "timestamp": now})
+            raw_text = str(item)
+            if raw_text in seen_log_payloads:
+                continue
+            seen_log_payloads.add(raw_text)
+            yield _make_sse_event("log", {"type": "log", "data": raw_text, "timestamp": event_ts})
 
-        # Pipeline 结束后查询最终状态
-        try:
-            refreshed = await _store.get(task_id)
-            if refreshed:
-                _final_ts = datetime.now(UTC).isoformat()
+        refreshed = await _store.get(task_id)
+        if refreshed:
+            payload = _terminal_status_payload(refreshed)
+            payload_key = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            if payload_key not in seen_status_payloads:
                 yield _make_sse_event(
                     "status",
                     {
                         "type": "status",
-                        "data": {
-                            "task_status": refreshed["status"],
-                            "phase": (
-                                "done"
-                                if refreshed["status"] == TaskStatus.COMPLETED.value
-                                else None
-                            ),
-                            "message": refreshed.get("error"),
-                        },
-                        "timestamp": _final_ts,
+                        "data": payload,
+                        "timestamp": datetime.now(UTC).isoformat(),
                     },
                 )
-        except Exception:
-            pass
     finally:
         _sse_mgr.unsubscribe(task_id, queue)
-
-
-# ── SSE 事件构建辅助函数 ────────────────────────────────────
 
 
 def _make_sse_event(event_name: str, payload: dict) -> dict:

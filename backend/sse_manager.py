@@ -45,7 +45,7 @@ class SSESubscriptionManager:
         # task_id → list of active subscriber queues
         self._subscribers: dict[str, list[asyncio.Queue[Any]]] = {}
 
-    def subscribe(self, task_id: str) -> asyncio.Queue[Any]:
+    def subscribe(self, task_id: str, *, replay: bool = True) -> asyncio.Queue[Any]:
         """创建新的订阅队列，并回放缓冲区中的历史事件。
 
         注意：每次调用返回**独立的**队列，不会覆盖已有订阅者。
@@ -54,7 +54,7 @@ class SSESubscriptionManager:
 
         # 回放缓冲事件到新队列
         buf = self._buffers.get(task_id)
-        if buf:
+        if replay and buf:
             for item in buf:
                 try:
                     q.put_nowait(item)
