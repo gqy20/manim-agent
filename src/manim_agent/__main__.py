@@ -7,8 +7,10 @@
 
 import argparse
 import asyncio
+import functools
 import json
 import logging
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -24,6 +26,7 @@ from claude_agent_sdk import (
     Message,
     RateLimitEvent,
     ResultMessage,
+    StreamEvent,
     TaskNotificationMessage,
     TaskProgressMessage,
     TextBlock,
@@ -53,17 +56,17 @@ logger = logging.getLogger(__name__)
 
 _LOG_SEPARATOR = "═" * 58
 _EMOJI = {
-    "write": "\u270f\ufe0f",       # ✏️
-    "bash": "\U0001f528",         # 🔨
-    "read": "\U0001f4cf",          # 📸
-    "think": "\U0001f4ad",        # 💭
-    "video": "\U0001f3a5",        # 📤
-    "check": "\u2705",             # ✅
-    "cross": "\u274c",            # ❌
-    "tts": "\U0001f3a4",           # 🎙️
-    "film": "\U0001f3ac",          # 🎬
-    "chart": "\U0001f4ca",          # 📊
-    "gear": "\u2699\ufe0f",         # ⚙
+    "write": "\u270f\ufe0f",  # ✏️
+    "bash": "\U0001f528",  # 🔨
+    "read": "\U0001f4cf",  # 📸
+    "think": "\U0001f4ad",  # 💭
+    "video": "\U0001f3a5",  # 📤
+    "check": "\u2705",  # ✅
+    "cross": "\u274c",  # ❌
+    "tts": "\U0001f3a4",  # 🎙️
+    "film": "\U0001f3ac",  # 🎬
+    "chart": "\U0001f4ca",  # 📊
+    "gear": "\u2699\ufe0f",  # ⚙
 }
 
 
@@ -131,7 +134,9 @@ class _MessageDispatcher:
             self._handle_task_progress(message)
         elif isinstance(message, TaskNotificationMessage):
             self._handle_task_notification(message)
-        # UserMessage / SystemMessage / StreamEvent 暂不处理
+        elif isinstance(message, StreamEvent):
+            self._handle_stream_event(message)
+        # UserMessage / SystemMessage 暂不处理
 
     def get_pipeline_output(self) -> PipelineOutput | None:
         """返回验证后的 PipelineOutput（可能为 None）。
@@ -142,9 +147,7 @@ class _MessageDispatcher:
             return self.pipeline_output
         # fallback：从 collected_text 的标记中解析
         try:
-            self.pipeline_output = PipelineOutput.from_text_markers(
-                "\n".join(self.collected_text)
-            )
+            self.pipeline_output = PipelineOutput.from_text_markers("\n".join(self.collected_text))
         except (ValueError, Exception):
             return None
         # 自动关联捕获的源代码
@@ -209,9 +212,7 @@ class _MessageDispatcher:
                 if isinstance(raw, str):
                     raw = json.loads(raw)
                 if not isinstance(raw, dict):
-                    raise ValueError(
-                        f"structured_output unexpected type: {type(raw).__name__}"
-                    )
+                    raise ValueError(f"structured_output unexpected type: {type(raw).__name__}")
                 self.pipeline_output = PipelineOutput.model_validate(raw)
                 # 关联捕获的源代码
                 if (
@@ -223,43 +224,80 @@ class _MessageDispatcher:
                     ]
                 self._sync_compat_attrs()
             except Exception:
-                logger.warning(
-                    "structured_output validation failed, "
-                    "falling back to text markers"
-                )
+                logger.warning("structured_output validation failed, falling back to text markers")
         self._log_result_summary()
 
     def _handle_rate_limit(self, event: RateLimitEvent) -> None:
         """处理限流事件。"""
         info = event.rate_limit_info
         status_icon = _EMOJI["check"] if info.status == "allowed" else _EMOJI["cross"]
-        self._print(f"  {status_icon} RateLimit: {info.status} "
-                     f"(utilization={info.utilization:.0%})")
+        self._print(
+            f"  {status_icon} RateLimit: {info.status} (utilization={info.utilization:.0%})"
+        )
 
     def _handle_task_progress(self, msg: TaskProgressMessage) -> None:
         """处理任务进度消息 + 发射 PROGRESS 结构化事件。"""
         usage = msg.usage
-        self._print(f"  {_EMOJI['gear']} Progress: "
-                     f"{usage['total_tokens']} tokens, "
-                     f"{usage['tool_uses']} tool_uses, "
-                     f"{usage['duration_ms'] // 1000}s")
+        self._print(
+            f"  {_EMOJI['gear']} Progress: "
+            f"{usage['total_tokens']} tokens, "
+            f"{usage['tool_uses']} tool_uses, "
+            f"{usage['duration_ms'] // 1000}s"
+        )
         # 发射结构化事件
         self.turn_count += 1
-        self._emit_event(PipelineEvent(
-            event_type=EventType.PROGRESS,
-            data=ProgressPayload(
-                turn=self.turn_count,
-                total_tokens=usage["total_tokens"],
-                tool_uses=usage["tool_uses"],
-                elapsed_ms=usage["duration_ms"],
-                last_tool_name=None,
-            ),
-        ))
+        self._emit_event(
+            PipelineEvent(
+                event_type=EventType.PROGRESS,
+                data=ProgressPayload(
+                    turn=self.turn_count,
+                    total_tokens=usage["total_tokens"],
+                    tool_uses=usage["tool_uses"],
+                    elapsed_ms=usage["duration_ms"],
+                    last_tool_name=None,
+                ),
+            )
+        )
 
     def _handle_task_notification(self, msg: TaskNotificationMessage) -> None:
         """处理任务完成/失败通知。"""
         icon = _EMOJI["check"] if msg.status == "completed" else _EMOJI["cross"]
         self._print(f"  {icon} Task {msg.status}: {msg.summary}")
+
+    def _handle_stream_event(self, msg: StreamEvent) -> None:
+        """处理流式事件（token 级别的 API 增量更新）。
+
+        StreamEvent.event 包含原始 Anthropic API 流事件，
+        提取关键信息用于实时日志展示。
+        """
+        event = msg.event
+        event_type_raw = event.get("type", "unknown") if isinstance(event, dict) else str(event)
+
+        if event_type_raw == "content_block_delta":
+            delta = event.get("delta", {}) if isinstance(event, dict) else {}
+            if isinstance(delta, dict):
+                delta_type = delta.get("type", "")
+                if delta_type == "text_delta":
+                    text = delta.get("text", "")
+                    preview = text[:120].replace("\n", "\\n")
+                    self._print(f"  {_EMOJI['think']} [STREAM] {preview}")
+                elif delta_type == "thinking_delta":
+                    thinking = delta.get("thinking", "")
+                    preview = thinking[:120].replace("\n", "\\n")
+                    self._print(f"  {_EMOJI['think']} [THINK-DELTA] {preview}")
+                else:
+                    self._print(f"  {_EMOJI['gear']} [{event_type_raw}] {delta_type}")
+            elif isinstance(delta, str):
+                # delta 有时是原始字符串
+                self._print(f"  {_EMOJI['think']} [STREAM-DELTA] {delta[:120]}")
+            else:
+                self._print(f"  {_EMOJI['gear']} [{event_type_raw}] {delta}")
+        elif event_type_raw == "message_start":
+            self._print(f"  {_EMOJI['gear']} [STREAM] Message start")
+        elif event_type_raw == "message_stop":
+            self._print(f"  {_EMOJI['gear']} [STREAM] Message complete")
+        else:
+            self._print(f"  {_EMOJI['gear']} [STREAM] {event_type_raw}")
 
     # ── 内部辅助 ───────────────────────────────────────────────
 
@@ -287,33 +325,35 @@ class _MessageDispatcher:
         input_summary = self._summarize_input(block.input)
         self._print(f"  {icon} {block.name} \u2192 {input_summary}")
         # 发射结构化事件
-        self._emit_event(PipelineEvent(
-            event_type=EventType.TOOL_START,
-            data=ToolStartPayload(
-                tool_use_id=block.id,
-                name=block.name,
-                input_summary=block.input if isinstance(block.input, dict)
-                else {},
-            ),
-        ))
+        self._emit_event(
+            PipelineEvent(
+                event_type=EventType.TOOL_START,
+                data=ToolStartPayload(
+                    tool_use_id=block.id,
+                    name=block.name,
+                    input_summary=block.input if isinstance(block.input, dict) else {},
+                ),
+            )
+        )
 
     def _log_tool_result(self, block: ToolResultBlock) -> None:
         """打印工具执行结果 + 发射 TOOL_RESULT 结构化事件。"""
         if block.is_error:
-            self._print(f"  {_EMOJI['cross']} Result Error "
-                         f"(tool_use_id={block.tool_use_id})")
+            self._print(f"  {_EMOJI['cross']} Result Error (tool_use_id={block.tool_use_id})")
         # 成功结果通常静默（避免日志刷屏）
         # 发射结构化事件
-        self._emit_event(PipelineEvent(
-            event_type=EventType.TOOL_RESULT,
-            data=ToolResultPayload(
-                tool_use_id=block.tool_use_id,
-                name="",  # 名称从 tool_start 配对获取
-                is_error=block.is_error,
-                content=block.content if not block.is_error else None,
-                duration_ms=None,
-            ),
-        ))
+        self._emit_event(
+            PipelineEvent(
+                event_type=EventType.TOOL_RESULT,
+                data=ToolResultPayload(
+                    tool_use_id=block.tool_use_id,
+                    name="",  # 名称从 tool_start 配对获取
+                    is_error=block.is_error,
+                    content=block.content if not block.is_error else None,
+                    duration_ms=None,
+                ),
+            )
+        )
 
     def _log_thinking(self, block: ThinkingBlock) -> None:
         """打印思考过程摘要 + 发射 THINKING 结构化事件。"""
@@ -322,13 +362,15 @@ class _MessageDispatcher:
             preview += "..."
         self._print(f"  {_EMOJI['think']} {preview}")
         # 发射结构化事件
-        self._emit_event(PipelineEvent(
-            event_type=EventType.THINKING,
-            data=ThinkingPayload(
-                thinking=block.thinking,
-                signature=getattr(block, "signature", ""),
-            ),
-        ))
+        self._emit_event(
+            PipelineEvent(
+                event_type=EventType.THINKING,
+                data=ThinkingPayload(
+                    thinking=block.thinking,
+                    signature=getattr(block, "signature", ""),
+                ),
+            )
+        )
 
     def _log_result_summary(self) -> None:
         """打印会话摘要。"""
@@ -339,13 +381,13 @@ class _MessageDispatcher:
         self._print("")
         self._print(f"{_LOG_SEPARATOR}")
         self._print(f"{_EMOJI['chart']} Session Summary:")
-        self._print(f"  Turns: {s['turns']} | "
-                     f"Cost: ${s['cost_usd']:.4f} | "
-                     f"Duration: {s['duration_ms'] // 1000}s")
+        self._print(
+            f"  Turns: {s['turns']} | "
+            f"Cost: ${s['cost_usd']:.4f} | "
+            f"Duration: {s['duration_ms'] // 1000}s"
+        )
         if self.tool_stats:
-            tools_str = ", ".join(
-                f"{k}\u00d7{v}" for k, v in self.tool_stats.items()
-            )
+            tools_str = ", ".join(f"{k}\u00d7{v}" for k, v in self.tool_stats.items())
             self._print(f"  Tool calls: {self.tool_use_count} ({tools_str})")
 
         status_icon = _EMOJI["check"] if not s["is_error"] else _EMOJI["cross"]
@@ -363,11 +405,11 @@ class _MessageDispatcher:
         for k, v in input_dict.items():
             v_str = repr(v)
             if len(v_str) > max_len:
-                v_str = v_str[:max_len - 3] + "..."
+                v_str = v_str[: max_len - 3] + "..."
             parts.append(f"{k}={v_str}")
         result = " ".join(parts)
         if len(result) > max_len:
-            result = result[:max_len - 3] + "..."
+            result = result[: max_len - 3] + "..."
         return result
 
     def _print(self, message: str) -> None:
@@ -402,7 +444,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="自然语言描述的视频内容",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         default="output.mp4",
         help="输出视频文件路径 (default: output.mp4)",
     )
@@ -477,14 +520,24 @@ def extract_result(text: str) -> dict[str, str | None]:
 # ── Options 构建 ────────────────────────────────────────────────
 
 
-def _stderr_handler(line: str) -> None:
-    """将 CLI 子进程的 stderr 原始输出有选择地转发。
+def _stderr_handler(
+    line: str,
+    *,
+    log_callback: Callable[[str], None] | None = None,
+) -> None:
+    """将 CLI 子进程的 stderr 输出转发到终端和可选的 SSE 回调。
 
-    仅转发包含错误/警告信息的行，过滤噪音。
+    所有行都通过 log_callback 推送到前端（如果提供），
+    error/warning 行额外标记以便前端高亮。
     """
+    stripped = line.strip()
+    # 始终推送到 SSE（让前端决定如何展示）
+    if log_callback is not None:
+        log_callback(f"[CLI] {stripped}")
+    # error/warning 行同时输出到 stderr 以便终端开发者可见
     lower = line.lower()
     if any(kw in lower for kw in ("error", "warning", "fail", "exception")):
-        print(f"  [CLI] {line.strip()}", file=sys.stderr)
+        print(f"  {_EMOJI['cross']} [CLI] {stripped}", file=sys.stderr)
 
 
 def _build_options(
@@ -493,6 +546,7 @@ def _build_options(
     max_turns: int,
     prompt_file: str | None = None,
     quality: str = "high",
+    log_callback: Callable[[str], None] | None = None,
 ) -> ClaudeAgentOptions:
     """构建 ClaudeAgentOptions，含会话隔离和日志回调。
 
@@ -503,6 +557,7 @@ def _build_options(
         prompt_file: 自定义提示词文件路径。
         quality: 渲染质量 ("high" | "medium" | "low")，
             仅在未提供 system_prompt 和 prompt_file 时生效。
+        log_callback: 可选的日志回调，用于 SSE 推送。
 
     Returns:
         配置好的 options 对象。
@@ -518,6 +573,20 @@ def _build_options(
             "-qh", prompts.QUALITY_FLAGS.get(quality, "-qh")
         )
 
+    # 绑定 stderr 回调（将 CLI 输出推送到 SSE）
+    bound_stderr = functools.partial(_stderr_handler, log_callback=log_callback)
+
+    # ── 确保 Claude CLI 子进程能找到 manim ──
+    # 继承当前环境变量，但确保 .venv\Scripts 在 PATH 中
+    venv_scripts = str(Path(__file__).parent.parent.parent / ".venv" / "Scripts")
+    current_path = os.environ.get("PATH", "")
+    path_parts = [p for p in current_path.split(os.pathsep) if p]
+    if venv_scripts not in path_parts:
+        path_parts.append(venv_scripts)
+    venv_env = {
+        "PATH": os.pathsep.join(path_parts),
+    }
+
     return ClaudeAgentOptions(
         cwd=cwd,
         system_prompt=final_system_prompt,
@@ -527,14 +596,20 @@ def _build_options(
         session_id=str(uuid.uuid4()),
         fork_session=True,
         # ── 日志回调 ──
-        stderr=_stderr_handler,
+        stderr=bound_stderr,
         # ── 结构化输出 schema ──
         output_format=PipelineOutput.output_format_schema(),
         # ── 工具白名单：收敛攻击面，仅允许 pipeline 必需的工具（参照 Distill）──
         allowed_tools=[
-            "Read", "Write", "Edit",
-            "Bash", "Glob", "Grep",
+            "Read",
+            "Write",
+            "Edit",
+            "Bash",
+            "Glob",
+            "Grep",
         ],
+        # ── 环境变量：确保 manim 可被 Claude CLI 找到 ──
+        env=venv_env,
     )
 
 
@@ -599,6 +674,7 @@ async def run_pipeline(
         max_turns=max_turns,
         prompt_file=prompt_file,
         quality=quality,
+        log_callback=log_callback,
     )
 
     # 用户提示词直接传递
@@ -610,12 +686,12 @@ async def run_pipeline(
         dispatcher.event_callback = event_callback
     # ── 阶段标记：初始化完成，即将启动 SDK query ──
     dispatcher._print(f"\n{_LOG_SEPARATOR}")
-    dispatcher._print(f"  Claude Agent 工作日志                              "
-                   f"Session: {options.session_id[:8]}...")
+    dispatcher._print(
+        f"  Claude Agent 工作日志                              Session: {options.session_id[:8]}..."
+    )
     dispatcher._print(_LOG_SEPARATOR)
     dispatcher._print(f"  {_EMOJI['gear']} Phase 1/4: 启动 Claude Agent SDK...")
-    dispatcher._print(f"  quality={quality} preset={preset} "
-                     f"max_turns={max_turns}")
+    dispatcher._print(f"  quality={quality} preset={preset} max_turns={max_turns}")
 
     async for message in query(prompt=user_prompt, options=options):
         dispatcher.dispatch(message)
@@ -626,8 +702,7 @@ async def run_pipeline(
 
     # 3. 从 dispatcher 提取结果
     # ── 阶段标记：SDK 对话结束，提取输出 ──
-    dispatcher._print(f"  {_EMOJI['gear']} Phase 2/4: "
-                     f"提取渲染结果...")
+    dispatcher._print(f"  {_EMOJI['gear']} Phase 2/4: 提取渲染结果...")
     video_output = dispatcher.get_video_output()
 
     if not video_output:
@@ -636,8 +711,7 @@ async def run_pipeline(
         dispatcher._print(f"  Agent 可能未能成功渲染场景。")
         if dispatcher.result_summary:
             s = dispatcher.result_summary
-            dispatcher._print(f"  Turns: {s.get('turns', '?')} | "
-                         f"Error: {s.get('is_error', '?')}")
+            dispatcher._print(f"  Turns: {s.get('turns', '?')} | Error: {s.get('is_error', '?')}")
         raise RuntimeError(
             "Claude did not produce a VIDEO_OUTPUT marker. "
             "The agent may have failed to render the scene."
@@ -649,29 +723,24 @@ async def run_pipeline(
         return video_output
 
     # ── 阶段标记：TTS 语音合成 ──
-    dispatcher._print(f"  {_EMOJI['gear']} Phase 3/4: "
-                     f"TTS 语音合成...")
+    dispatcher._print(f"  {_EMOJI['gear']} Phase 3/4: TTS 语音合成...")
 
     # TTS 合成（优先使用 Claude 生成的解说词，fallback 到用户原始输入）
     po = dispatcher.get_pipeline_output()
     narration_text = po.narration if po and po.narration else user_text
-    dispatcher._print(f"\n{_EMOJI['tts']} TTS 合成中... "
-                   f"(voice={voice_id}, model={model})")
+    dispatcher._print(f"\n{_EMOJI['tts']} TTS 合成中... (voice={voice_id}, model={model})")
     tts_result = await tts_client.synthesize(
         text=narration_text,
         voice_id=voice_id,
         model=model,
         output_dir=str(Path(output_path).parent),
     )
-    dispatcher._print(f"  TTS 完成: {tts_result.duration_ms}ms, "
-                 f"{tts_result.word_count} chars")
+    dispatcher._print(f"  TTS 完成: {tts_result.duration_ms}ms, {tts_result.word_count} chars")
 
     # FFmpeg 合成
     # ── 阶段标记：最终合成 ──
-    dispatcher._print(f"  {_EMOJI['gear']} Phase 4/4: "
-                     f"FFmpeg 视频合成...")
-    dispatcher._print(f"{_EMOJI['film']} FFmpeg 合成中... "
-                   f"(video + audio + subtitle)")
+    dispatcher._print(f"[MUX] Phase 4/4: FFmpeg 视频合成...")
+    dispatcher._print(f"[MUX] FFmpeg 合成中... (video + audio + subtitle)")
     final_video = await video_builder.build_final_video(
         video_path=video_output,
         audio_path=tts_result.audio_path,
