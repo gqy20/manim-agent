@@ -34,9 +34,13 @@ export function connectTaskEvents(
     try {
       const parsed: SSEEvent = JSON.parse(e.data);
       onEvent(parsed);
-      if (parsed.type === "status") {
-        es.close();
-        onComplete?.();
+      if (parsed.type === "status" && typeof parsed.data === "string") {
+        // 仅在终态（completed / failed）时关闭连接
+        const terminal = ["completed", "failed"];
+        if (terminal.includes(parsed.data as string)) {
+          es.close();
+          onComplete?.();
+        }
       }
     } catch (err) {
       console.warn("[SSE] failed to parse event:", err, "| raw:", e.data.slice(0, 120));

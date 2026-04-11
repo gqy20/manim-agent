@@ -131,6 +131,17 @@ uv run ruff check src/ tests/
 uv run ruff format src/ tests/
 ```
 
+### 本地 Web 开发
+
+```bash
+# 后端
+make dev-backend
+
+# 前端（默认 3147；如端口被占用可临时切换）
+make dev-frontend
+make dev-frontend FE_PORT=3148
+```
+
 ## 可用音色
 
 | voice_id | 风格 |

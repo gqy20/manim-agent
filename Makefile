@@ -1,10 +1,10 @@
 .PHONY: dev dev-backend dev-frontend build install clean lint test help
 
 # ── Variables ──────────────────────────────────────────────
-PYTHON  := uv run python
-BE_HOST := 127.0.0.1
-BE_PORT := 8471
-FE_PORT := 3147
+PYTHON ?= uv run python
+BE_HOST ?= 127.0.0.1
+BE_PORT ?= 8471
+FE_PORT ?= 3147
 
 # ── Help ──────────────────────────────────────────────────
 help: ## Show available targets

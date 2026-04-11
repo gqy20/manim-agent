@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.sse import EventSourceResponse
+
+from manim_agent.pipeline_events import EventType, PipelineEvent
 
 from .models import (
     SSEEvent,
@@ -129,6 +132,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             main_loop,
             lambda: _store.update_status(task_id, TaskStatus.RUNNING),
         )
+        # 推送 status 事件让前端 badge 从"等待中"更新为"生成中"
+        event_callback(PipelineEvent(event_type=EventType.STATUS, data="running"))
 
         dispatcher_ref: list[Any] = []
         try:
@@ -294,7 +299,7 @@ async def task_events(task_id: str):
             "data": SSEEvent(
                 event_type="log",
                 data=line,
-                timestamp=datetime.now(timezone.utc).isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
             ).model_dump_json(),
         }
 
@@ -305,7 +310,7 @@ async def task_events(task_id: str):
             "data": SSEEvent(
                 event_type="status",
                 data=status,
-                timestamp=datetime.now(timezone.utc).isoformat(),
+                timestamp=datetime.now(UTC).isoformat(),
             ).model_dump_json(),
         }
         return
@@ -317,7 +322,23 @@ async def task_events(task_id: str):
             item = await queue.get()
             if item is None:  # sentinel
                 break
-            now = datetime.now(timezone.utc).isoformat()
+            now = datetime.now(UTC).isoformat()
+
+            # 队列中的 item 已由 SSESubscriptionManager.push() 序列化为 JSON。
+            # 直接解析并透传 event_type，避免二次包装导致类型信息丢失。
+            if isinstance(item, str) and item.strip().startswith("{"):
+                try:
+                    parsed = json.loads(item)
+                    event_name = parsed.get("event_type", parsed.get("type", "log"))
+                    yield {
+                        "event": event_name,
+                        "data": json.dumps(parsed.get("data", item), ensure_ascii=False),
+                    }
+                    continue
+                except json.JSONDecodeError:
+                    pass  # 不是合法 JSON，走兜底
+
+            # 兜底：非 JSON 数据包装为 log 类型
             yield {
                 "event": "log",
                 "data": SSEEvent(event_type="log", data=item, timestamp=now).model_dump_json(),
@@ -332,7 +353,7 @@ async def task_events(task_id: str):
                     "data": SSEEvent(
                         event_type="status",
                         data=refreshed["status"],
-                        timestamp=datetime.now(timezone.utc).isoformat(),
+                        timestamp=datetime.now(UTC).isoformat(),
                     ).model_dump_json(),
                 }
         except Exception:
