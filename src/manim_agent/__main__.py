@@ -79,24 +79,36 @@ async def _on_post_tool_use(
     """PostToolUse hook：捕获 Write/Edit 工具的源码。
 
     使用 SDK 原生 Hook 系统替代手动遍历 ToolUseBlock。
+
+    盲区7: 使用 print 确保日志在所有日志级别可见（logger.debug 可能被过滤），
+    同时记录完整的工具输入信息用于排查时序问题。
     """
     tool_name = input_data.get("tool_name", "")
     tool_input = input_data.get("tool_input", {})
-    logger.debug(f"[HOOK] PostToolUse: tool_name={tool_name}, tool_use_id={tool_use_id}")
+
+    # ── 盲区7: 使用 print 替代 logger.debug，确保可见性 ──
+    print(
+        f"  [HOOK] PostToolUse: tool_name={tool_name!r}, "
+        f"tool_use_id={tool_use_id!r}"
+    )
 
     if tool_name in ("Write", "Edit") and isinstance(tool_input, dict):
         file_path = tool_input.get("file_path", "")
         content = tool_input.get("content", "")
-        logger.debug(
-            f"[HOOK] PostToolUse: {tool_name} file_path={file_path}, content length={len(content) if content else 0}"
+        print(
+            f"  [HOOK] PostToolUse: {tool_name} file_path={file_path!r}, "
+            f"content_length={len(content) if content else 0}"
         )
         if file_path.endswith(".py") and content:
             _hook_state.captured_source_code[file_path] = content
-            logger.debug(
-                f"[HOOK] Captured source code for {file_path}, total captured: {list(_hook_state.captured_source_code.keys())}"
+            print(
+                f"  [HOOK] Captured source: {file_path}, "
+                f"total_files={len(_hook_state.captured_source_code)}"
             )
     else:
-        logger.debug(f"[HOOK] PostToolUse: ignoring {tool_name} (not Write/Edit or not a dict)")
+        # 记录被忽略的工具调用（可能发现意外的工具使用）
+        if tool_name:
+            print(f"  [HOOK] PostToolUse: skipping non-target tool: {tool_name}")
 
     return SyncHookJSONOutput(
         hookSpecificOutput=PostToolUseHookSpecificOutput(
@@ -166,6 +178,10 @@ class _MessageDispatcher:
         self.tool_use_count = 0
         self.tool_stats: dict[str, int] = {}
         self.collected_text: list[str] = []
+        # ── 消息统计（调试用）──
+        self._msg_count: int = 0
+        self._msg_type_stats: dict[str, int] = {}
+        self._assistant_msg_count: int = 0
         # ── PipelineOutput ──
         self.pipeline_output: PipelineOutput | None = None
         # ── 视频输出路径（从 TaskNotificationMessage.output_file 获取）──
@@ -179,6 +195,12 @@ class _MessageDispatcher:
 
     def dispatch(self, message: Message) -> None:
         """根据消息类型路由到对应处理器。"""
+        # ── 消息计数（盲区1：审计消息完整性）──
+        self._msg_count += 1
+        msg_type = type(message).__name__
+        self._msg_type_stats[msg_type] = self._msg_type_stats.get(msg_type, 0) + 1
+        self._print(f"  [DEBUG] dispatch #{self._msg_count}: {msg_type}")
+
         if isinstance(message, AssistantMessage):
             self._handle_assistant(message)
         elif isinstance(message, ResultMessage):
@@ -191,7 +213,10 @@ class _MessageDispatcher:
             self._handle_task_notification(message)
         elif isinstance(message, StreamEvent):
             self._handle_stream_event(message)
-        # UserMessage / SystemMessage 暂不处理
+        else:
+            # 未识别的消息类型（盲区1补充：防止静默丢弃）
+            self._print(f"  [DEBUG] dispatch: unhandled message type: {msg_type}, "
+                        f"attrs={dir(message)}")
 
     def get_pipeline_output(self) -> PipelineOutput | None:
         """返回验证后的 PipelineOutput（可能为 None）。
@@ -247,7 +272,14 @@ class _MessageDispatcher:
 
         注意：源码捕获已移至 SDK Hook 系统（PostToolUseHookInput）。
         """
-        self._print(f"  [DEBUG] _handle_assistant: content blocks count={len(msg.content)}")
+        self._assistant_msg_count += 1
+        # ── 盲区2: stop_reason 是判断 Agent 行为的关键字段 ──
+        self._print(
+            f"  [DEBUG] _handle_assistant #{self._assistant_msg_count}: "
+            f"stop_reason={msg.stop_reason!r}, model={msg.model!r}, "
+            f"error={msg.error!r}, blocks={len(msg.content)}, "
+            f"message_id={msg.message_id!r}"
+        )
         for block in msg.content:
             if isinstance(block, TextBlock):
                 self._log_text(block.text)
@@ -275,12 +307,48 @@ class _MessageDispatcher:
         直接使用 ResultMessage 原生字段，通过 result_summary property 提供向后兼容访问。
         """
         self._result_message = msg
+        # ── 盲区4: ResultMessage 全字段记录 ──
         self._print(
-            f"  [DEBUG] _handle_result: stop_reason={msg.stop_reason!r}, is_error={msg.is_error}"
+            f"  [DEBUG] _handle_result: === RESULT MESSAGE FULL DUMP ==="
         )
         self._print(
-            f"  [DEBUG] _handle_result: structured_output is {'not None' if msg.structured_output is not None else 'None'}"
+            f"  [DEBUG] _handle_result: stop_reason={msg.stop_reason!r}, "
+            f"is_error={msg.is_error}, num_turns={msg.num_turns}"
         )
+        self._print(
+            f"  [DEBUG] _handle_result: duration_ms={msg.duration_ms}, "
+            f"duration_api_ms={msg.duration_api_ms}"
+        )
+        self._print(
+            f"  [DEBUG] _handle_result: session_id={msg.session_id!r}, "
+            f"uuid={msg.uuid!r}"
+        )
+        if msg.total_cost_usd is not None:
+            self._print(f"  [DEBUG] _handle_result: total_cost_usd={msg.total_cost_usd}")
+        if msg.usage:
+            self._print(f"  [DEBUG] _handle_result: usage={msg.usage}")
+        if msg.model_usage:
+            self._print(f"  [DEBUG] _handle_result: model_usage={msg.model_usage}")
+        if msg.errors:
+            self._print(f"  [DEBUG] _handle_result: ERRORS={msg.errors}")
+        if msg.permission_denials:
+            self._print(
+                f"  [DEBUG] _handle_result: PERMISSION_DENIALS={msg.permission_denials}"
+            )
+        if msg.result:
+            preview = str(msg.result)[:300]
+            self._print(f"  [DEBUG] _handle_result: result (preview)={preview!r}")
+        # structured_output
+        self._print(
+            f"  [DEBUG] _handle_result: structured_output is "
+            f"{'not None' if msg.structured_output is not None else 'None'}"
+        )
+        if msg.structured_output is not None:
+            self._print(
+                f"  [DEBUG] _handle_result: structured_output type="
+                f"{type(msg.structured_output).__name__}, "
+                f"value={str(msg.structured_output)[:500]!r}"
+            )
         # ── 尝试从 structured_output 构建 PipelineOutput（主路径）──
         if msg.structured_output is not None:
             try:
@@ -460,19 +528,64 @@ class _MessageDispatcher:
         )
 
     def _log_tool_result(self, block: ToolResultBlock) -> None:
-        """打印工具执行结果 + 发射 TOOL_RESULT 结构化事件。"""
+        """打印工具执行结果 + 发射 TOOL_RESULT 结构化事件。
+
+        盲区3: 对 Bash 工具打印完整输出，便于排查渲染失败原因。
+        """
+        content = block.content
         content_preview = ""
-        if block.content:
-            if isinstance(block.content, str):
-                content_preview = block.content[:100].replace("\n", "\\n")
-            elif isinstance(block.content, list):
-                content_preview = f"list[{len(block.content)}]"
-        self._print(
-            f"  [DEBUG] _log_tool_result: tool_use_id={block.tool_use_id}, is_error={block.is_error}, content_preview={content_preview!r}"
-        )
+        if content:
+            if isinstance(content, str):
+                content_preview = content[:100].replace("\n", "\\n")
+                # ── 盲区3: Bash 工具完整输出 ──
+                # 通过 tool_use_id 关联之前的 ToolUseBlock 获取工具名
+                # 这里打印完整内容以便排查渲染错误
+                full_content = content.replace("\n", "\\n")
+                if len(full_content) > 500:
+                    self._print(
+                        f"  [DEBUG] _log_tool_result: tool_use_id={block.tool_use_id}, "
+                        f"is_error={block.is_error}, content_length={len(content)}"
+                    )
+                    self._print(
+                        f"  [DEBUG] _log_tool_result: FULL CONTENT (first 1000):\n"
+                        f"{full_content[:1000]}"
+                    )
+                    if len(full_content) > 1000:
+                        self._print(
+                            f"  [DEBUG] _log_tool_result: ... (truncated, total {len(content)} chars)"
+                        )
+                else:
+                    self._print(
+                        f"  [DEBUG] _log_tool_result: tool_use_id={block.tool_use_id}, "
+                        f"is_error={block.is_error}, content={full_content!r}"
+                    )
+            elif isinstance(content, list):
+                content_preview = f"list[{len(content)}]"
+                # 多部分结果（stdout + stderr 分离时）
+                self._print(
+                    f"  [DEBUG] _log_tool_result: tool_use_id={block.tool_use_id}, "
+                    f"is_error={block.is_error}, content_parts={len(content)}"
+                )
+                for i, part in enumerate(content):
+                    part_str = str(part)
+                    preview = part_str[:300].replace("\n", "\\n")
+                    self._print(
+                        f"  [DEBUG] _log_tool_result:   part[{i}] type="
+                        f"{type(part).__name__}, preview={preview!r}"
+                    )
+                    if len(part_str) > 300:
+                        self._print(
+                            f"  [DEBUG] _log_tool_result:   part[{i}] ... "
+                            f"(total {len(part_str)} chars)"
+                        )
+        else:
+            self._print(
+                f"  [DEBUG] _log_tool_result: tool_use_id={block.tool_use_id}, "
+                f"is_error={block.is_error}, content=None/empty"
+            )
+
         if block.is_error:
             self._print(f"  {_EMOJI['cross']} Result Error (tool_use_id={block.tool_use_id})")
-        # 成功结果通常静默（避免日志刷屏）
         # 发射结构化事件
         self._emit_event(
             PipelineEvent(
@@ -729,7 +842,7 @@ def _build_options(
         ],
     }
 
-    return ClaudeAgentOptions(
+    options = ClaudeAgentOptions(
         cwd=cwd,
         system_prompt=final_system_prompt,
         permission_mode="bypassPermissions",
@@ -757,6 +870,31 @@ def _build_options(
         # ── 启用文件检查点以支持 rewind_files ──
         enable_file_checkpointing=True,
     )
+
+    # ── 盲区6: 记录 CLI 关键配置参数 ──
+    logger.debug(
+        "_build_options: cwd=%s, max_turns=%s, permission_mode=%s, "
+        "allowed_tools=%s, output_format=%s, fork_session=%s, "
+        "enable_file_checkpointing%s, hooks=%s, system_prompt_length=%d",
+        options.cwd,
+        options.max_turns,
+        options.permission_mode,
+        options.allowed_tools,
+        "set" if options.output_format else "None",
+        options.fork_session,
+        options.enable_file_checkpointing,
+        list(options.hooks.keys()) if options.hooks else [],
+        len(final_system_prompt) if final_system_prompt else 0,
+    )
+    print(
+        f"  [DEBUG] _build_options: cwd={cwd}, max_turns={max_turns}, "
+        f"permission_mode=bypassPermissions, "
+        f"allowed_tools={options.allowed_tools}, "
+        f"output_format={'set' if options.output_format else 'None'}, "
+        f"system_prompt_len={len(final_system_prompt) if final_system_prompt else 0}"
+    )
+
+    return options
 
 
 # ── Pipeline 编排 ─────────────────────────────────────────────
@@ -840,8 +978,67 @@ async def run_pipeline(
     dispatcher._print(f"  {_EMOJI['gear']} Phase 1/4: 启动 Claude Agent SDK...")
     dispatcher._print(f"  quality={quality} preset={preset} max_turns={max_turns}")
 
-    async for message in query(prompt=user_prompt, options=options):
-        dispatcher.dispatch(message)
+    # ── Transport 层调试：通过包装 query() 捕获进程退出信息 ──
+    # 使用 contextlib.wrap 或直接 patch SDK 内部 client 来拦截 close() 阶段
+    import contextlib as _ctx
+
+    # 统计 CLI stderr 行数（通过包装 log_callback）
+    _cli_stderr_lines: list[str] = []
+    _orig_log_callback = log_callback
+
+    def _counting_log_callback(line: str) -> None:
+        _cli_stderr_lines.append(line)
+        if _orig_log_callback:
+            _orig_log_callback(line)
+
+    # 用带计数的回调临时替换 options.stderr（仅用于本次调用）
+    _saved_stderr = options.stderr
+    options.stderr = _counting_log_callback
+
+    # ── 查询循环：捕获 SDK 层面的任何异常 ──
+    _sdk_exception: BaseException | None = None
+    try:
+        async for message in query(prompt=user_prompt, options=options):
+            dispatcher.dispatch(message)
+    except Exception as exc:
+        _sdk_exception = exc
+        dispatcher._print(f"  [DEBUG] run_pipeline: === SDK QUERY LOOP EXCEPTION ===")
+        dispatcher._print(f"  [DEBUG] run_pipeline: exception type={type(exc).__name__}")
+        dispatcher._print(f"  [DEBUG] run_pipeline: exception message={exc}")
+        import traceback as _tb
+        for _line in _tb.format_exception(type(exc), exc, exc.__traceback__):
+            for _ll in _line.rstrip().splitlines():
+                dispatcher._print(f"  [DEBUG] run_pipeline: TRACE {_ll}")
+        raise  # re-raise so existing error handling works
+
+    # ── 盲区5: 消息流结束总结 ──
+    dispatcher._print(f"  [DEBUG] run_pipeline: === MESSAGE STREAM END SUMMARY ===")
+    dispatcher._print(f"  [DEBUG] run_pipeline: total messages = {dispatcher._msg_count}")
+    dispatcher._print(f"  [DEBUG] run_pipeline: message type distribution = {dispatcher._msg_type_stats}")
+    dispatcher._print(f"  [DEBUG] run_pipeline: assistant messages = {dispatcher._assistant_msg_count}")
+    dispatcher._print(f"  [DEBUG] run_pipeline: tool_use_count = {dispatcher.tool_use_count}")
+    dispatcher._print(f"  [DEBUG] run_pipeline: tool_stats = {dispatcher.tool_stats}")
+    dispatcher._print(f"  [DEBUG] run_pipeline: collected_text blocks = {len(dispatcher.collected_text)}")
+    if dispatcher.collected_text:
+        total_chars = sum(len(t) for t in dispatcher.collected_text)
+        dispatcher._print(f"  [DEBUG] run_pipeline: collected_text total chars = {total_chars}")
+    dispatcher._print(f"  [DEBUG] run_pipeline: video_output (early) = {dispatcher.video_output!r}")
+    dispatcher._print(f"  [DEBUG] run_pipeline: pipeline_output (early) = {'set' if dispatcher.pipeline_output is not None else 'None'}")
+
+    # ── CLI stderr 统计 ──
+    options.stderr = _saved_stderr  # 恢复原始回调
+    dispatcher._print(f"  [DEBUG] run_pipeline: CLI stderr lines captured = {len(_cli_stderr_lines)}")
+    if _cli_stderr_lines:
+        # 只打印包含错误/警告关键词的行
+        _err_keywords = ("error", "warn", "fail", "exception", "exit", "kill")
+        for _sline in _cli_stderr_lines:
+            _slower = _sline.lower()
+            if any(kw in _slower for kw in _err_keywords):
+                dispatcher._print(f"  [DEBUG] CLI STDERR: {_sline[:300]}")
+        # 如果没有匹配关键词但行数很少，全部打印
+        if len(_cli_stderr_lines) <= 10:
+            for _sline in _cli_stderr_lines:
+                dispatcher._print(f"  [DEBUG] CLI STDERR(all): {_sline[:200]}")
 
     # 将 dispatcher 传给调用方（用于提取 pipeline_output 等元数据）
     if _dispatcher_ref is not None:

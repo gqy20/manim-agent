@@ -1,11 +1,13 @@
-# Watchfiles ignore patterns (gitignore syntax)
+# WatchFiles ignore patterns (gitignore syntax)
 # Pipeline output written by Claude Agent SDK must NOT trigger reload.
 
-backend/output/*
-backend/data/*
-*.pyc
-__pycache__/
+# Directory exclusion - excludes all contents including subdirectories
+backend/output/
+backend/data/
 .venv/
 node_modules/
-.next/
-*.mp4
+frontend/.next/
+
+# File exclusions
+*.pyc
+__pycache__/

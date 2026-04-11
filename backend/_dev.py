@@ -25,19 +25,6 @@ if __name__ == "__main__":
         host="127.0.0.1",
         port=8471,
         reload=True,
-        # Exclude pipeline output directories from hot-reload watching.
-        # These are written by the Claude Agent SDK subprocess and must NOT
-        # trigger a server restart mid-pipeline.
-        #
-        # IMPORTANT: Use real directory paths (no globs) so uvicorn's
-        # FileFilter routes them into exclude_dirs (checked via
-        # path.parents containment) rather than exclude_patterns (which
-        # use Path.match() and fail on Windows due to / vs \).
-        reload_excludes=[
-            "backend/output",
-            "backend/data",
-            ".venv",
-            "node_modules",
-            ".next",
-        ],
+        # Note: reload exclusions are handled by .watchfilesignore in project root.
+        # This is more reliable than reload_excludes on Windows.
     )
