@@ -148,32 +148,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-# ── 结果提取（兼容接口） ──────────────────────────────────────
-
-
-def extract_result(text: str) -> dict[str, str | None]:
-    """从 Claude 输出文本中提取结构化结果标记（向后兼容接口）。
-
-    Args:
-        text: Claude 输出的文本内容（可能包含多行）。
-
-    Returns:
-        包含 video_output_path, scene_file, scene_class 的字典。
-    """
-    try:
-        po = PipelineOutput.from_text_markers(text)
-        return {
-            "video_output_path": po.video_output,
-            "scene_file": po.scene_file,
-            "scene_class": po.scene_class,
-        }
-    except ValueError:
-        return {
-            "video_output_path": None,
-            "scene_file": None,
-            "scene_class": None,
-        }
-
 
 # ── Options 构建 ────────────────────────────────────────────────
 
@@ -443,7 +417,7 @@ async def run_pipeline(
 
         if not video_output:
             dispatcher._print("")
-            dispatcher._print(f"{_EMOJI['cross']} Claude did not report a VIDEO_OUTPUT marker.")
+            dispatcher._print(f"{_EMOJI['cross']} Claude did not produce a valid pipeline output.")
             dispatcher._print("  The agent may have failed to render the scene.")
             if dispatcher.result_summary:
                 s = dispatcher.result_summary
@@ -458,7 +432,7 @@ async def run_pipeline(
             else:
                 dispatcher._print("  (Agent produced no text output)")
             raise RuntimeError(
-                "Claude did not produce a VIDEO_OUTPUT marker. "
+                "Claude did not produce a valid pipeline output. "
                 "The agent may have failed to render the scene."
             )
 

@@ -81,7 +81,6 @@ class _MessageDispatcher:
         # ── PipelineOutput ──
         self.pipeline_output: PipelineOutput | None = None
         self._structured_output_candidate: PipelineOutput | None = None
-        self._result_text_candidate: PipelineOutput | None = None
         self._pipeline_output_source: str | None = None
         self._saw_completed_task_notification = False
         # ── 视频输出路径（从 TaskNotificationMessage.output_file 获取）──
@@ -123,7 +122,7 @@ class _MessageDispatcher:
     def get_pipeline_output(self) -> PipelineOutput | None:
         """返回验证后的 PipelineOutput（可能为 None）。
 
-        优先级：structured_output > Hook 捕获源码 > None
+        优先级：cached structured_output / task_notification > filesystem scan > None
         """
         if self.pipeline_output is not None:
             logger.debug(
@@ -131,39 +130,25 @@ class _MessageDispatcher:
                 self.pipeline_output.video_output,
             )
             return self.pipeline_output
-        # fallback：从 collected_text 的标记中解析
-        logger.debug(
-            "get_pipeline_output: trying text markers fallback, collected_text length=%d",
-            len(self.collected_text),
+        # fallback：文件系统扫描已渲染的 mp4
+        if not self._saw_completed_task_notification:
+            logger.debug(
+                "get_pipeline_output: no cached output and no completed task_notification"
+            )
+            return None
+        discovered_video = self._discover_rendered_video_path()
+        if not discovered_video:
+            return None
+        self.pipeline_output = PipelineOutput(
+            video_output=discovered_video,
+            scene_file=self._infer_scene_file(),
         )
-        try:
-            self.pipeline_output = PipelineOutput.from_text_markers("\n".join(self.collected_text))
-            logger.debug(
-                "get_pipeline_output: text markers parsed, video_output=%r",
-                self.pipeline_output.video_output,
-            )
-        except (ValueError, Exception) as e:
-            logger.debug("get_pipeline_output: text markers failed: %s", e)
-            if not self._saw_completed_task_notification:
-                logger.debug(
-                    "get_pipeline_output: skipping filesystem fallback without "
-                    "completed task_notification"
-                )
-                return None
-            discovered_video = self._discover_rendered_video_path()
-            if not discovered_video:
-                return None
-            self.pipeline_output = PipelineOutput(
-                video_output=discovered_video,
-                scene_file=self._infer_scene_file(),
-            )
-            logger.debug(
-                "get_pipeline_output: built fallback PipelineOutput from runtime artifacts, "
-                "video_output=%r",
-                discovered_video,
-            )
+        logger.debug(
+            "get_pipeline_output: built PipelineOutput from filesystem scan, "
+            "video_output=%r",
+            discovered_video,
+        )
         self._attach_captured_source_code("get_pipeline_output")
-        # 同步向后兼容属性
         self._sync_compat_attrs()
         return self.pipeline_output
 
@@ -232,10 +217,6 @@ class _MessageDispatcher:
             logger.debug("_handle_result: PERMISSION_DENIALS=%s", msg.permission_denials)
         if msg.result:
             logger.debug("_handle_result: result (preview)=%r", str(msg.result)[:300])
-            self._result_text_candidate = self._parse_result_text(msg.result)
-            if self.pipeline_output is None and self._result_text_candidate is not None:
-                self.pipeline_output = self._result_text_candidate
-                self._pipeline_output_source = "result_text"
         logger.debug(
             "_handle_result: structured_output is %s",
             "not None" if msg.structured_output is not None else "None",
@@ -246,7 +227,7 @@ class _MessageDispatcher:
                 type(msg.structured_output).__name__,
                 str(msg.structured_output)[:500],
             )
-        # ── 尝试从 structured_output 构建 PipelineOutput（主路径）──
+        # ── 从 structured_output 构建 PipelineOutput（主路径）──
         if msg.structured_output is not None:
             try:
                 raw = msg.structured_output
@@ -258,40 +239,32 @@ class _MessageDispatcher:
                     raise ValueError(f"structured_output unexpected type: {type(raw).__name__}")
                 validated_output = PipelineOutput.model_validate(raw)
                 self._structured_output_candidate = validated_output
-                output_for_linking = validated_output
                 logger.debug(
                     "_handle_result: PipelineOutput validated, video_output=%r",
-                    output_for_linking.video_output,
+                    validated_output.video_output,
                 )
                 # 关联 Hook 捕获的源代码
                 if (
-                    output_for_linking.scene_file
-                    and output_for_linking.scene_file in self._hook_state.captured_source_code
+                    validated_output.scene_file
+                    and validated_output.scene_file in self._hook_state.captured_source_code
                 ):
-                    output_for_linking.source_code = self._hook_state.captured_source_code[
-                        output_for_linking.scene_file
+                    validated_output.source_code = self._hook_state.captured_source_code[
+                        validated_output.scene_file
                     ]
                     logger.debug(
                         "_handle_result: source code linked for %s",
-                        output_for_linking.scene_file,
+                        validated_output.scene_file,
                     )
-                else:
-                    previous_pipeline_output = self.pipeline_output
-                    self.pipeline_output = output_for_linking
-                    self._attach_captured_source_code("_handle_result")
-                    output_for_linking = self.pipeline_output
-                    self.pipeline_output = previous_pipeline_output
+                self._attach_captured_source_code("_handle_result")
                 if self._pipeline_output_source != "task_notification":
-                    self.pipeline_output = output_for_linking
+                    self.pipeline_output = validated_output
                     self._pipeline_output_source = "structured_output"
                     self._sync_compat_attrs()
             except Exception as e:
-                logger.warning(
-                    "structured_output validation failed, falling back to text markers: %s", e
-                )
+                logger.warning("structured_output validation failed: %s", e)
                 logger.debug("_handle_result: validation failed: %s", e)
         else:
-            logger.debug("_handle_result: no structured_output, will try text markers fallback")
+            logger.debug("_handle_result: no structured_output")
         self._log_result_summary()
 
     @property
@@ -407,21 +380,6 @@ class _MessageDispatcher:
             self.video_output = self.pipeline_output.video_output
             self.scene_file = self.pipeline_output.scene_file
             self.scene_class = self.pipeline_output.scene_class
-
-    def _parse_result_text(self, text: str) -> PipelineOutput | None:
-        """Parse a PipelineOutput candidate from ResultMessage.result text."""
-        if not text.strip():
-            return None
-        try:
-            candidate = PipelineOutput.from_text_markers(text)
-            logger.debug(
-                "_parse_result_text: parsed video_output=%r",
-                candidate.video_output,
-            )
-            return candidate
-        except (ValueError, Exception) as e:
-            logger.debug("_parse_result_text: failed: %s", e)
-            return None
 
     def _discover_rendered_video_path(self) -> str | None:
         """Discover a rendered MP4 from SDK signals or task output artifacts."""

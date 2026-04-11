@@ -16,8 +16,9 @@ class TestSystemPrompt:
         assert "Manim" in prompts.SYSTEM_PROMPT or "manim" in prompts.SYSTEM_PROMPT.lower()
 
     def test_system_prompt_contains_output_format(self):
-        """SYSTEM_PROMPT 包含 VIDEO_OUTPUT 输出格式要求。"""
-        assert "VIDEO_OUTPUT" in prompts.SYSTEM_PROMPT
+        """SYSTEM_PROMPT 包含渲染输出相关指令。"""
+        # 不再要求文本标记，prompt 应包含渲染/输出相关内容
+        assert "render" in prompts.SYSTEM_PROMPT.lower() or "output" in prompts.SYSTEM_PROMPT.lower()
 
     def test_system_prompt_contains_workflow_rules(self):
         """SYSTEM_PROMPT 包含工作流程规则。"""
@@ -37,7 +38,7 @@ class TestGetPrompt:
         """返回的 prompt 包含系统提示词内容。"""
         result = prompts.get_prompt("测试文本")
         # 系统提示词的关键片段应出现在结果中
-        assert "VIDEO_OUTPUT" in result
+        assert "render" in result.lower() or "output" in result.lower()
 
     def test_get_prompt_educational_preset(self):
         """educational 预设包含教学相关关键词。"""

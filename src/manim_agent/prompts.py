@@ -78,16 +78,7 @@ SYSTEM_PROMPT: str = """# Role
 中等质量:     manim -qm <script>.py <ClassName>
 快速预览:     manim -ql <script>.py <ClassName>
 
-# ⚠️ 必须的输出格式（最后一步）
-渲染成功后，你**必须在最终文本消息中**输出以下标记：
-```
-VIDEO_OUTPUT: <mp4文件的完整路径>
-SCENE_FILE: <Python脚本路径>
-SCENE_CLASS: <Scene类名>
-DURATION: <估算时长秒数>
-```
-
-如果不输出 VIDEO_OUTPUT 标记，系统将认为任务失败。"""
+"""
 
 
 def get_prompt(
