@@ -916,6 +916,28 @@ class TestStructuredOutput:
         po = d.get_pipeline_output()
         assert po.video_output == "/struct.mp4"
 
+    def test_task_notification_takes_priority_over_structured_output(self):
+        """task_notification.output_file 搴斾綔涓烘渶寮虹殑瑙嗛杈撳嚭淇″彿銆?"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(TaskNotificationMessage(
+            subtype="task_notification",
+            data={},
+            task_id="task-1",
+            status="completed",
+            output_file="/notification/out.mp4",
+            summary="done",
+            uuid="u1",
+            session_id="s1",
+        ))
+        d.dispatch(_make_result_message(
+            num_turns=1,
+            **{"structured_output": {"video_output": "/struct.mp4", "scene_file": "s.py"}},
+        ))
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output == "/notification/out.mp4"
+
     def test_handle_result_structured_output_as_json_string(self):
         """SDK 返回 JSON 字符串格式的 structured_output 时正确解析。
 
@@ -1013,6 +1035,54 @@ class TestStructuredOutput:
         po = d.get_pipeline_output()
         assert po is not None
         assert po.video_output == "/int_fallback.mp4"
+
+
+    def test_handle_result_parses_result_text_markers(self):
+        """ResultMessage.result 中的标记也应被视为有效输出来源。"""
+        d = _MessageDispatcher(verbose=False)
+        msg = _make_result_message(
+            num_turns=1,
+            result=(
+                "渲染完成\n"
+                "VIDEO_OUTPUT: /result/out.mp4\n"
+                "SCENE_FILE: result_scene.py\n"
+                "SCENE_CLASS: ResultScene"
+            ),
+            structured_output=None,
+        )
+        d.dispatch(msg)
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output == "/result/out.mp4"
+        assert po.scene_file == "result_scene.py"
+        assert po.scene_class == "ResultScene"
+
+    def test_task_notification_takes_priority_over_result_text_and_assistant_text(self):
+        """task_notification.output_file 应优先于较弱的文本输出来源。"""
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(_make_assistant_message(
+            _make_text_block("VIDEO_OUTPUT: /assistant/out.mp4"),
+        ))
+        d.dispatch(_make_result_message(
+            num_turns=1,
+            result="VIDEO_OUTPUT: /result/out.mp4",
+            structured_output=None,
+        ))
+        d.dispatch(TaskNotificationMessage(
+            subtype="task_notification",
+            data={},
+            task_id="task-1",
+            status="completed",
+            output_file="/sdk/out.mp4",
+            summary="done",
+            uuid="u1",
+            session_id="s1",
+        ))
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output == "/sdk/out.mp4"
 
 
 class TestBuildOptionsOutputFormat:
