@@ -41,6 +41,8 @@ _store: TaskStore  # set via set_store()
 _sse_mgr: SSESubscriptionManager = SSESubscriptionManager()
 
 _r2_client: R2Client | None = None
+_OUTPUT_ROOT = Path("backend/output")
+_DEFAULT_KEEP_LOCAL_MP4_TASKS = 20
 
 
 def _status_event(
@@ -119,6 +121,66 @@ def _format_exception_message(exc: Exception) -> str:
     return " -> ".join(parts)
 
 
+def _get_local_mp4_keep_count() -> int:
+    """Read the number of local final.mp4 files to keep after upload.
+
+    Default is 20 to support quick spot-checking and comparison work.
+    Set to 0 to remove local mp4 files for all tasks in R2 mode.
+    """
+    raw = os.environ.get("KEEP_LOCAL_MP4_TASKS", str(_DEFAULT_KEEP_LOCAL_MP4_TASKS))
+    try:
+        value = int(raw)
+        return max(0, value)
+    except ValueError:
+        logger.warning("Invalid KEEP_LOCAL_MP4_TASKS=%r, using default=%d", raw, _DEFAULT_KEEP_LOCAL_MP4_TASKS)
+        return _DEFAULT_KEEP_LOCAL_MP4_TASKS
+
+
+def _latest_output_task_ids(limit: int) -> set[str]:
+    """Return task ids of the latest output directories by directory mtime."""
+    if limit <= 0 or not _OUTPUT_ROOT.exists():
+        return set()
+
+    def _mtime(path: Path) -> float:
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    entries = [p for p in _OUTPUT_ROOT.iterdir() if p.is_dir()]
+    entries.sort(key=_mtime, reverse=True)
+    return {p.name for p in entries[:limit]}
+
+
+def _should_keep_local_video(task_id: str) -> bool:
+    """Whether this task should keep local final.mp4 for quick review."""
+    keep_count = _get_local_mp4_keep_count()
+    if keep_count <= 0:
+        return False
+    return task_id in _latest_output_task_ids(keep_count)
+
+
+def _enforce_local_video_retention() -> None:
+    """Keep local final.mp4 only for the latest N tasks, remove others."""
+    if _r2_client is None:
+        return
+    keep_count = _get_local_mp4_keep_count()
+    if not _OUTPUT_ROOT.exists():
+        return
+
+    keep_ids = _latest_output_task_ids(keep_count) if keep_count > 0 else set()
+    for task_dir in _OUTPUT_ROOT.iterdir():
+        if not task_dir.is_dir() or task_dir.name in keep_ids:
+            continue
+
+        final_mp4 = task_dir / "final.mp4"
+        if final_mp4.exists():
+            try:
+                final_mp4.unlink()
+            except OSError:
+                logger.debug("Failed to prune local final.mp4 for %s", task_dir)
+
+
 def _safe_schedule(loop: asyncio.AbstractEventLoop, coro_factory) -> None:
     """Thread-safe: schedule an async callable on *loop*.
 
@@ -139,6 +201,11 @@ def _cleanup_output_dir(output_dir: Path, *, keep_mp4: bool = True) -> None:
     (local serving mode).  When False (R2 active), removes everything since the
     video has already been uploaded to cloud storage.
     """
+    if not keep_mp4 and _r2_client is not None:
+        # In R2 mode, keep final.mp4 for the most recent tasks only
+        # so we can still verify output quickly without filling disk.
+        keep_mp4 = _should_keep_local_video(output_dir.name)
+
     extensions_to_keep = {".log", ".json", ".txt"}
     if keep_mp4:
         extensions_to_keep.add(".mp4")
@@ -267,6 +334,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             except RuntimeError:
                 pass
             _cleanup_output_dir(output_dir, keep_mp4=(_r2_client is None))
+            _enforce_local_video_retention()
 
     async def _run_pipeline_inline() -> None:
         """Inline async pipeline — test mode only."""
@@ -326,6 +394,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         finally:
             _sse_mgr.done(task_id)
             _cleanup_output_dir(output_dir, keep_mp4=(_r2_client is None))
+            _enforce_local_video_retention()
 
     if _USE_PIPELINE_THREAD:
         # Production: dedicated thread with its own asyncio loop.
