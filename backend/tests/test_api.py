@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -16,23 +17,28 @@ from backend.task_store import TaskStore
 
 
 @pytest.fixture(autouse=True)
-def clean_persistence(tmp_path, monkeypatch):
-    """Redirect persistence to temp dir so tests don't leak data."""
-    monkeypatch.setattr(
-        "backend.task_store._PERSISTENCE_FILE",
-        tmp_path / "tasks.json",
+def _env_setup(monkeypatch):
+    """Set required env vars for tests."""
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        os.environ.get(
+            "TEST_DATABASE_URL",
+            "postgresql://neondb_owner:npg_nkDufTsx85NB@"
+            "ep-tiny-cloud-ak4yq9kz.c-3.us-west-2.aws.neon.tech"
+            "/neondb?sslmode=require",
+        ),
     )
     # Enable inline (non-threaded) pipeline mode for TestClient compatibility.
-    # Production uses threading to work around Windows/Python 3.13 subprocess
-    # limitations; tests mock run_pipeline so no real subprocess is needed.
     monkeypatch.setattr("backend.routes._USE_PIPELINE_THREAD", False)
 
 
 @pytest.fixture
-def store():
+async def store():
     s = TaskStore()
+    await s.start()
     set_store(s)
-    return s
+    yield s
+    await s.close()
 
 
 @pytest.fixture
@@ -226,66 +232,87 @@ class TestTaskStore:
     @pytest.mark.asyncio
     async def test_create_and_retrieve(self):
         store = TaskStore()
-        req = TaskCreateRequest(user_text="test task")
-        task = await store.create(req)
-        assert task["id"]
-        assert task["status"] == "pending"
+        await store.start()
+        try:
+            req = TaskCreateRequest(user_text="test task")
+            task = await store.create(req)
+            assert task["id"]
+            assert task["status"] == "pending"
 
-        retrieved = await store.get(task["id"])
-        assert retrieved is not None
-        assert retrieved["user_text"] == "test task"
+            retrieved = await store.get(task["id"])
+            assert retrieved is not None
+            assert retrieved["user_text"] == "test task"
+        finally:
+            await store.close()
 
     @pytest.mark.asyncio
     async def test_update_status(self):
         store = TaskStore()
-        req = TaskCreateRequest(user_text="test")
-        task = await store.create(req)
+        await store.start()
+        try:
+            req = TaskCreateRequest(user_text="test")
+            task = await store.create(req)
 
-        await store.update_status(task["id"], TaskStatus.RUNNING)
-        updated = await store.get(task["id"])
-        assert updated["status"] == "running"
+            await store.update_status(task["id"], TaskStatus.RUNNING)
+            updated = await store.get(task["id"])
+            assert updated["status"] == "running"
 
-        await store.update_status(
-            task["id"], TaskStatus.COMPLETED, video_path="/tmp/out.mp4"
-        )
-        completed = await store.get(task["id"])
-        assert completed["status"] == "completed"
-        assert completed["video_path"] == "/tmp/out.mp4"
-        assert completed["completed_at"] is not None
+            await store.update_status(
+                task["id"], TaskStatus.COMPLETED, video_path="/tmp/out.mp4"
+            )
+            completed = await store.get(task["id"])
+            assert completed["status"] == "completed"
+            assert completed["video_path"] == "/tmp/out.mp4"
+            assert completed["completed_at"] is not None
+        finally:
+            await store.close()
 
     @pytest.mark.asyncio
     async def test_append_log(self):
         store = TaskStore()
-        req = TaskCreateRequest(user_text="test")
-        task = await store.create(req)
+        await store.start()
+        try:
+            req = TaskCreateRequest(user_text="test")
+            task = await store.create(req)
 
-        await store.append_log(task["id"], "line 1")
-        await store.append_log(task["id"], "line 2")
+            await store.append_log(task["id"], "line 1")
+            await store.append_log(task["id"], "line 2")
 
-        logged = await store.get(task["id"])
-        assert logged["logs"] == ["line 1", "line 2"]
+            logged = await store.get(task["id"])
+            assert logged["logs"] == ["line 1", "line 2"]
+        finally:
+            await store.close()
 
     @pytest.mark.asyncio
     async def test_list_all_sorted(self):
         store = TaskStore()
-        # Use unique text to avoid collision with persisted data
-        import uuid
-        prefix = uuid.uuid4().hex[:8]
-        for i in range(3):
-            await store.create(TaskCreateRequest(user_text=f"{prefix}_task_{i}"))
+        await store.start()
+        try:
+            # Use unique text to avoid collision with persisted data
+            import uuid
 
-        tasks = await store.list_all(limit=3)
-        assert len(tasks) == 3
-        assert tasks[0]["created_at"] >= tasks[1]["created_at"]
+            prefix = uuid.uuid4().hex[:8]
+            for i in range(3):
+                await store.create(TaskCreateRequest(user_text=f"{prefix}_task_{i}"))
+
+            tasks = await store.list_all(limit=3)
+            assert len(tasks) == 3
+            assert tasks[0]["created_at"] >= tasks[1]["created_at"]
+        finally:
+            await store.close()
 
     @pytest.mark.asyncio
     async def test_to_response(self):
         store = TaskStore()
-        req = TaskCreateRequest(user_text="test")
-        task = await store.create(req)
-        response = store.to_response(task)
-        assert response.id == task["id"]
-        assert response.user_text == "test"
+        await store.start()
+        try:
+            req = TaskCreateRequest(user_text="test")
+            task = await store.create(req)
+            response = store.to_response(task)
+            assert response.id == task["id"]
+            assert response.user_text == "test"
+        finally:
+            await store.close()
 
 
 class TestSSEManager:

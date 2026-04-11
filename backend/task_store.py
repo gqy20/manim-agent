@@ -1,93 +1,193 @@
-"""Task state management: in-memory store with JSON file persistence."""
+"""Task state management: PostgreSQL-backed store (Neon).
+
+Replaces the previous JSON-file implementation with asyncpg + PostgreSQL.
+The public API is kept compatible so ``routes.py`` requires minimal changes.
+"""
 
 from __future__ import annotations
 
-import asyncio
 import json
+import os
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
+
+import asyncpg
 
 from .models import TaskCreateRequest, TaskStatus, TaskResponse
 
-_PERSISTENCE_FILE = Path("backend/data/tasks.json")
+
+def _get_database_url() -> str:
+    """Return the PostgreSQL connection URL from environment."""
+    url = os.environ.get("DATABASE_URL", "")
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. "
+            "Copy .env.example to .env and add your Neon URL."
+        )
+    return url
 
 
 class TaskStore:
-    """Thread-safe in-memory task store with file-based persistence."""
+    """Async PostgreSQL task store with connection pooling."""
 
     def __init__(self) -> None:
-        self._tasks: dict[str, dict[str, Any]] = {}
-        self._lock = asyncio.Lock()
-        self._load()
+        self._pool: asyncpg.Pool | None = None
 
-    def _load(self) -> None:
-        if _PERSISTENCE_FILE.exists():
-            try:
-                data = json.loads(_PERSISTENCE_FILE.read_text(encoding="utf-8"))
-                self._tasks = data.get("tasks", {})
-            except (json.JSONDecodeError, KeyError):
-                self._tasks = {}
+    # ── Lifecycle ───────────────────────────────────────────
+
+    async def start(self) -> None:
+        """Create the connection pool (call during app lifespan)."""
+        self._pool = await asyncpg.create_pool(
+            _get_database_url(),
+            min_size=2,
+            max_size=10,
+        )
 
     async def save(self) -> None:
-        async with self._lock:
-            _PERSISTENCE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            _PERSISTENCE_FILE.write_text(
-                json.dumps({"tasks": self._tasks}, ensure_ascii=False, indent=2),
-                encoding="utf-8",
+        """No-op for PostgreSQL — writes are already transactional."""
+        pass
+
+    async def close(self) -> None:
+        """Close the connection pool."""
+        if self._pool:
+            await self._pool.close()
+            self._pool = None
+
+    @property
+    def pool(self) -> asyncpg.Pool:
+        if self._pool is None:
+            raise RuntimeError(
+                "TaskStore not started. Call await store.start() first.",
             )
+        return self._pool
+
+    # ── CRUD ────────────────────────────────────────────────
 
     async def create(self, req: TaskCreateRequest) -> dict[str, Any]:
         task_id = str(uuid.uuid4())[:8]
-        now = datetime.now(timezone.utc).isoformat()
-        task: dict[str, Any] = {
-            "id": task_id,
-            "user_text": req.user_text,
-            "status": TaskStatus.PENDING.value,
-            "created_at": now,
-            "completed_at": None,
-            "video_path": None,
-            "error": None,
-            "logs": [],
-            "options": req.model_dump(),
-            "pipeline_output": None,
-        }
-        self._tasks[task_id] = task
-        await self.save()
-        return task
+        now = datetime.now(timezone.utc)
+        options_json = json.dumps(req.model_dump(), ensure_ascii=False)
+
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """INSERT INTO tasks
+                   (id, user_text, status, created_at, options)
+                   VALUES ($1, $2, 'pending', $3, $4::jsonb)
+                   RETURNING id, user_text, status,
+                     created_at, completed_at, video_path,
+                     error, options, pipeline_output,
+                     updated_at""",
+                task_id,
+                req.user_text,
+                now,
+                options_json,
+            )
+
+        return _row_to_dict(row)
 
     async def get(self, task_id: str) -> dict[str, Any] | None:
-        return self._tasks.get(task_id)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """SELECT t.*,
+                          COALESCE(
+                            ARRAY(
+                              SELECT l.content FROM task_logs l
+                              WHERE l.task_id = t.id
+                              ORDER BY l.id ASC LIMIT 500
+                            ),
+                            '{}'::TEXT[]
+                          ) AS logs
+                   FROM tasks t WHERE t.id = $1""",
+                task_id,
+            )
+        if row is None:
+            return None
+        return _row_to_dict(row)
 
     async def update_status(
         self, task_id: str, status: TaskStatus, **kwargs: Any
     ) -> None:
-        task = self._tasks.get(task_id)
-        if not task:
-            return
-        task["status"] = status.value
-        for k, v in kwargs.items():
-            task[k] = v
-        if status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
-            task["completed_at"] = datetime.now(timezone.utc).isoformat()
-        await self.save()
+        completed_at = (
+            datetime.now(timezone.utc)
+            if status in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+            else None
+        )
+
+        async with self.pool.acquire() as conn:
+            sets = ["status = $2"]
+            vals: list[Any] = [task_id, status.value]
+            idx = 3
+
+            if completed_at is not None:
+                sets.append(f"completed_at = ${idx}")
+                vals.append(completed_at)
+                idx += 1
+
+            for k, v in kwargs.items():
+                if k == "pipeline_output" and v is not None:
+                    v = json.dumps(v, ensure_ascii=False)
+                    sets.append(f"{k} = ${idx}::jsonb")
+                else:
+                    sets.append(f"{k} = ${idx}")
+                vals.append(v)
+                idx += 1
+
+            sets.append(f"updated_at = ${idx}")
+            vals.append(datetime.now(timezone.utc))
+
+            sql = f"UPDATE tasks SET {', '.join(sets)} WHERE id = $1"
+            await conn.execute(sql, *vals)
 
     async def append_log(self, task_id: str, line: str) -> None:
-        task = self._tasks.get(task_id)
-        if task:
-            task["logs"].append(line)
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO task_logs (task_id, content) VALUES ($1, $2)",
+                task_id,
+                line,
+            )
 
     async def list_all(self, limit: int = 50) -> list[dict[str, Any]]:
-        sorted_tasks = sorted(
-            self._tasks.values(),
-            key=lambda t: t["created_at"],
-            reverse=True,
-        )
-        return sorted_tasks[:limit]
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM tasks
+                   ORDER BY created_at DESC
+                   LIMIT $1""",
+                limit,
+            )
+        return [_row_to_dict(r) for r in rows]
 
-    @staticmethod
-    def to_response(task: dict[str, Any]) -> TaskResponse:
-        return TaskResponse(
-            **{k: task.get(k) for k in TaskResponse.model_fields}
-        )
+    # ── Compatibility: expose _tasks for startup banner ──────
+
+    @property
+    def _tasks(self) -> dict[str, Any]:
+        """Legacy compat property used by the startup banner.
+
+        Returns an empty dict since we no longer hold tasks in memory.
+        Override the banner to query DB instead if needed.
+        """
+        return {}
+
+
+# ── Helpers ────────────────────────────────────────────────
+
+
+def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
+    """Convert an asyncpg Record to a plain dict, handling JSONB fields."""
+    d = dict(row)
+    # Ensure logs field exists (from the JOIN subquery or default)
+    if "logs" not in d:
+        d["logs"] = []
+    return d
+
+
+@staticmethod
+def to_response(task: dict[str, Any]) -> TaskResponse:
+    """Build a TaskResponse from a raw task dict (kept as static method)."""
+    return TaskResponse(
+        **{k: task.get(k) for k in TaskResponse.model_fields}
+    )
+
+
+# Attach static method to class for backward compatibility
+TaskStore.to_response = to_response  # type: ignore[attr-defined]

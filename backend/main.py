@@ -79,18 +79,26 @@ class _SSEDisconnectMiddleware:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store = TaskStore()
+    await store.start()
     set_store(store)
     app.state.store = store
+
+    # Query task count from DB for startup banner
+    try:
+        count = len(await store.list_all(limit=9999))
+    except Exception:
+        count = 0
+
     # 启动横幅：让用户在终端中一眼识别后端就绪状态
     print()
     print("=" * 56)
     print("  Manim Agent Backend Ready")
-    print(f"  Tasks in store: {len(store._tasks)}")
+    print(f"  Tasks in DB:   {count}")
     print(f"  Output dir:   {Path('backend/output').resolve()}")
     print("=" * 56)
     print()
     yield
-    await store.save()
+    await store.close()
 
 
 app = FastAPI(

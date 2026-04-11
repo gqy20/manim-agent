@@ -34,7 +34,6 @@ if __name__ == "__main__":
         # Use relative patterns — Windows pathlib.glob() rejects absolute paths.
         reload_excludes=[
             "backend/output",
-            "backend/data",
             ".venv",
             "frontend/.next",
             "node_modules",
