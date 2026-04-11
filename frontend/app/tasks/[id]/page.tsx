@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { getTask, getVideoUrl } from "@/lib/api";
 import { connectTaskEvents } from "@/lib/sse-client";
 import type { Task, SSEEvent, TaskStatus } from "@/types";
+import { isStatusPayload } from "@/types";
 import {
   ArrowLeft,
   Film,
@@ -75,6 +76,10 @@ export default function TaskDetailPage() {
         if (event.type === "status" && typeof event.data === "string") {
           setTask((prev) =>
             prev ? { ...prev, status: event.data as TaskStatus } : prev,
+          );
+        } else if (isStatusPayload(event)) {
+          setTask((prev) =>
+            prev ? { ...prev, status: event.data.task_status } : prev,
           );
         }
       },

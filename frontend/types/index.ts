@@ -65,6 +65,12 @@ export interface ProgressPayload {
   last_tool_name: string | null;
 }
 
+export interface StatusPayload {
+  task_status: TaskStatus;
+  phase: "init" | "scene" | "render" | "tts" | "mux" | "done" | null;
+  message: string | null;
+}
+
 // ── SSE 事件类型 ──────────────────────────────────────────
 
 /** 所有可能的 SSE 事件类型名称。 */
@@ -82,7 +88,8 @@ export type StructuredPayload =
   | ToolStartPayload
   | ToolResultPayload
   | ThinkingPayload
-  | ProgressPayload;
+  | ProgressPayload
+  | StatusPayload;
 
 /**
  * SSE 事件（向后兼容 + 结构化扩展）。
@@ -124,4 +131,15 @@ export function isProgress(
   evt: SSEEvent,
 ): evt is SSEEvent & { data: ProgressPayload } {
   return evt.type === "progress" && typeof evt.data === "object";
+}
+
+export function isStatusPayload(
+  evt: SSEEvent,
+): evt is SSEEvent & { data: StatusPayload } {
+  return (
+    evt.type === "status" &&
+    typeof evt.data === "object" &&
+    evt.data !== null &&
+    "task_status" in evt.data
+  );
 }

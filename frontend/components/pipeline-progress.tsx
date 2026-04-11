@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import type { SSEEvent } from "@/types";
+import type { SSEEvent, StatusPayload } from "@/types";
+import { isStatusPayload } from "@/types";
 import {
   Loader2,
   Sparkles,
@@ -85,6 +86,11 @@ function detectCurrentPhases(
   events: SSEEvent[],
   taskStatus: string,
 ): PhaseState[] {
+  const latestStatusPayload = [...events]
+    .reverse()
+    .find((event): event is SSEEvent & { data: StatusPayload } => isStatusPayload(event))
+    ?.data;
+
   // If task is terminal, mark everything up to current as done
   const isTerminal = ["completed", "failed"].includes(taskStatus);
   const hasError = taskStatus === "failed";
@@ -106,6 +112,40 @@ function detectCurrentPhases(
     phase,
     status: "pending" as PhaseStatus,
   }));
+
+  if (latestStatusPayload?.phase) {
+    const phaseOrder = ["init", "scene", "render", "tts", "done"] as const;
+    let activeIndex = phaseOrder.indexOf(latestStatusPayload.phase as (typeof phaseOrder)[number]);
+    if (latestStatusPayload.phase === "mux") {
+      activeIndex = phaseOrder.indexOf("done");
+    }
+
+    if (activeIndex >= 0) {
+      states.forEach((state, index) => {
+        if (index < activeIndex) {
+          state.status = "done";
+        } else if (index === activeIndex) {
+          state.status = isTerminal
+            ? hasError
+              ? "error"
+              : "done"
+            : "active";
+        } else {
+          state.status = "pending";
+        }
+      });
+
+      if (taskStatus === "completed") {
+        states.forEach((state) => {
+          state.status = "done";
+        });
+      } else if (taskStatus === "failed" && activeIndex >= 0) {
+        states[activeIndex].status = "error";
+      }
+
+      return states;
+    }
+  }
 
   // Find the highest active phase
   let maxActiveIndex = -1;

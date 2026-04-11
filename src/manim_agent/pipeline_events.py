@@ -90,6 +90,14 @@ class ProgressPayload(BaseModel):
         return v
 
 
+class StatusPayload(BaseModel):
+    """Authoritative task/phase status emitted by the backend."""
+
+    task_status: str = Field(..., description="Task lifecycle status")
+    phase: Optional[str] = Field(default=None, description="Current pipeline phase id")
+    message: Optional[str] = Field(default=None, description="Optional human-readable note")
+
+
 # ── 统一事件模型 ──────────────────────────────────────────────
 
 
@@ -105,7 +113,14 @@ class PipelineEvent(BaseModel):
     """
 
     event_type: EventType
-    data: ToolStartPayload | ToolResultPayload | ThinkingPayload | ProgressPayload | str
+    data: (
+        ToolStartPayload
+        | ToolResultPayload
+        | ThinkingPayload
+        | ProgressPayload
+        | StatusPayload
+        | str
+    )
     timestamp: str = Field(
         default_factory=lambda: time.strftime(
             "%Y-%m-%dT%H:%M:%S%z", time.localtime()

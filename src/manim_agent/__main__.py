@@ -44,6 +44,7 @@ from .output_schema import PipelineOutput
 from .pipeline_events import (
     EventType,
     PipelineEvent,
+    StatusPayload,
     ThinkingPayload,
     ProgressPayload,
     ToolResultPayload,
@@ -56,6 +57,28 @@ from .hooks import _on_post_tool_use, activate_hook_state, create_hook_state, re
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 
 logger = logging.getLogger(__name__)
+
+
+def _emit_status(
+    event_callback: Callable[[PipelineEvent], None] | None,
+    *,
+    task_status: str,
+    phase: str | None = None,
+    message: str | None = None,
+) -> None:
+    """Emit a structured status event when an SSE callback is available."""
+    if event_callback is None:
+        return
+    event_callback(
+        PipelineEvent(
+            event_type=EventType.STATUS,
+            data=StatusPayload(
+                task_status=task_status,
+                phase=phase,
+                message=message,
+            ),
+        )
+    )
 
 
 # ── CLI 参数解析 ──────────────────────────────────────────────
@@ -372,6 +395,12 @@ async def run_pipeline(
     dispatcher._print(_LOG_SEPARATOR)
     dispatcher._print(f"  {_EMOJI['gear']} Phase 1/4: start Claude Agent SDK")
     dispatcher._print(f"  quality={quality} preset={preset} max_turns={max_turns}")
+    _emit_status(
+        event_callback,
+        task_status="running",
+        phase="init",
+        message="Claude Agent SDK started",
+    )
 
     _cli_stderr_lines: list[str] = []
     _orig_log_callback = log_callback
@@ -393,6 +422,12 @@ async def run_pipeline(
             _dispatcher_ref.append(dispatcher)
 
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2/4: resolve render output")
+        _emit_status(
+            event_callback,
+            task_status="running",
+            phase="render",
+            message="Resolving render output",
+        )
         logger.debug(
             "run_pipeline: dispatcher.video_output before extraction = %r",
             dispatcher.video_output,
@@ -432,6 +467,12 @@ async def run_pipeline(
             return video_output
 
         dispatcher._print(f"  {_EMOJI['gear']} Phase 3/4: synthesize TTS")
+        _emit_status(
+            event_callback,
+            task_status="running",
+            phase="tts",
+            message="Synthesizing narration",
+        )
         po = dispatcher.get_pipeline_output()
         narration_text = po.narration if po and po.narration else user_text
         dispatcher._print(f"\n{_EMOJI['tts']} TTS in progress... (voice={voice_id}, model={model})")
@@ -445,6 +486,12 @@ async def run_pipeline(
 
         dispatcher._print("[MUX] Phase 4/4: mux final video")
         dispatcher._print("[MUX] FFmpeg in progress... (video + audio + subtitle)")
+        _emit_status(
+            event_callback,
+            task_status="running",
+            phase="mux",
+            message="Muxing final video",
+        )
         final_video = await video_builder.build_final_video(
             video_path=video_output,
             audio_path=tts_result.audio_path,

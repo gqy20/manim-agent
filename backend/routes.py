@@ -18,7 +18,7 @@ from fastapi.sse import EventSourceResponse
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
 from .pipeline_runner import _pipeline_body
 
-from manim_agent.pipeline_events import EventType, PipelineEvent
+from manim_agent.pipeline_events import EventType, PipelineEvent, StatusPayload
 
 from .models import (
     TaskCreateRequest,
@@ -41,6 +41,24 @@ _store: TaskStore  # set via set_store()
 _sse_mgr: SSESubscriptionManager = SSESubscriptionManager()
 
 _r2_client: R2Client | None = None
+
+
+def _status_event(
+    task_status: TaskStatus | str,
+    *,
+    phase: str | None = None,
+    message: str | None = None,
+) -> PipelineEvent:
+    """Build a structured status event for SSE consumers."""
+    status_value = task_status.value if isinstance(task_status, TaskStatus) else task_status
+    return PipelineEvent(
+        event_type=EventType.STATUS,
+        data=StatusPayload(
+            task_status=status_value,
+            phase=phase,
+            message=message,
+        ),
+    )
 
 
 def init_r2_client() -> None:
@@ -177,7 +195,11 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             lambda: _store.update_status(task_id, TaskStatus.RUNNING),
         )
         event_callback(
-            PipelineEvent(event_type=EventType.STATUS, data="running"),
+            _status_event(
+                TaskStatus.RUNNING,
+                phase="init",
+                message="Pipeline started",
+            ),
         )
 
         try:
@@ -207,6 +229,13 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     pipeline_output=po_data,
                 ),
             )
+            event_callback(
+                _status_event(
+                    TaskStatus.COMPLETED,
+                    phase="done",
+                    message="Pipeline completed",
+                ),
+            )
         except Exception as exc:
             error_message = _format_exception_message(exc)
             logger.exception("Task %s failed: %s", task_id, error_message)
@@ -214,6 +243,12 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 main_loop,
                 lambda: _store.update_status(
                     task_id, TaskStatus.FAILED, error=error_message,
+                ),
+            )
+            event_callback(
+                _status_event(
+                    TaskStatus.FAILED,
+                    message=error_message,
                 ),
             )
         finally:
@@ -229,6 +264,13 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         _sse_mgr.push(task_id, msg)
         await _store.append_log(task_id, msg)
         await _store.update_status(task_id, TaskStatus.RUNNING)
+        event_callback(
+            _status_event(
+                TaskStatus.RUNNING,
+                phase="init",
+                message="Pipeline started",
+            ),
+        )
 
         try:
             _video_url, po_data = await _pipeline_body(
@@ -252,11 +294,24 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 video_path=_video_url,
                 pipeline_output=po_data,
             )
+            event_callback(
+                _status_event(
+                    TaskStatus.COMPLETED,
+                    phase="done",
+                    message="Pipeline completed",
+                ),
+            )
         except Exception as exc:
             error_message = _format_exception_message(exc)
             logger.exception("Task %s failed: %s", task_id, error_message)
             await _store.update_status(
                 task_id, TaskStatus.FAILED, error=error_message,
+            )
+            event_callback(
+                _status_event(
+                    TaskStatus.FAILED,
+                    message=error_message,
+                ),
             )
         finally:
             _sse_mgr.done(task_id)
@@ -340,7 +395,18 @@ async def task_events(task_id: str):
     # ── Phase 3: 终态任务直接返回 ───────────────────────────
     status = task["status"]
     if status in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value):
-        yield _make_sse_event("status", {"type": "status", "data": status, "timestamp": _now})
+        yield _make_sse_event(
+            "status",
+            {
+                "type": "status",
+                "data": {
+                    "task_status": status,
+                    "phase": "done" if status == TaskStatus.COMPLETED.value else None,
+                    "message": None,
+                },
+                "timestamp": _now,
+            },
+        )
         return
 
     # ── Phase 4: 实时流式推送 ───────────────────────────────
@@ -371,7 +437,19 @@ async def task_events(task_id: str):
                 _final_ts = datetime.now(UTC).isoformat()
                 yield _make_sse_event(
                     "status",
-                    {"type": "status", "data": refreshed["status"], "timestamp": _final_ts},
+                    {
+                        "type": "status",
+                        "data": {
+                            "task_status": refreshed["status"],
+                            "phase": (
+                                "done"
+                                if refreshed["status"] == TaskStatus.COMPLETED.value
+                                else None
+                            ),
+                            "message": refreshed.get("error"),
+                        },
+                        "timestamp": _final_ts,
+                    },
                 )
         except Exception:
             pass
