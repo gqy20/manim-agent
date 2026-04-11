@@ -62,6 +62,55 @@ class TestHealthCheck:
         assert resp.json() == {"status": "ok"}
 
 
+# ── 模块级异常工厂（raise ... from 是语句，无法放入 lambda） ──
+
+
+def _make_oserror_chained():
+    raise RuntimeError("Failed to start Claude Code: ") from OSError(
+        "The system cannot find the file specified"
+    )
+
+
+def _make_cli_connection_error():
+    from claude_agent_sdk import CLIConnectionError
+
+    raise CLIConnectionError("Failed to start Claude Code") from NotImplementedError()
+
+
+_ERROR_CASES = [
+    pytest.param(
+        _make_oserror_chained,
+        ["The system cannot find the file specified"],
+        id="oserror_chained",
+    ),
+    pytest.param(
+        _make_cli_connection_error,
+        ["CLIConnectionError", "NotImplementedError", "Failed to start Claude Code"],
+        id="cli_connection_error",
+    ),
+    pytest.param(
+        __import__("claude_agent_sdk", fromlist=["CLINotFoundError"])
+        .CLINotFoundError("Claude Code not found"),
+        lambda s: (  # 自定义断言：or 条件
+            "CLINotFoundError" in s
+            and ("not found" in s.lower() or "install" in s.lower())
+        ),
+        id="cli_not_found",
+    ),
+    pytest.param(
+        __import__("claude_agent_sdk", fromlist=["ProcessError"])
+        .ProcessError("Command failed", exit_code=1, stderr="permission denied"),
+        ["ProcessError", "exit code", "1"],
+        id="process_error",
+    ),
+    pytest.param(
+        RuntimeError("something went wrong"),
+        ["RuntimeError", "something went wrong"],
+        id="generic_runtime_error",
+    ),
+]
+
+
 class TestTaskCRUD:
     def test_create_task(self, client, sample_request):
         resp = client.post("/api/tasks", json=sample_request.model_dump())
@@ -118,28 +167,7 @@ class TestTaskCRUD:
         assert '"event": "status"' in body
         assert "completed" in body
 
-    def test_create_task_surfaces_non_empty_failure_message(self, client, sample_request):
-        async def failing_pipeline(**_kwargs):
-            raise RuntimeError("Failed to start Claude Code: ") from OSError(
-                "The system cannot find the file specified"
-            )
-
-        with patch("manim_agent.__main__.run_pipeline", failing_pipeline):
-            resp = client.post("/api/tasks", json=sample_request.model_dump())
-
-            assert resp.status_code == 201
-            task_id = resp.json()["id"]
-
-            for _ in range(20):
-                task_resp = client.get(f"/api/tasks/{task_id}")
-                assert task_resp.status_code == 200
-                task = task_resp.json()
-                if task["status"] == "failed":
-                    break
-            else:
-                pytest.fail("task did not transition to failed state")
-
-        assert "The system cannot find the file specified" in task["error"]
+    # ── Error-surface 测试：parametrize 替代 5 个重复方法 ───
 
     @staticmethod
     def _wait_for_failed(client, task_id: str, timeout: int = 20) -> dict:
@@ -152,167 +180,106 @@ class TestTaskCRUD:
                 return task
         pytest.fail(f"task {task_id} did not transition to failed state")
 
-    def test_create_task_cli_connection_error_surfaces_details(self, client, sample_request):
-        """CLIConnectionError 包含根本原因信息（如 NotImplementedError 链）。
+    @pytest.mark.parametrize("exception_factory,expected_substrings", _ERROR_CASES)
+    def test_create_task_error_surfaces_details(
+        self,
+        client,
+        sample_request,
+        exception_factory,
+        expected_substrings,
+    ):
+        """各种异常类型均被正确捕获并暴露到 task.error 字段。"""
+        exc = (
+            exception_factory
+            if isinstance(exception_factory, BaseException)
+            else exception_factory()
+        )
 
-        复现实际错误: CLIConnectionError: Failed to start Claude Code ->
-        NotImplementedError
-        """
-        from claude_agent_sdk import CLIConnectionError
+        async def failing_pipeline(**_kwargs):
+            raise exc
 
-        async def cli_connection_error(**_kwargs):
-            raise CLIConnectionError(
-                "Failed to start Claude Code"
-            ) from NotImplementedError()
-
-        with patch("manim_agent.__main__.run_pipeline", cli_connection_error):
+        with patch("manim_agent.__main__.run_pipeline", failing_pipeline):
             resp = client.post("/api/tasks", json=sample_request.model_dump())
-
             assert resp.status_code == 201
             task = self._wait_for_failed(client, resp.json()["id"])
 
-        # 错误消息应包含完整异常链
-        assert "CLIConnectionError" in task["error"]
-        assert "NotImplementedError" in task["error"]
-        assert "Failed to start Claude Code" in task["error"]
-
-    def test_create_task_cli_not_found_gives_install_hint(self, client, sample_request):
-        """CLINotFoundError 包含安装提示信息。"""
-        from claude_agent_sdk import CLINotFoundError
-
-        async def cli_not_found(**_kwargs):
-            raise CLINotFoundError("Claude Code not found")
-
-        with patch("manim_agent.__main__.run_pipeline", cli_not_found):
-            resp = client.post("/api/tasks", json=sample_request.model_dump())
-
-            assert resp.status_code == 201
-            task = self._wait_for_failed(client, resp.json()["id"])
-
-        assert "CLINotFoundError" in task["error"]
-        assert "not found" in task["error"].lower() or "install" in task["error"].lower()
-
-    def test_create_task_process_error_surfaces_exit_code(self, client, sample_request):
-        """ProcessError 包含退出码和 stderr 信息。"""
-        from claude_agent_sdk import ProcessError
-
-        async def process_error(**_kwargs):
-            raise ProcessError(
-                "Command failed",
-                exit_code=1,
-                stderr="permission denied",
-            )
-
-        with patch("manim_agent.__main__.run_pipeline", process_error):
-            resp = client.post("/api/tasks", json=sample_request.model_dump())
-
-            assert resp.status_code == 201
-            task = self._wait_for_failed(client, resp.json()["id"])
-
-        assert "ProcessError" in task["error"]
-        assert "exit code" in task["error"].lower()
-        assert "1" in task["error"]
-
-    def test_create_task_generic_runtime_error_still_works(self, client, sample_request):
-        """普通 RuntimeError（非 SDK 异常）仍正常记录，无回归。"""
-        async def generic_error(**_kwargs):
-            raise RuntimeError("something went wrong")
-
-        with patch("manim_agent.__main__.run_pipeline", generic_error):
-            resp = client.post("/api/tasks", json=sample_request.model_dump())
-
-            assert resp.status_code == 201
-            task = self._wait_for_failed(client, resp.json()["id"])
-
-        assert "RuntimeError" in task["error"]
-        assert "something went wrong" in task["error"]
+        if callable(expected_substrings) and not isinstance(expected_substrings, str):
+            assert expected_substrings(task["error"])
+        else:
+            for sub in expected_substrings:
+                assert sub in task["error"]
 
 
 class TestTaskStore:
-    @pytest.mark.asyncio
-    async def test_create_and_retrieve(self):
-        store = TaskStore()
-        await store.start()
-        try:
-            req = TaskCreateRequest(user_text="test task")
-            task = await store.create(req)
-            assert task["id"]
-            assert task["status"] == "pending"
+    """TaskStore CRUD 操作 — 共享 class-level 生命周期 fixture。"""
 
-            retrieved = await store.get(task["id"])
-            assert retrieved is not None
-            assert retrieved["user_text"] == "test task"
-        finally:
-            await store.close()
+    @pytest.fixture(autouse=True)
+    async def _store(self):
+        """每个测试方法自动获取一个已启动的 TaskStore，测试结束后自动关闭。"""
+        s = TaskStore()
+        await s.start()
+        yield s
+        await s.close()
 
     @pytest.mark.asyncio
-    async def test_update_status(self):
-        store = TaskStore()
-        await store.start()
-        try:
-            req = TaskCreateRequest(user_text="test")
-            task = await store.create(req)
+    async def test_create_and_retrieve(self, _store):
+        req = TaskCreateRequest(user_text="test task")
+        task = await _store.create(req)
+        assert task["id"]
+        assert task["status"] == "pending"
 
-            await store.update_status(task["id"], TaskStatus.RUNNING)
-            updated = await store.get(task["id"])
-            assert updated["status"] == "running"
-
-            await store.update_status(
-                task["id"], TaskStatus.COMPLETED, video_path="/tmp/out.mp4"
-            )
-            completed = await store.get(task["id"])
-            assert completed["status"] == "completed"
-            assert completed["video_path"] == "/tmp/out.mp4"
-            assert completed["completed_at"] is not None
-        finally:
-            await store.close()
+        retrieved = await _store.get(task["id"])
+        assert retrieved is not None
+        assert retrieved["user_text"] == "test task"
 
     @pytest.mark.asyncio
-    async def test_append_log(self):
-        store = TaskStore()
-        await store.start()
-        try:
-            req = TaskCreateRequest(user_text="test")
-            task = await store.create(req)
+    async def test_update_status(self, _store):
+        req = TaskCreateRequest(user_text="test")
+        task = await _store.create(req)
 
-            await store.append_log(task["id"], "line 1")
-            await store.append_log(task["id"], "line 2")
+        await _store.update_status(task["id"], TaskStatus.RUNNING)
+        updated = await _store.get(task["id"])
+        assert updated["status"] == "running"
 
-            logged = await store.get(task["id"])
-            assert logged["logs"] == ["line 1", "line 2"]
-        finally:
-            await store.close()
-
-    @pytest.mark.asyncio
-    async def test_list_all_sorted(self):
-        store = TaskStore()
-        await store.start()
-        try:
-            # Use unique text to avoid collision with persisted data
-            import uuid
-
-            prefix = uuid.uuid4().hex[:8]
-            for i in range(3):
-                await store.create(TaskCreateRequest(user_text=f"{prefix}_task_{i}"))
-
-            tasks = await store.list_all(limit=3)
-            assert len(tasks) == 3
-            assert tasks[0]["created_at"] >= tasks[1]["created_at"]
-        finally:
-            await store.close()
+        await _store.update_status(
+            task["id"], TaskStatus.COMPLETED, video_path="/tmp/out.mp4",
+        )
+        completed = await _store.get(task["id"])
+        assert completed["status"] == "completed"
+        assert completed["video_path"] == "/tmp/out.mp4"
+        assert completed["completed_at"] is not None
 
     @pytest.mark.asyncio
-    async def test_to_response(self):
-        store = TaskStore()
-        await store.start()
-        try:
-            req = TaskCreateRequest(user_text="test")
-            task = await store.create(req)
-            response = store.to_response(task)
-            assert response.id == task["id"]
-            assert response.user_text == "test"
-        finally:
-            await store.close()
+    async def test_append_log(self, _store):
+        req = TaskCreateRequest(user_text="test")
+        task = await _store.create(req)
+
+        await _store.append_log(task["id"], "line 1")
+        await _store.append_log(task["id"], "line 2")
+
+        logged = await _store.get(task["id"])
+        assert logged["logs"] == ["line 1", "line 2"]
+
+    @pytest.mark.asyncio
+    async def test_list_all_sorted(self, _store):
+        # Use unique text to avoid collision with persisted data
+        import uuid
+
+        prefix = uuid.uuid4().hex[:8]
+        for i in range(3):
+            await _store.create(TaskCreateRequest(user_text=f"{prefix}_task_{i}"))
+
+        tasks = await _store.list_all(limit=3)
+        assert len(tasks) == 3
+        assert tasks[0]["created_at"] >= tasks[1]["created_at"]
+
+    @pytest.mark.asyncio
+    async def test_to_response(self, _store):
+        req = TaskCreateRequest(user_text="test")
+        task = await _store.create(req)
+        response = _store.to_response(task)
+        assert response.id == task["id"]
+        assert response.user_text == "test"
 
 
 class TestSSEManager:

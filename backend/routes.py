@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.sse import EventSourceResponse
 
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
+from .pipeline_runner import _pipeline_body
 
 from manim_agent.pipeline_events import EventType, PipelineEvent
 
@@ -170,23 +171,20 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         """Execute pipeline in a separate thread with its own event loop."""
         import asyncio as _asyncio
 
-        from manim_agent.__main__ import run_pipeline
-
         log_callback("[SYS] Connecting to Claude Agent SDK...")
         _safe_schedule(
             main_loop,
             lambda: _store.update_status(task_id, TaskStatus.RUNNING),
         )
-        # 推送 status 事件让前端 badge 从"等待中"更新为"生成中"
         event_callback(
             PipelineEvent(event_type=EventType.STATUS, data="running"),
         )
 
-        dispatcher_ref: list[Any] = []
         try:
-            final_video = _asyncio.run(
-                run_pipeline(
-                    user_text=req.user_text,
+            _video_url, po_data = _asyncio.run(
+                _pipeline_body(
+                    req=req,
+                    task_id=task_id,
                     output_path=output_path,
                     voice_id=req.voice_id,
                     model=req.model,
@@ -194,46 +192,12 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     no_tts=req.no_tts,
                     cwd=str(output_dir),
                     max_turns=50,
-                    log_callback=log_callback,
                     preset=req.preset,
-                    _dispatcher_ref=dispatcher_ref,
+                    log_callback=log_callback,
                     event_callback=event_callback,
+                    r2_client=_r2_client,
                 )
             )
-            # 提取 pipeline 结构化输出
-            po_data = None
-            if dispatcher_ref:
-                dispatcher = dispatcher_ref[0]
-                po = dispatcher.get_pipeline_output()
-                if po is not None:
-                    po_data = po.model_dump()
-
-            # ── Upload to R2 if configured ──
-            _video_url: str = final_video  # default: local path
-            if _r2_client is not None and Path(final_video).exists():
-                try:
-                    obj_key = r2_object_key(task_id)
-                    _video_url = _r2_client.upload_file(
-                        final_video, obj_key,
-                    )
-                    log_callback(f"[SYS] Video uploaded to R2: {_video_url}")
-                    # Remove local copy to save disk space
-                    try:
-                        Path(final_video).unlink()
-                    except OSError:
-                        pass  # non-critical
-                except Exception as exc:
-                    logger.warning(
-                        "R2 upload failed for task %s, "
-                        "falling back to local: %s",
-                        task_id,
-                        exc,
-                    )
-                    log_callback(
-                        f"[SYS] R2 upload failed, using local path"
-                    )
-                    # Keep final_video as-is (local path fallback)
-
             _safe_schedule(
                 main_loop,
                 lambda: _store.update_status(
@@ -245,20 +209,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             )
         except Exception as exc:
             error_message = _format_exception_message(exc)
-            logger.exception(
-                "Task %s failed: %s [type=%s args=%s]",
-                task_id,
-                error_message,
-                type(exc).__name__,
-                getattr(exc, "args", None),
-            )
-            # 将完整错误链写入 log stream（前端可展示）
-            log_callback(f"[ERR] {error_message}")
-            import traceback as tb
-
-            for line in tb.format_exception(type(exc), exc, exc.__traceback__):
-                for ll in line.rstrip().splitlines():
-                    log_callback(f"[TRACE] {ll}")
+            logger.exception("Task %s failed: %s", task_id, error_message)
             _safe_schedule(
                 main_loop,
                 lambda: _store.update_status(
@@ -269,25 +220,20 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             try:
                 main_loop.call_soon_threadsafe(_sse_mgr.done, task_id)
             except RuntimeError:
-                pass  # loop closed during shutdown/test teardown
-            # Clean up partial outputs on failure to avoid disk bloat
-            _cleanup_output_dir(
-                output_dir, keep_mp4=(_r2_client is None),
-            )
+                pass
+            _cleanup_output_dir(output_dir, keep_mp4=(_r2_client is None))
 
     async def _run_pipeline_inline() -> None:
-        """Inline async pipeline — test mode only (no subprocess needed)."""
-        from manim_agent.__main__ import run_pipeline
-
+        """Inline async pipeline — test mode only."""
         msg = "[SYS] Connecting to Claude Agent SDK..."
         _sse_mgr.push(task_id, msg)
         await _store.append_log(task_id, msg)
         await _store.update_status(task_id, TaskStatus.RUNNING)
 
-        dispatcher_ref: list[Any] = []
         try:
-            final_video = await run_pipeline(
-                user_text=req.user_text,
+            _video_url, po_data = await _pipeline_body(
+                req=req,
+                task_id=task_id,
                 output_path=output_path,
                 voice_id=req.voice_id,
                 model=req.model,
@@ -295,37 +241,11 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 no_tts=req.no_tts,
                 cwd=str(output_dir),
                 max_turns=50,
-                log_callback=log_callback,
                 preset=req.preset,
-                _dispatcher_ref=dispatcher_ref,
+                log_callback=log_callback,
                 event_callback=event_callback,
+                r2_client=_r2_client,
             )
-            po_data = None
-            if dispatcher_ref:
-                dispatcher = dispatcher_ref[0]
-                po = dispatcher.get_pipeline_output()
-                if po is not None:
-                    po_data = po.model_dump()
-
-            # ── Upload to R2 if configured ──
-            _video_url: str = final_video
-            if _r2_client is not None and Path(final_video).exists():
-                try:
-                    obj_key = r2_object_key(task_id)
-                    _video_url = _r2_client.upload_file(
-                        final_video, obj_key,
-                    )
-                    log_callback(f"[SYS] Video uploaded to R2: {_video_url}")
-                    try:
-                        Path(final_video).unlink()
-                    except OSError:
-                        pass
-                except Exception as exc:
-                    logger.warning("R2 upload failed (inline): %s", exc)
-                    log_callback("[SYS] R2 upload failed, using local path")
-            else:
-                log_callback("[SYS] No R2 client, keeping local path")
-
             await _store.update_status(
                 task_id,
                 TaskStatus.COMPLETED,
@@ -334,27 +254,13 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             )
         except Exception as exc:
             error_message = _format_exception_message(exc)
-            logger.exception(
-                "Task %s failed: %s [type=%s args=%s]",
-                task_id,
-                error_message,
-                type(exc).__name__,
-                getattr(exc, "args", None),
-            )
-            log_callback(f"[ERR] {error_message}")
-            import traceback as tb
-
-            for line in tb.format_exception(type(exc), exc, exc.__traceback__):
-                for ll in line.rstrip().splitlines():
-                    log_callback(f"[TRACE] {ll}")
+            logger.exception("Task %s failed: %s", task_id, error_message)
             await _store.update_status(
                 task_id, TaskStatus.FAILED, error=error_message,
             )
         finally:
             _sse_mgr.done(task_id)
-            _cleanup_output_dir(
-                output_dir, keep_mp4=(_r2_client is None),
-            )
+            _cleanup_output_dir(output_dir, keep_mp4=(_r2_client is None))
 
     if _USE_PIPELINE_THREAD:
         # Production: dedicated thread with its own asyncio loop.

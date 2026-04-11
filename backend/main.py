@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .routes import router, set_store, init_r2_client
+from .routes import router, set_store, init_r2_client, _r2_client
 from .task_store import TaskStore
 
 # ── 日志文件配置 ───────────────────────────────────────────────
