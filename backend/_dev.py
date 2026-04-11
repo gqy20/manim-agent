@@ -23,7 +23,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "backend.main:app",
         host="127.0.0.1",
-        port=8471,
+        port=int(os.environ.get("BE_PORT", "8471")),
         reload=True,
         # Note: reload exclusions are handled by .watchfilesignore in project root.
         # This is more reliable than reload_excludes on Windows.

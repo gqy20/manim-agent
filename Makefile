@@ -11,19 +11,29 @@ help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
+# ── Port helpers ──────────────────────────────────────────
+# Kill any process listening on $1 (port number). Works on Windows (git-bash / WSL).
+define kill-port
+	$(shell netstat -ano | grep ':$(1)[^0-9].*LISTENING' | awk '{print $$5}' | grep -E '^[0-9]+$$' | sort -u | while read pid; do taskkill //F //PID "$$pid" >/dev/null 2>&1 || true; done)
+endef
+
 # ── Development ────────────────────────────────────────────
-dev: ## Start both backend and frontend in development mode
+dev: ## Start both backend and frontend in development mode (auto-kills old processes)
 	@echo "============================================="
 	@echo "  Backend:  http://$(BE_HOST):$(BE_PORT)"
 	@echo "  Frontend: http://localhost:$(FE_PORT)"
 	@echo "============================================="
+	@$(call kill-port,$(BE_PORT))
+	@$(call kill-port,$(FE_PORT))
 	@make dev-backend & make dev-frontend
 
 dev-backend: ## Start FastAPI backend with hot-reload (uvicorn, excludes output dirs)
+	@$(call kill-port,$(BE_PORT))
 	$(PYTHON) backend/_dev.py
 
 dev-frontend: ## Start Next.js frontend dev server
-	cd frontend && npm run dev -- --port $(FE_PORT)
+	@$(call kill-port,$(FE_PORT))
+	cd frontend && API_URL=http://$(BE_HOST):$(BE_PORT) npm run dev -- --port $(FE_PORT)
 
 # ── Build & Production ─────────────────────────────────────
 build: ## Build frontend for production

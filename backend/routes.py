@@ -18,7 +18,6 @@ from fastapi.sse import EventSourceResponse
 from manim_agent.pipeline_events import EventType, PipelineEvent
 
 from .models import (
-    SSEEvent,
     TaskCreateRequest,
     TaskListResponse,
     TaskResponse,
@@ -104,7 +103,9 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
     main_loop = asyncio.get_event_loop()
 
     def log_callback(line: str) -> None:
-        _safe_schedule(main_loop, lambda ln=line: _store.append_log(task_id, ln))
+        _safe_schedule(
+            main_loop, lambda ln=line: _store.append_log(task_id, ln),
+        )
         try:
             main_loop.call_soon_threadsafe(_sse_mgr.push, task_id, line)
         except RuntimeError:
@@ -133,7 +134,9 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             lambda: _store.update_status(task_id, TaskStatus.RUNNING),
         )
         # 推送 status 事件让前端 badge 从"等待中"更新为"生成中"
-        event_callback(PipelineEvent(event_type=EventType.STATUS, data="running"))
+        event_callback(
+            PipelineEvent(event_type=EventType.STATUS, data="running"),
+        )
 
         dispatcher_ref: list[Any] = []
         try:
@@ -188,7 +191,9 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     log_callback(f"[TRACE] {ll}")
             _safe_schedule(
                 main_loop,
-                lambda: _store.update_status(task_id, TaskStatus.FAILED, error=error_message),
+                lambda: _store.update_status(
+                    task_id, TaskStatus.FAILED, error=error_message,
+                ),
             )
         finally:
             try:
@@ -200,8 +205,9 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         """Inline async pipeline — test mode only (no subprocess needed)."""
         from manim_agent.__main__ import run_pipeline
 
-        _sse_mgr.push(task_id, "[SYS] Connecting to Claude Agent SDK...")
-        await _store.append_log(task_id, "[SYS] Connecting to Claude Agent SDK...")
+        msg = "[SYS] Connecting to Claude Agent SDK..."
+        _sse_mgr.push(task_id, msg)
+        await _store.append_log(task_id, msg)
         await _store.update_status(task_id, TaskStatus.RUNNING)
 
         dispatcher_ref: list[Any] = []
@@ -248,7 +254,9 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             for line in tb.format_exception(type(exc), exc, exc.__traceback__):
                 for ll in line.rstrip().splitlines():
                     log_callback(f"[TRACE] {ll}")
-            await _store.update_status(task_id, TaskStatus.FAILED, error=error_message)
+            await _store.update_status(
+                task_id, TaskStatus.FAILED, error=error_message,
+            )
         finally:
             _sse_mgr.done(task_id)
 
@@ -293,25 +301,24 @@ async def task_events(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
 
     # Replay existing logs first (supports reconnect)
+    _now = datetime.now(UTC).isoformat()
     for line in task.get("logs", []):
         yield {
             "event": "log",
-            "data": SSEEvent(
-                event_type="log",
-                data=line,
-                timestamp=datetime.now(UTC).isoformat(),
-            ).model_dump_json(),
+            "data": json.dumps(
+                {"type": "log", "data": line, "timestamp": _now},
+                ensure_ascii=False,
+            ),
         }
 
     status = task["status"]
     if status in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value):
         yield {
             "event": "status",
-            "data": SSEEvent(
-                event_type="status",
-                data=status,
-                timestamp=datetime.now(UTC).isoformat(),
-            ).model_dump_json(),
+            "data": json.dumps(
+                {"type": "status", "data": status, "timestamp": _now},
+                ensure_ascii=False,
+            ),
         }
         return
 
@@ -325,14 +332,24 @@ async def task_events(task_id: str):
             now = datetime.now(UTC).isoformat()
 
             # 队列中的 item 已由 SSESubscriptionManager.push() 序列化为 JSON。
-            # 直接解析并透传 event_type，避免二次包装导致类型信息丢失。
+            # 解析后重新包装为 {type, data, timestamp} 格式，确保前端
+            # JSON.parse(e.data) 能得到完整的 SSEEvent 对象。
             if isinstance(item, str) and item.strip().startswith("{"):
                 try:
                     parsed = json.loads(item)
-                    event_name = parsed.get("event_type", parsed.get("type", "log"))
+                    event_name = parsed.get(
+                        "event_type", parsed.get("type", "log"),
+                    )
                     yield {
                         "event": event_name,
-                        "data": json.dumps(parsed.get("data", item), ensure_ascii=False),
+                        "data": json.dumps(
+                            {
+                                "type": event_name,
+                                "data": parsed.get("data", item),
+                                "timestamp": now,
+                            },
+                            ensure_ascii=False,
+                        ),
                     }
                     continue
                 except json.JSONDecodeError:
@@ -341,20 +358,27 @@ async def task_events(task_id: str):
             # 兜底：非 JSON 数据包装为 log 类型
             yield {
                 "event": "log",
-                "data": SSEEvent(event_type="log", data=item, timestamp=now).model_dump_json(),
+                "data": json.dumps(
+                    {"type": "log", "data": item, "timestamp": now},
+                    ensure_ascii=False,
+                ),
             }
 
         # Send final status after sentinel
         try:
             refreshed = await _store.get(task_id)
             if refreshed:
+                _final_ts = datetime.now(UTC).isoformat()
                 yield {
                     "event": "status",
-                    "data": SSEEvent(
-                        event_type="status",
-                        data=refreshed["status"],
-                        timestamp=datetime.now(UTC).isoformat(),
-                    ).model_dump_json(),
+                    "data": json.dumps(
+                        {
+                            "type": "status",
+                            "data": refreshed["status"],
+                            "timestamp": _final_ts,
+                        },
+                        ensure_ascii=False,
+                    ),
                 }
         except Exception:
             # Task may have been cleaned up; ignore and let SSE stream end
