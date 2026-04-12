@@ -236,9 +236,8 @@ def _build_options(
     path_parts = [p for p in current_path.split(os.pathsep) if p]
     if venv_scripts not in path_parts:
         path_parts.append(venv_scripts)
-    venv_env = {
-        "PATH": os.pathsep.join(path_parts),
-    }
+    venv_env = dict(os.environ)
+    venv_env["PATH"] = os.pathsep.join(path_parts)
 
     # ── 配置 SDK Hook 系统用于源码捕获 ──
     hooks = {
