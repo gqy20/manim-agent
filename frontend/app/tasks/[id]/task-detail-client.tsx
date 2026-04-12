@@ -47,27 +47,56 @@ function getElapsedRuntime(createdAt: string, completedAt: string | null, now: n
 }
 
 function detectVideoPlaceholderPhase(events: SSEEvent[]): VideoPlaceholderPhase {
-  const latestStatus = [...events]
-    .reverse()
-    .find((event) => isStatusPayload(event))
-    ?.data;
-
-  if (latestStatus?.phase) {
-    return latestStatus.phase;
-  }
-
   const logText = events
     .flatMap((event) =>
       event.type === "log" && typeof event.data === "string" ? [event.data.toLowerCase()] : [],
     )
     .join(" ");
 
-  if (!logText) return "init";
-  if (logText.includes("[tts]") || logText.includes("voice") || logText.includes("speech")) return "tts";
-  if (logText.includes("[mux]") || logText.includes("ffmpeg") || logText.includes("final video")) return "mux";
-  if (logText.includes("render") || logText.includes("manim") || logText.includes("phase 2")) return "render";
-  if (logText.includes("scene") || logText.includes("generatedscene") || logText.includes("tool")) return "scene";
-  return "init";
+  const latestStatus = [...events]
+    .reverse()
+    .find((event) => isStatusPayload(event))
+    ?.data;
+
+  const phaseOrder: VideoPlaceholderPhase[] = ["init", "scene", "render", "tts", "mux", "done"];
+  const statusPhase = latestStatus?.phase ?? null;
+  const statusIndex = statusPhase ? phaseOrder.indexOf(statusPhase) : -1;
+
+  let inferredPhase: VideoPlaceholderPhase = "init";
+  if (logText.includes("[tts]") || logText.includes("voice") || logText.includes("speech")) {
+    inferredPhase = "tts";
+  } else if (
+    logText.includes("[mux]") ||
+    logText.includes("ffmpeg") ||
+    logText.includes("final video")
+  ) {
+    inferredPhase = "mux";
+  } else if (
+    logText.includes("render") ||
+    logText.includes("manim") ||
+    logText.includes("phase 2")
+  ) {
+    inferredPhase = "render";
+  } else if (
+    logText.includes("scene") ||
+    logText.includes("generatedscene") ||
+    logText.includes("tool")
+  ) {
+    inferredPhase = "scene";
+  } else if (
+    events.some(
+      (event) =>
+        event.type === "tool_start" ||
+        event.type === "tool_result" ||
+        event.type === "thinking" ||
+        event.type === "progress",
+    )
+  ) {
+    inferredPhase = "scene";
+  }
+
+  const inferredIndex = phaseOrder.indexOf(inferredPhase);
+  return phaseOrder[Math.max(statusIndex, inferredIndex)] ?? "init";
 }
 
 function detectTtsTransportMode(events: SSEEvent[]): TtsTransportMode {

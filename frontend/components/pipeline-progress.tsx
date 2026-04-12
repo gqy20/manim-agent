@@ -82,6 +82,29 @@ function getActivePhaseIndexFromStatus(
   return PHASE_ORDER.indexOf(phase as (typeof PHASE_ORDER)[number]);
 }
 
+function detectSignalDrivenPhaseIndex(events: SSEEvent[]): number {
+  const latestStatusIndex = [...events]
+    .reverse()
+    .find((event): event is SSEEvent & { data: StatusPayload } => isStatusPayload(event))
+    ?.data.phase;
+
+  const statusIndex = getActivePhaseIndexFromStatus(latestStatusIndex);
+  const hasSceneSignals = events.some(
+    (event) =>
+      event.type === "tool_start" ||
+      event.type === "tool_result" ||
+      event.type === "thinking" ||
+      event.type === "progress",
+  );
+
+  let inferredIndex = detectLegacyPhaseFromLogs(events);
+  if (inferredIndex === -1 && hasSceneSignals) {
+    inferredIndex = PHASE_ORDER.indexOf("scene");
+  }
+
+  return Math.max(statusIndex, inferredIndex);
+}
+
 function detectLegacyPhaseFromLogs(events: SSEEvent[]): number {
   const logText = events
     .flatMap((event) =>
@@ -105,35 +128,15 @@ function detectLegacyPhaseFromLogs(events: SSEEvent[]): number {
 }
 
 function detectCurrentPhases(events: SSEEvent[], taskStatus: string): PhaseState[] {
-  const latestStatusPayload = [...events]
-    .reverse()
-    .find((event): event is SSEEvent & { data: StatusPayload } => isStatusPayload(event))
-    ?.data;
-
   const isTerminal = ["completed", "failed"].includes(taskStatus);
   const hasError = taskStatus === "failed";
-  const hasSceneSignals = events.some(
-    (event) =>
-      event.type === "tool_start" ||
-      event.type === "tool_result" ||
-      event.type === "thinking" ||
-      event.type === "progress",
-  );
 
   const states: PhaseState[] = PIPELINE_PHASES.map((phase) => ({
     phase,
     status: "pending",
   }));
 
-  let maxActiveIndex = getActivePhaseIndexFromStatus(latestStatusPayload?.phase);
-
-  if (maxActiveIndex === -1 && hasSceneSignals) {
-    maxActiveIndex = PHASE_ORDER.indexOf("scene");
-  }
-
-  if (maxActiveIndex === -1) {
-    maxActiveIndex = detectLegacyPhaseFromLogs(events);
-  }
+  let maxActiveIndex = detectSignalDrivenPhaseIndex(events);
 
   if (maxActiveIndex < 0 && isTerminal) {
     maxActiveIndex = PHASE_ORDER.indexOf("done");
