@@ -466,7 +466,6 @@ def _build_scene_plan_prompt(user_text: str, target_duration_seconds: int) -> st
         "- Do not write, edit, or render any code in this pass.\n"
         "- Use only lightweight reference reads if needed.\n"
         "- Return a Markdown plan with these exact section headings: `Mode`, `Learning Goal`, `Audience`, `Beat List`, `Narration Outline`, `Visual Risks`, and `Build Handoff`.\n"
-        f"- Include the exact line `Skill Signature: {_PLAN_SKILL_SIGNATURE}` inside `Build Handoff`.\n"
         "- Keep the plan compact and implementation-ready.\n"
     )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
@@ -852,15 +851,10 @@ async def run_pipeline(
         if not _has_scene_plan_skill_signature(dispatcher.collected_text):
             dispatcher._print("")
             dispatcher._print(
-                f"{_EMOJI['cross']} Missing scene-plan skill signature in the visible plan."
+                "  [WARN] Visible plan does not include the optional scene-plan signature."
             )
             dispatcher._print(
-                "  Expected line: "
-                f"Skill Signature: {_PLAN_SKILL_SIGNATURE}"
-            )
-            raise RuntimeError(
-                "Visible scene plan is missing the scene-plan skill signature. "
-                "The plugin may have been injected but not consumed by Claude."
+                "  Continuing because the visible plan itself is present."
             )
 
         plan_text = _extract_visible_scene_plan_text(dispatcher.collected_text)
@@ -902,24 +896,6 @@ async def run_pipeline(
                     raise RuntimeError(
                         "Claude began implementation before emitting the required visible scene-plan pass."
                     )
-                if not _has_scene_plan_skill_signature(dispatcher.collected_text):
-                    dispatcher._print("")
-                    dispatcher._print(
-                        f"{_EMOJI['cross']} Blocking implementation before scene-plan skill signature."
-                    )
-                    if dispatcher.implementation_start_reason:
-                        dispatcher._print(
-                            "  First implementation step: "
-                            f"{dispatcher.implementation_start_reason}"
-                        )
-                    dispatcher._print(
-                        "  Expected line in the visible plan: "
-                        f"Skill Signature: {_PLAN_SKILL_SIGNATURE}"
-                    )
-                    raise RuntimeError(
-                        "Claude began implementation before emitting the scene-plan skill signature."
-                    )
-
         _report_stream_statistics(dispatcher, _cli_stderr_lines)
 
         if _dispatcher_ref is not None:

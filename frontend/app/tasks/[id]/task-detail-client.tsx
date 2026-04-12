@@ -22,6 +22,12 @@ import { isStatusPayload } from "@/types";
 type VideoPlaceholderPhase = "init" | "scene" | "render" | "tts" | "mux" | "done";
 type TtsTransportMode = "sync" | "async" | null;
 
+const VOICE_LABELS: Record<string, string> = {
+  "female-tianmei": "Sweet Female",
+  "male-qn-qingse": "Warm Male",
+  "female-yujie": "Elegant Female",
+};
+
 const VIDEO_PHASE_META: Record<
   VideoPlaceholderPhase,
   { label: string; detail: string; accent: string }
@@ -517,25 +523,47 @@ export default function TaskDetailClient() {
   const showVideo = !!stableVideoSrc;
 
   const liveBadge = isRunning ? "Live" : task.status === "completed" ? "Synced" : "Stopped";
+  const voiceSummary = task.options.no_tts
+    ? "No narration"
+    : `${VOICE_LABELS[task.options.voice_id] ?? task.options.voice_id} / ${task.options.model}`;
+  const musicSummary = task.options.bgm_enabled ? "BGM on" : "No BGM";
+  const pipelineProfile = `${voiceSummary} / ${musicSummary} / Target ${task.options.target_duration_seconds}s`;
 
   return (
     <main
       ref={containerRef}
       className="container mx-auto flex w-full max-w-[1800px] flex-1 flex-col space-y-4 px-4 pb-6 sm:px-6 md:px-10 md:pb-8"
     >
-      <div className="gsap-header flex flex-col gap-3 pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between md:pt-6">
-        <div className="gsap-header flex min-w-0 items-start gap-3 sm:items-center">
+      <div className="gsap-header flex flex-col gap-3 pt-4 lg:flex-row lg:items-start lg:justify-between md:pt-6">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           <div className="flex-shrink-0 rounded-xl border border-primary/10 bg-primary/[0.08] p-2.5 text-primary shadow-[0_0_15px_rgba(6,182,212,0.15)]">
             <Film className="h-4.5 w-4.5" />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h1 className="truncate font-mono text-lg font-semibold tracking-tight">{task.id}</h1>
             <p className="mt-0.5 line-clamp-2 max-w-2xl text-sm text-muted-foreground sm:line-clamp-1">
               {task.user_text}
             </p>
           </div>
         </div>
-        <StatusBadge status={task.status} size="md" className="gsap-header flex-shrink-0" />
+        <div className="flex min-w-0 flex-1 items-center justify-between gap-4 lg:justify-end">
+          <div className="hidden min-w-0 flex-1 items-center justify-center lg:flex">
+            <div className="max-w-2xl px-6">
+              <div className="truncate font-mono text-[11px] tracking-[0.18em] text-cyan-300/72">
+                {pipelineProfile}
+              </div>
+            </div>
+          </div>
+          <StatusBadge status={task.status} size="md" className="gsap-header flex-shrink-0" />
+        </div>
+      </div>
+
+      <div className="gsap-header lg:hidden">
+        <div className="px-1 text-center">
+          <div className="truncate font-mono text-[11px] tracking-[0.16em] text-cyan-300/70">
+            {pipelineProfile}
+          </div>
+        </div>
       </div>
 
       {eventsError && (
@@ -548,58 +576,6 @@ export default function TaskDetailClient() {
           <strong>Task Error:</strong> {task.error}
         </div>
       )}
-
-      <div className="gsap-header grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-white/6 bg-white/[0.03] p-4">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-white/35">Narration</div>
-          <div className="mt-2 text-sm text-white/85">
-            {task.options.no_tts ? "Disabled" : task.options.voice_id}
-          </div>
-          <div className="mt-1 text-[12px] text-muted-foreground/65">
-            {task.options.no_tts ? "Silent render only" : task.options.model}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/6 bg-white/[0.03] p-4">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-white/35">Background Music</div>
-          <div className="mt-2 text-sm text-white/85">
-            {task.options.bgm_enabled ? "Enabled" : "Off"}
-          </div>
-          <div className="mt-1 text-[12px] text-muted-foreground/65">
-            {task.pipeline_output?.audio_mix_mode === "voice_with_bgm"
-              ? `Mixed at ${task.pipeline_output.bgm_volume?.toFixed(2) ?? task.options.bgm_volume.toFixed(2)}`
-              : task.options.bgm_enabled
-                ? "Requested, waiting or fallback"
-                : "Narration-only mix"}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/6 bg-white/[0.03] p-4">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-white/35">Duration Target</div>
-          <div className="mt-2 text-sm text-white/85">{task.options.target_duration_seconds}s</div>
-          <div className="mt-1 text-[12px] text-muted-foreground/65">
-            {task.pipeline_output?.duration_seconds
-              ? `Rendered ${task.pipeline_output.duration_seconds.toFixed(1)}s`
-              : "Awaiting render probe"}
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-white/6 bg-white/[0.03] p-4">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-white/35">Audio Result</div>
-          <div className="mt-2 text-sm text-white/85">
-            {task.pipeline_output?.audio_mix_mode === "voice_with_bgm"
-              ? "Narration + BGM"
-              : task.pipeline_output?.audio_path
-                ? "Narration only"
-                : "Pending"}
-          </div>
-          <div className="mt-1 line-clamp-2 text-[12px] text-muted-foreground/65">
-            {task.pipeline_output?.bgm_prompt
-              ? task.pipeline_output.bgm_prompt
-              : task.options.bgm_prompt || "Auto-generated when enabled"}
-          </div>
-        </div>
-      </div>
 
       <div className="relative mt-4 grid gap-6 lg:grid-cols-12">
         <div className="order-2 z-10 flex flex-col space-y-4 rounded-xl p-4 glass-card lg:order-1 lg:col-span-4 lg:sticky lg:top-8 lg:h-[calc(100dvh-10rem)] lg:self-start">

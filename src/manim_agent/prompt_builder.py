@@ -53,8 +53,6 @@ def build_user_prompt(user_text: str, target_duration_seconds: int) -> str:
 def build_scene_plan_prompt(
     user_text: str,
     target_duration_seconds: int,
-    *,
-    plan_skill_signature: str,
 ) -> str:
     """Build a planning-only prompt that must stop after the visible plan."""
     normalized = user_text.strip()
@@ -68,7 +66,6 @@ def build_scene_plan_prompt(
         "- Do not write, edit, or render any code in this pass.\n"
         "- Use only lightweight reference reads if needed.\n"
         "- Return a Markdown plan with these exact section headings: `Mode`, `Learning Goal`, `Audience`, `Beat List`, `Narration Outline`, `Visual Risks`, and `Build Handoff`.\n"
-        f"- Include the exact line `Skill Signature: {plan_skill_signature}` inside `Build Handoff`.\n"
         "- Keep the plan compact and implementation-ready.\n"
     )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
