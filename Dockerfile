@@ -39,12 +39,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # ── Python dependencies ─────────────────────────────────────────
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
+COPY src/ ./src/
 RUN pip install uv && \
     uv pip install --system .
 
 # ── Application source code ───────────────────────────────────
-COPY src/ ./src/
 COPY backend/ ./backend/
 COPY plugins/ ./plugins/
 COPY migrations/ ./migrations/
