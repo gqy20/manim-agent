@@ -51,3 +51,6 @@ Use this skill to shape how the animation feels on screen.
 - Does each beat have a clear focal point?
 - Are the important conclusions shown through visible change?
 - Does the ending feel earned and connected to the opening?
+- Is content distributed across screen zones (not everything crammed at center)?
+- Are annotation labels placed in left/right zones, not overlapping the main content?
+- Do element sizes follow hierarchy (main content > annotations > footnotes)?

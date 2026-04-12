@@ -43,6 +43,7 @@ Implement Manim code from a scene plan.
 
 - For code style and render hygiene, read `../manim-production/references/code-style.md`.
 - For math layout and emphasis, read `../manim-production/references/math-visualization-guidelines.md`.
+- For spatial composition, screen zones, element sizing, color palette, and per-mode layout templates, read `../manim-production/references/spatial-composition.md`.
 - For common implementation mistakes, read `references/build-anti-patterns.md`.
 
 ## Final response

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import shutil
 import traceback
 from pathlib import Path
@@ -11,6 +12,10 @@ from manim_agent.pipeline_events import EventType, PipelineEvent
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
 
 logger = logging.getLogger(__name__)
+
+_PIPELINE_TIMEOUT_SECONDS = float(
+    os.environ.get("MANIM_PIPELINE_TIMEOUT_SECONDS", "3600")
+)
 
 
 class PipelineExecutionError(RuntimeError):
@@ -139,23 +144,26 @@ async def _pipeline_body(
     task_dir = Path(cwd).resolve()
     final_output_path = Path(output_path).resolve()
     try:
-        final_video = await run_pipeline(
-            user_text=req.user_text,
-            output_path=output_path,
-            voice_id=voice_id,
-            model=model,
-            quality=quality,
-            no_tts=no_tts,
-            bgm_enabled=bgm_enabled,
-            bgm_prompt=bgm_prompt,
-            bgm_volume=bgm_volume,
-            target_duration_seconds=target_duration_seconds,
-            cwd=cwd,
-            max_turns=max_turns,
-            log_callback=log_callback,
-            preset=preset,
-            _dispatcher_ref=dispatcher_ref,
-            event_callback=event_callback,
+        final_video = await asyncio.wait_for(
+            run_pipeline(
+                user_text=req.user_text,
+                output_path=output_path,
+                voice_id=voice_id,
+                model=model,
+                quality=quality,
+                no_tts=no_tts,
+                bgm_enabled=bgm_enabled,
+                bgm_prompt=bgm_prompt,
+                bgm_volume=bgm_volume,
+                target_duration_seconds=target_duration_seconds,
+                cwd=cwd,
+                max_turns=max_turns,
+                log_callback=log_callback,
+                preset=preset,
+                _dispatcher_ref=dispatcher_ref,
+                event_callback=event_callback,
+            ),
+            timeout=_PIPELINE_TIMEOUT_SECONDS,
         )
         # Extract pipeline structured output
         po_data = None
@@ -182,6 +190,24 @@ async def _pipeline_body(
                 log_callback("[SYS] R2 upload failed, using local path")
 
         return _video_url, po_data
+
+    except asyncio.TimeoutError:
+        timeout_min = _PIPELINE_TIMEOUT_SECONDS / 60
+        error_message = (
+            f"Pipeline exceeded the allowed runtime ({timeout_min:.0f} min) "
+            f"and was automatically terminated."
+        )
+        logger.error("Task %s: %s", task_id, error_message)
+        log_callback(f"[TIMEOUT] {error_message}")
+        log_callback(f"[TIMEOUT] Set MANIM_PIPELINE_TIMEOUT_SECONDS to adjust.")
+        partial_po_data = None
+        if dispatcher_ref:
+            dispatcher = dispatcher_ref[0]
+            partial_po_data = dispatcher.get_persistable_pipeline_output()
+        raise PipelineExecutionError(
+            error_message,
+            pipeline_output=partial_po_data,
+        ) from None
 
     except Exception as exc:
         error_message = _format_exception_message(exc)
