@@ -3,10 +3,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from ._test_main_dispatcher_helpers import (
+    TaskNotificationMessage,
     _make_assistant_message,
     _make_result_message,
     _make_text_block,
-    TaskNotificationMessage,
     main_module,
 )
 
@@ -18,11 +18,9 @@ class TestTTSNarrationFlow:
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
                 num_turns=1,
-                **{
-                    "structured_output": {
-                        "video_output": "/out.mp4",
-                        "narration": "专业中文解说词。",
-                    }
+                structured_output={
+                    "video_output": "/out.mp4",
+                    "narration": "先展示一个圆形，再平滑变成正方形，最后出现方圆相生。",
                 },
             ),
         ]
@@ -38,8 +36,8 @@ class TestTTSNarrationFlow:
             patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
         ):
             async def gen(*_a, **_k):
-                for m in mock_messages:
-                    yield m
+                for message in mock_messages:
+                    yield message
 
             mock_query.side_effect = gen
             mock_vid.return_value = "final.mp4"
@@ -50,15 +48,15 @@ class TestTTSNarrationFlow:
                 no_tts=False,
             )
 
-        assert captured_tts_text == ["专业中文解说词。"]
+        assert captured_tts_text == ["先展示一个圆形，再平滑变成正方形，最后出现方圆相生。"]
 
     @pytest.mark.asyncio
-    async def test_tts_falls_back_to_user_text_when_narration_missing(self):
+    async def test_tts_fallback_converts_request_to_spoken_narration(self):
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
                 num_turns=1,
-                **{"structured_output": {"video_output": "/out.mp4"}},
+                structured_output={"video_output": "/out.mp4"},
             ),
         ]
         captured_tts_text: list[str] = []
@@ -73,27 +71,27 @@ class TestTTSNarrationFlow:
             patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
         ):
             async def gen(*_a, **_k):
-                for m in mock_messages:
-                    yield m
+                for message in mock_messages:
+                    yield message
 
             mock_query.side_effect = gen
             mock_vid.return_value = "final.mp4"
 
             await main_module.run_pipeline(
-                user_text="原始用户文本",
+                user_text="请生成一个中文讲解短动画：圆形平滑变成正方形，最后显示“方圆相生”。",
                 output_path="/out.mp4",
                 no_tts=False,
             )
 
-        assert captured_tts_text == ["原始用户文本"]
+        assert captured_tts_text == ["圆形平滑变成正方形，最后显示“方圆相生”。"]
 
     @pytest.mark.asyncio
-    async def test_fallback_user_text_is_written_back_to_pipeline_output(self):
+    async def test_fallback_narration_is_written_back_to_pipeline_output(self):
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
                 num_turns=1,
-                **{"structured_output": {"video_output": "/out.mp4"}},
+                structured_output={"video_output": "/out.mp4"},
             ),
         ]
         dispatcher_refs: list[object] = []
@@ -107,14 +105,14 @@ class TestTTSNarrationFlow:
             patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
         ):
             async def gen(*_a, **_k):
-                for m in mock_messages:
-                    yield m
+                for message in mock_messages:
+                    yield message
 
             mock_query.side_effect = gen
             mock_vid.return_value = "final.mp4"
 
             await main_module.run_pipeline(
-                user_text="原始用户文本",
+                user_text="请生成一个中文讲解短动画：圆形平滑变成正方形，最后显示“方圆相生”。",
                 output_path="/out.mp4",
                 no_tts=False,
                 _dispatcher_ref=dispatcher_refs,
@@ -123,7 +121,7 @@ class TestTTSNarrationFlow:
         dispatcher = dispatcher_refs[0]
         po = dispatcher.get_pipeline_output()
         assert po is not None
-        assert po.narration == "原始用户文本"
+        assert po.narration == "圆形平滑变成正方形，最后显示“方圆相生”。"
 
     @pytest.mark.asyncio
     async def test_tts_uses_merged_narration_after_task_notification(self):
@@ -140,11 +138,9 @@ class TestTTSNarrationFlow:
             ),
             _make_result_message(
                 num_turns=1,
-                **{
-                    "structured_output": {
-                        "video_output": "/ignored.mp4",
-                        "narration": "这是来自 structured output 的中文解说。",
-                    }
+                structured_output={
+                    "video_output": "/ignored.mp4",
+                    "narration": "这是来自 structured output 的中文解说。",
                 },
             ),
         ]
@@ -160,8 +156,8 @@ class TestTTSNarrationFlow:
             patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
         ):
             async def gen(*_a, **_k):
-                for m in mock_messages:
-                    yield m
+                for message in mock_messages:
+                    yield message
 
             mock_query.side_effect = gen
             mock_vid.return_value = "final.mp4"
