@@ -1,0 +1,32 @@
+{
+  "name": "manim-production",
+  "version": "0.1.0",
+  "description": "Production guidance for generating high-quality Manim teaching animations.",
+  "author": {
+    "name": "manim-agent",
+    "email": "maintainers@example.com",
+    "url": "https://example.com/manim-agent"
+  },
+  "homepage": "https://example.com/manim-agent/docs",
+  "repository": "https://example.com/manim-agent/repo",
+  "license": "MIT",
+  "keywords": ["manim", "animation", "education", "math", "plugin"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Manim Production",
+    "shortDescription": "Workflow and quality rules for Manim animation generation.",
+    "longDescription": "Provides a Manim-focused skill with scene planning, narration, math visualization, and anti-pattern guidance for educational animation tasks.",
+    "developerName": "manim-agent",
+    "category": "Developer Tools",
+    "capabilities": ["Write", "Quality Control"],
+    "websiteURL": "https://example.com/manim-agent/docs",
+    "privacyPolicyURL": "https://example.com/privacy",
+    "termsOfServiceURL": "https://example.com/terms",
+    "defaultPrompt": [
+      "Create a clear Manim teaching animation for this math concept.",
+      "Review this Manim scene for pacing, layout, and narration quality.",
+      "Refactor this Manim script to follow educational animation standards."
+    ],
+    "brandColor": "#1F6FEB"
+  }
+}

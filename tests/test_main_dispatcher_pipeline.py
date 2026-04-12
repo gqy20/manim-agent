@@ -270,6 +270,8 @@ class TestBuildOptions:
             "Grep",
         }
         assert opts.add_dirs == [str(Path("/work").resolve())]
+        assert opts.plugins is not None
+        assert any(plugin["path"].endswith("plugins\\manim-production") for plugin in opts.plugins)
 
     def test_custom_prompt_file(self, tmp_path):
         prompt_file = tmp_path / "custom_prompt.txt"
@@ -290,6 +292,12 @@ class TestBuildOptions:
             max_turns=5,
         )
         assert opts.stderr is not None
+
+    def test_local_plugin_manifest_exists(self):
+        plugin_root = main_module.MANIM_PLUGIN_DIR
+        manifest = plugin_root / ".codex-plugin" / "plugin.json"
+        assert plugin_root.exists()
+        assert manifest.exists()
 
 
 class TestAsyncioImport:

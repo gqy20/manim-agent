@@ -89,3 +89,5 @@ class TestBuildOptions:
         assert options.cwd == str(tmp_path.resolve())
         assert options.system_prompt == "Custom prompt"
         assert options.add_dirs == [str(tmp_path.resolve())]
+        assert options.plugins is not None
+        assert any(plugin["path"].endswith("plugins\\manim-production") for plugin in options.plugins)

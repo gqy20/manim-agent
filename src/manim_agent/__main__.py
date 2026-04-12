@@ -64,6 +64,8 @@ from .hooks import (
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 
 logger = logging.getLogger(__name__)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+MANIM_PLUGIN_DIR = REPO_ROOT / "plugins" / "manim-production"
 
 
 def _emit_status(
@@ -86,6 +88,16 @@ def _emit_status(
             ),
         )
     )
+
+
+def _get_local_plugins() -> list[dict[str, str]]:
+    """Return repo-local Claude plugins that should be injected into every task."""
+    manifest_path = MANIM_PLUGIN_DIR / ".codex-plugin" / "plugin.json"
+    if manifest_path.exists():
+        return [{"type": "local", "path": str(MANIM_PLUGIN_DIR)}]
+
+    logger.warning("Local plugin manifest not found: %s", manifest_path)
+    return []
 
 
 # ── CLI 参数解析 ──────────────────────────────────────────────
@@ -270,6 +282,7 @@ def _build_options(
         env=venv_env,
         # ── SDK Hook 系统：替代手动 ToolUseBlock 迭代 ──
         hooks=hooks,
+        plugins=_get_local_plugins(),
         # ── 启用文件检查点以支持 rewind_files ──
         enable_file_checkpointing=True,
     )
@@ -291,8 +304,9 @@ def _build_options(
     )
     logger.debug(
         "_build_options: cwd=%s, max_turns=%s, permission_mode=bypassPermissions, "
-        "allowed_tools=%s, output_format=%s, system_prompt_len=%d",
+        "allowed_tools=%s, plugins=%s, output_format=%s, system_prompt_len=%d",
         resolved_cwd, max_turns, options.allowed_tools,
+        [plugin["path"] for plugin in options.plugins],
         "set" if options.output_format else "None",
         len(final_system_prompt) if final_system_prompt else 0,
     )
