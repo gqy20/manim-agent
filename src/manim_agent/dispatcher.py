@@ -174,6 +174,54 @@ class _MessageDispatcher:
         po = self.get_pipeline_output()
         return po.video_output if po else None
 
+    def get_persistable_pipeline_output(self) -> dict[str, Any] | None:
+        """Return the best-known structured output, even for partial or failed runs."""
+        po = self.get_pipeline_output()
+        if po is not None:
+            return po.model_dump()
+
+        payload: dict[str, Any] = {
+            "video_output": self._discover_rendered_video_path(),
+            "final_video_output": None,
+            "scene_file": self._infer_scene_file(),
+            "scene_class": self._infer_scene_class(),
+            "duration_seconds": None,
+            "narration": None,
+            "implemented_beats": [],
+            "build_summary": getattr(self, "partial_build_summary", None),
+            "deviations_from_plan": list(getattr(self, "partial_deviations_from_plan", [])),
+            "beat_to_narration_map": list(getattr(self, "partial_beat_to_narration_map", [])),
+            "narration_coverage_complete": getattr(self, "partial_narration_coverage_complete", None),
+            "estimated_narration_duration_seconds": getattr(
+                self,
+                "partial_estimated_narration_duration_seconds",
+                None,
+            ),
+            "source_code": None,
+            "audio_path": None,
+            "subtitle_path": None,
+            "extra_info_path": None,
+            "tts_mode": None,
+            "tts_duration_ms": None,
+            "tts_word_count": None,
+            "tts_usage_characters": None,
+            "target_duration_seconds": getattr(self, "partial_target_duration_seconds", None),
+            "plan_text": getattr(self, "partial_plan_text", None),
+            "review_summary": getattr(self, "partial_review_summary", None),
+            "review_approved": getattr(self, "partial_review_approved", None),
+            "review_blocking_issues": list(getattr(self, "partial_review_blocking_issues", [])),
+            "review_suggested_edits": list(getattr(self, "partial_review_suggested_edits", [])),
+            "review_frame_paths": list(getattr(self, "partial_review_frame_paths", [])),
+        }
+
+        scene_file = payload["scene_file"]
+        if scene_file and scene_file in self._hook_state.captured_source_code:
+            payload["source_code"] = self._hook_state.captured_source_code[scene_file]
+
+        if any(value not in (None, "", [], {}) for value in payload.values()):
+            return payload
+        return None
+
     # ── 消息处理器 ──────────────────────────────────────────────
 
     def _handle_assistant(self, msg: AssistantMessage) -> None:
@@ -434,6 +482,7 @@ class _MessageDispatcher:
 
         current = self.pipeline_output
         current.video_output = current.video_output or incoming.video_output
+        current.final_video_output = incoming.final_video_output or current.final_video_output
         current.scene_file = incoming.scene_file or current.scene_file
         current.scene_class = incoming.scene_class or current.scene_class
         current.duration_seconds = (
@@ -442,7 +491,61 @@ class _MessageDispatcher:
             else current.duration_seconds
         )
         current.narration = incoming.narration or current.narration
+        if incoming.implemented_beats:
+            current.implemented_beats = incoming.implemented_beats
+        current.build_summary = incoming.build_summary or current.build_summary
+        if incoming.deviations_from_plan:
+            current.deviations_from_plan = incoming.deviations_from_plan
+        if incoming.beat_to_narration_map:
+            current.beat_to_narration_map = incoming.beat_to_narration_map
+        current.narration_coverage_complete = (
+            incoming.narration_coverage_complete
+            if incoming.narration_coverage_complete is not None
+            else current.narration_coverage_complete
+        )
+        current.estimated_narration_duration_seconds = (
+            incoming.estimated_narration_duration_seconds
+            if incoming.estimated_narration_duration_seconds is not None
+            else current.estimated_narration_duration_seconds
+        )
         current.source_code = incoming.source_code or current.source_code
+        current.audio_path = incoming.audio_path or current.audio_path
+        current.subtitle_path = incoming.subtitle_path or current.subtitle_path
+        current.extra_info_path = incoming.extra_info_path or current.extra_info_path
+        current.tts_mode = incoming.tts_mode or current.tts_mode
+        current.tts_duration_ms = (
+            incoming.tts_duration_ms
+            if incoming.tts_duration_ms is not None
+            else current.tts_duration_ms
+        )
+        current.tts_word_count = (
+            incoming.tts_word_count
+            if incoming.tts_word_count is not None
+            else current.tts_word_count
+        )
+        current.tts_usage_characters = (
+            incoming.tts_usage_characters
+            if incoming.tts_usage_characters is not None
+            else current.tts_usage_characters
+        )
+        current.target_duration_seconds = (
+            incoming.target_duration_seconds
+            if incoming.target_duration_seconds is not None
+            else current.target_duration_seconds
+        )
+        current.plan_text = incoming.plan_text or current.plan_text
+        current.review_summary = incoming.review_summary or current.review_summary
+        current.review_approved = (
+            incoming.review_approved
+            if incoming.review_approved is not None
+            else current.review_approved
+        )
+        if incoming.review_blocking_issues:
+            current.review_blocking_issues = incoming.review_blocking_issues
+        if incoming.review_suggested_edits:
+            current.review_suggested_edits = incoming.review_suggested_edits
+        if incoming.review_frame_paths:
+            current.review_frame_paths = incoming.review_frame_paths
 
     def _discover_rendered_video_path(self) -> str | None:
         """Discover a rendered MP4 from SDK signals or task output artifacts."""

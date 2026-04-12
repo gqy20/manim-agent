@@ -19,7 +19,7 @@ except ImportError:
     from sse_starlette.sse import EventSourceResponse
 
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
-from .pipeline_runner import _pipeline_body
+from .pipeline_runner import PipelineExecutionError, _pipeline_body
 
 from manim_agent.pipeline_events import EventType, PipelineEvent, StatusPayload
 
@@ -329,7 +329,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     no_tts=req.no_tts,
                     target_duration_seconds=req.target_duration_seconds,
                     cwd=str(output_dir),
-                    max_turns=50,
+                    max_turns=80,
                     preset=req.preset,
                     log_callback=log_callback,
                     event_callback=event_callback,
@@ -358,16 +358,21 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         except Exception as exc:
             error_message = _format_exception_message(exc)
             logger.exception("Task %s failed: %s", task_id, error_message)
+            po_data = exc.pipeline_output if isinstance(exc, PipelineExecutionError) else None
             _safe_schedule(
                 main_loop,
                 lambda: _store.update_status(
-                    task_id, TaskStatus.FAILED, error=error_message,
+                    task_id,
+                    TaskStatus.FAILED,
+                    error=error_message,
+                    pipeline_output=po_data,
                 ),
             )
             event_callback(
                 _status_event(
                     TaskStatus.FAILED,
                     message=error_message,
+                    pipeline_output=po_data,
                 ),
             )
         finally:
@@ -406,7 +411,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 no_tts=req.no_tts,
                 target_duration_seconds=req.target_duration_seconds,
                 cwd=str(output_dir),
-                max_turns=50,
+                max_turns=80,
                 preset=req.preset,
                 log_callback=log_callback,
                 event_callback=event_callback,
@@ -431,13 +436,18 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         except Exception as exc:
             error_message = _format_exception_message(exc)
             logger.exception("Task %s failed: %s", task_id, error_message)
+            po_data = exc.pipeline_output if isinstance(exc, PipelineExecutionError) else None
             await _store.update_status(
-                task_id, TaskStatus.FAILED, error=error_message,
+                task_id,
+                TaskStatus.FAILED,
+                error=error_message,
+                pipeline_output=po_data,
             )
             event_callback(
                 _status_event(
                     TaskStatus.FAILED,
                     message=error_message,
+                    pipeline_output=po_data,
                 ),
             )
         finally:

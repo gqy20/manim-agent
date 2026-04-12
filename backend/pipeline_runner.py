@@ -13,6 +13,19 @@ from .storage.r2_client import R2Client, is_r2_url, r2_object_key
 logger = logging.getLogger(__name__)
 
 
+class PipelineExecutionError(RuntimeError):
+    """Pipeline failure that preserves partial structured output for persistence."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        pipeline_output: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.pipeline_output = pipeline_output
+
+
 def _is_relative_to(path: Path, parent: Path) -> bool:
     try:
         path.relative_to(parent)
@@ -142,9 +155,7 @@ async def _pipeline_body(
         po_data = None
         if dispatcher_ref:
             dispatcher = dispatcher_ref[0]
-            po = dispatcher.get_pipeline_output()
-            if po is not None:
-                po_data = po.model_dump()
+            po_data = dispatcher.get_persistable_pipeline_output()
 
         # ── Upload to R2 if configured ──
         final_video, po_data = _canonicalize_pipeline_artifacts(
@@ -174,4 +185,11 @@ async def _pipeline_body(
         for line in traceback.format_exception(type(exc), exc, exc.__traceback__):
             for ll in line.rstrip().splitlines():
                 log_callback(f"[TRACE] {ll}")
-        raise  # Re-raise so caller can update task status
+        partial_po_data = None
+        if dispatcher_ref:
+            dispatcher = dispatcher_ref[0]
+            partial_po_data = dispatcher.get_persistable_pipeline_output()
+        raise PipelineExecutionError(
+            error_message,
+            pipeline_output=partial_po_data,
+        ) from exc

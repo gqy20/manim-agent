@@ -1,61 +1,134 @@
-"""Pipeline 输出的 Pydantic 数据模型与解析工具。
-
-定义 Claude Agent 完成视频生成后的结构化输出格式，
-通过 output_format_schema() 提供 SDK 结构化输出 schema（主路径）。
-"""
+"""Structured output schema for the main Manim generation pipeline."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class PipelineOutput(BaseModel):
-    """经过验证的 pipeline 输出结果。
-
-    来源：SDK ResultMessage.structured_output → model_validate()
-    """
+    """Structured pipeline output shared between Claude, backend, and UI."""
 
     video_output: str = Field(
         ...,
-        description="渲染输出的 MP4 文件路径",
+        description="Path to the rendered scene video before final mux.",
         min_length=1,
     )
-
-    @field_validator("video_output")
-    @classmethod
-    def _video_output_must_be_non_blank(cls, v: str) -> str:
-        if not v.strip():
-            raise ValueError("video_output must not be blank")
-        return v
+    final_video_output: str | None = Field(
+        default=None,
+        description="Path to the final muxed video with narration, if available.",
+    )
     scene_file: str | None = Field(
         default=None,
-        description="Manim 场景 .py 脚本路径",
+        description="Path to the generated Manim scene script.",
     )
     scene_class: str | None = Field(
         default=None,
-        description="Manim Scene 类名",
+        description="Primary Manim Scene class rendered for this task.",
     )
     duration_seconds: float | None = Field(
         default=None,
-        description="估算视频时长（秒）",
+        description="Measured duration of the rendered or final video in seconds.",
         ge=0,
     )
     narration: str | None = Field(
         default=None,
-        description="Claude 生成的专业解说词，用于 TTS 语音合成；默认应为自然的简体中文口播稿，除非用户明确要求其他语言",
+        description="Narration text used for TTS.",
+    )
+    implemented_beats: list[str] = Field(
+        default_factory=list,
+        description="Short list of the beats that were actually implemented in code, in order.",
+    )
+    build_summary: str | None = Field(
+        default=None,
+        description="Short summary of what the build phase implemented.",
+    )
+    deviations_from_plan: list[str] = Field(
+        default_factory=list,
+        description="Explicit deviations from the visible plan, if any.",
+    )
+    beat_to_narration_map: list[str] = Field(
+        default_factory=list,
+        description="One short narration mapping line per beat, in visual order.",
+    )
+    narration_coverage_complete: bool | None = Field(
+        default=None,
+        description="Whether the narration covers the full beat sequence from opening to ending.",
+    )
+    estimated_narration_duration_seconds: float | None = Field(
+        default=None,
+        description="Estimated spoken duration of the narration in seconds.",
+        ge=0,
     )
     source_code: str | None = Field(
         default=None,
-        description="从 Write/Edit 工具捕获的 Manim Python 源码",
+        description="Full source code of the generated scene file when captured.",
     )
-
-    # ── SDK output_format schema ───────────────────────────────
+    audio_path: str | None = Field(
+        default=None,
+        description="Path to the generated narration audio file.",
+    )
+    subtitle_path: str | None = Field(
+        default=None,
+        description="Path to generated subtitle or caption file, if any.",
+    )
+    extra_info_path: str | None = Field(
+        default=None,
+        description="Path to extra TTS metadata emitted by the provider.",
+    )
+    tts_mode: str | None = Field(
+        default=None,
+        description="TTS transport mode used for this task, such as sync or async.",
+    )
+    tts_duration_ms: int | None = Field(
+        default=None,
+        description="Provider-reported audio duration in milliseconds.",
+        ge=0,
+    )
+    tts_word_count: int | None = Field(
+        default=None,
+        description="Provider-reported word or character count for the narration.",
+        ge=0,
+    )
+    tts_usage_characters: int | None = Field(
+        default=None,
+        description="Provider-reported billable character count.",
+        ge=0,
+    )
+    target_duration_seconds: int | None = Field(
+        default=None,
+        description="Requested target runtime for the final video in seconds.",
+        ge=0,
+    )
+    plan_text: str | None = Field(
+        default=None,
+        description="Visible scene plan emitted before implementation.",
+    )
+    review_summary: str | None = Field(
+        default=None,
+        description="Summary of the post-render review pass.",
+    )
+    review_approved: bool | None = Field(
+        default=None,
+        description="Whether the render review approved the video.",
+    )
+    review_blocking_issues: list[str] = Field(
+        default_factory=list,
+        description="Blocking issues found during render review.",
+    )
+    review_suggested_edits: list[str] = Field(
+        default_factory=list,
+        description="Suggested edits from the render review step.",
+    )
+    review_frame_paths: list[str] = Field(
+        default_factory=list,
+        description="Sampled frame image paths inspected during render review.",
+    )
 
     @staticmethod
     def output_format_schema() -> dict[str, Any]:
-        """生成 ClaudeAgentOptions.output_format 所需的 JSON Schema。"""
+        """Return the JSON schema expected by ClaudeAgentOptions.output_format."""
         return {
             "type": "json_schema",
             "json_schema": {
@@ -66,32 +139,135 @@ class PipelineOutput(BaseModel):
                     "properties": {
                         "video_output": {
                             "type": "string",
-                            "description": "Absolute or relative path to rendered MP4",
+                            "description": "Path to the rendered scene video before final mux.",
                             "minLength": 1,
+                        },
+                        "final_video_output": {
+                            "type": ["string", "null"],
+                            "description": "Path to the final muxed video with narration, if available.",
                         },
                         "scene_file": {
                             "type": ["string", "null"],
-                            "description": "Path to the Manim scene .py script",
+                            "description": "Path to the generated Manim scene script.",
                         },
                         "scene_class": {
                             "type": ["string", "null"],
-                            "description": "Name of the Manim Scene class",
+                            "description": "Primary Manim Scene class rendered for this task.",
                         },
                         "duration_seconds": {
                             "type": ["number", "null"],
-                            "description": "Estimated video duration in seconds",
+                            "description": "Measured duration of the rendered or final video in seconds.",
                             "minimum": 0,
                         },
                         "narration": {
                             "type": ["string", "null"],
-                            "description": "Professional narration script for TTS. Default to natural Simplified Chinese unless the user explicitly requests another language.",
+                            "description": "Narration text used for TTS.",
+                        },
+                        "implemented_beats": {
+                            "type": "array",
+                            "description": "Short list of the beats that were actually implemented in code, in order.",
+                            "items": {"type": "string"},
+                        },
+                        "build_summary": {
+                            "type": ["string", "null"],
+                            "description": "Short summary of what the build phase implemented.",
+                        },
+                        "deviations_from_plan": {
+                            "type": "array",
+                            "description": "Explicit deviations from the visible plan, if any.",
+                            "items": {"type": "string"},
+                        },
+                        "beat_to_narration_map": {
+                            "type": "array",
+                            "description": "One short narration mapping line per beat, in visual order.",
+                            "items": {"type": "string"},
+                        },
+                        "narration_coverage_complete": {
+                            "type": ["boolean", "null"],
+                            "description": "Whether the narration covers the full beat sequence from opening to ending.",
+                        },
+                        "estimated_narration_duration_seconds": {
+                            "type": ["number", "null"],
+                            "description": "Estimated spoken duration of the narration in seconds.",
+                            "minimum": 0,
                         },
                         "source_code": {
                             "type": ["string", "null"],
-                            "description": "Captured Manim Python source code",
+                            "description": "Full source code of the generated scene file when captured.",
+                        },
+                        "audio_path": {
+                            "type": ["string", "null"],
+                            "description": "Path to the generated narration audio file.",
+                        },
+                        "subtitle_path": {
+                            "type": ["string", "null"],
+                            "description": "Path to generated subtitle or caption file, if any.",
+                        },
+                        "extra_info_path": {
+                            "type": ["string", "null"],
+                            "description": "Path to extra TTS metadata emitted by the provider.",
+                        },
+                        "tts_mode": {
+                            "type": ["string", "null"],
+                            "description": "TTS transport mode used for this task, such as sync or async.",
+                        },
+                        "tts_duration_ms": {
+                            "type": ["integer", "null"],
+                            "description": "Provider-reported audio duration in milliseconds.",
+                            "minimum": 0,
+                        },
+                        "tts_word_count": {
+                            "type": ["integer", "null"],
+                            "description": "Provider-reported word or character count for the narration.",
+                            "minimum": 0,
+                        },
+                        "tts_usage_characters": {
+                            "type": ["integer", "null"],
+                            "description": "Provider-reported billable character count.",
+                            "minimum": 0,
+                        },
+                        "target_duration_seconds": {
+                            "type": ["integer", "null"],
+                            "description": "Requested target runtime for the final video in seconds.",
+                            "minimum": 0,
+                        },
+                        "plan_text": {
+                            "type": ["string", "null"],
+                            "description": "Visible scene plan emitted before implementation.",
+                        },
+                        "review_summary": {
+                            "type": ["string", "null"],
+                            "description": "Summary of the post-render review pass.",
+                        },
+                        "review_approved": {
+                            "type": ["boolean", "null"],
+                            "description": "Whether the render review approved the video.",
+                        },
+                        "review_blocking_issues": {
+                            "type": "array",
+                            "description": "Blocking issues found during render review.",
+                            "items": {"type": "string"},
+                        },
+                        "review_suggested_edits": {
+                            "type": "array",
+                            "description": "Suggested edits from the render review step.",
+                            "items": {"type": "string"},
+                        },
+                        "review_frame_paths": {
+                            "type": "array",
+                            "description": "Sampled frame image paths inspected during render review.",
+                            "items": {"type": "string"},
                         },
                     },
-                    "required": ["video_output"],
+                    "required": [
+                        "video_output",
+                        "implemented_beats",
+                        "deviations_from_plan",
+                        "beat_to_narration_map",
+                        "review_blocking_issues",
+                        "review_suggested_edits",
+                        "review_frame_paths",
+                    ],
                     "additionalProperties": False,
                 },
             },

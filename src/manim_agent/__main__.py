@@ -211,8 +211,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--max-turns",
         type=int,
-        default=50,
-        help="Claude 最大交互轮次 (default: 50)",
+        default=80,
+        help="Claude 最大交互轮次 (default: 80)",
     )
 
     parser.add_argument(
@@ -448,6 +448,11 @@ def _build_user_prompt(user_text: str, target_duration_seconds: int) -> str:
         "- Use the `manim-production` skill as the umbrella quality guide across planning, implementation, rendering, and final review.\n"
         "- If plugin behavior appears inconsistent, keep following the plugin workflow and report the issue later instead of bypassing it.\n"
         "- Do not begin writing `scene.py` until the visible planning pass is complete.\n"
+        "- In structured_output, include `implemented_beats` as the ordered beat titles that were actually built.\n"
+        "- In structured_output, include `build_summary` as a short summary of what the build phase implemented.\n"
+        "- In structured_output, include `deviations_from_plan` as an array, even if it is empty.\n"
+        "- In structured_output, include `beat_to_narration_map` with one short narration mapping line per beat.\n"
+        "- In structured_output, include `narration_coverage_complete` and `estimated_narration_duration_seconds`.\n"
         "- Keep every file inside the task directory only.\n"
         "- Write the main script to scene.py unless multiple files are truly necessary.\n"
         "- Use GeneratedScene as the main Manim Scene class unless the user explicitly asks otherwise.\n"
@@ -548,6 +553,26 @@ def _extract_visible_scene_plan_text(collected_text: list[str], max_chars: int =
     if len(text) <= max_chars:
         return text
     return text[:max_chars]
+
+
+def _has_structured_build_summary(po: PipelineOutput | None) -> bool:
+    """Require explicit build-phase bookkeeping in structured output."""
+    if po is None:
+        return False
+    if not po.build_summary or not po.build_summary.strip():
+        return False
+    return len(po.implemented_beats) > 0
+
+
+def _has_narration_sync_summary(po: PipelineOutput | None) -> bool:
+    """Require explicit narration coverage metadata in structured output."""
+    if po is None:
+        return False
+    if len(po.beat_to_narration_map) == 0:
+        return False
+    if po.narration_coverage_complete is not True:
+        return False
+    return po.estimated_narration_duration_seconds is not None
 
 
 async def _run_render_review(
@@ -719,6 +744,10 @@ async def run_pipeline(
                 "A visible planning scaffold is mandatory before implementation."
             )
 
+        plan_text = _extract_visible_scene_plan_text(dispatcher.collected_text)
+        dispatcher.partial_target_duration_seconds = target_duration_seconds
+        dispatcher.partial_plan_text = plan_text
+
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2/4: resolve render output")
         logger.debug(
             "run_pipeline: phase2: dispatcher.video_output before extraction = %r",
@@ -754,6 +783,30 @@ async def run_pipeline(
             message=render_status_message,
         )
         logger.debug("run_pipeline: video_output = %r", video_output)
+
+        if po is not None:
+            po.target_duration_seconds = target_duration_seconds
+            po.plan_text = plan_text
+            dispatcher.partial_build_summary = po.build_summary
+            dispatcher.partial_deviations_from_plan = list(po.deviations_from_plan)
+            dispatcher.partial_beat_to_narration_map = list(po.beat_to_narration_map)
+            dispatcher.partial_narration_coverage_complete = po.narration_coverage_complete
+            dispatcher.partial_estimated_narration_duration_seconds = (
+                po.estimated_narration_duration_seconds
+            )
+
+        if not _has_structured_build_summary(po):
+            raise RuntimeError(
+                "Claude skipped the required scene-build summary. "
+                "structured_output must include implemented_beats and build_summary."
+            )
+
+        if not _has_narration_sync_summary(po):
+            raise RuntimeError(
+                "Claude skipped the required narration-sync summary. "
+                "structured_output must include beat_to_narration_map, "
+                "narration_coverage_complete=true, and estimated_narration_duration_seconds."
+            )
 
         if po is not None and video_output and po.duration_seconds is None:
             try:
@@ -819,7 +872,7 @@ async def run_pipeline(
         )
         review_result = await _run_render_review(
             user_text=user_text,
-            plan_text=_extract_visible_scene_plan_text(dispatcher.collected_text),
+            plan_text=plan_text,
             video_output=video_output,
             frame_paths=review_frames,
             target_duration_seconds=target_duration_seconds,
@@ -836,6 +889,17 @@ async def run_pipeline(
         if review_result.suggested_edits:
             for edit in review_result.suggested_edits:
                 dispatcher._print(f"  [REVIEW][FIX] {edit}")
+        if po is not None:
+            po.review_summary = review_result.summary
+            po.review_approved = review_result.approved
+            po.review_blocking_issues = list(review_result.blocking_issues)
+            po.review_suggested_edits = list(review_result.suggested_edits)
+            po.review_frame_paths = list(review_frames)
+        dispatcher.partial_review_summary = review_result.summary
+        dispatcher.partial_review_approved = review_result.approved
+        dispatcher.partial_review_blocking_issues = list(review_result.blocking_issues)
+        dispatcher.partial_review_suggested_edits = list(review_result.suggested_edits)
+        dispatcher.partial_review_frame_paths = list(review_frames)
         if not review_result.approved:
             raise RuntimeError(
                 "Rendered video failed the render-review gate. "
@@ -858,6 +922,8 @@ async def run_pipeline(
             )
 
         if no_tts:
+            if po is not None:
+                po.final_video_output = video_output
             dispatcher._print(f"\n{_EMOJI['video']} Output silent video: {video_output}")
             dispatcher._print("  [SKIP] Phase 3/4 skipped: TTS synthesis disabled by no_tts option.")
             dispatcher._print("  [SKIP] Phase 4/4 skipped: Video muxing requires TTS output and is disabled.")
@@ -906,6 +972,14 @@ async def run_pipeline(
             model=model,
             output_dir=str(Path(output_path).parent),
         )
+        if po is not None:
+            po.audio_path = tts_result.audio_path or None
+            po.subtitle_path = tts_result.subtitle_path or None
+            po.extra_info_path = tts_result.extra_info_path or None
+            po.tts_mode = tts_result.mode
+            po.tts_duration_ms = tts_result.duration_ms
+            po.tts_word_count = tts_result.word_count
+            po.tts_usage_characters = tts_result.usage_characters
         transport_label = "SYNC HTTP" if tts_result.mode == "sync" else "ASYNC LONG-TEXT"
         subtitle_label = "embedded captions ready" if tts_result.subtitle_path else "audio-only mux"
         dispatcher._print(f"  [TTS] Transport: {transport_label}")
@@ -926,6 +1000,8 @@ async def run_pipeline(
             subtitle_path=tts_result.subtitle_path,
             output_path=output_path,
         )
+        if po is not None:
+            po.final_video_output = final_video
 
         dispatcher._print(f"\n{_EMOJI['check']} Video generation complete: {final_video}")
         return final_video

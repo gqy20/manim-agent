@@ -51,3 +51,6 @@ Include:
 - whether the render succeeded
 - any deviation from the original scene plan
 - the final scene class name
+- `implemented_beats`: the beat titles actually implemented, in order
+- `build_summary`: one short summary of what the build phase delivered
+- `deviations_from_plan`: an explicit list, even if empty

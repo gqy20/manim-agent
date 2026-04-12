@@ -13,11 +13,32 @@ export interface TaskCreatePayload {
 
 export interface PipelineOutputData {
   video_output: string | null;
+  final_video_output: string | null;
   scene_file: string | null;
   scene_class: string | null;
   duration_seconds: number | null;
   narration: string | null;
+  implemented_beats: string[];
+  build_summary: string | null;
+  deviations_from_plan: string[];
+  beat_to_narration_map: string[];
+  narration_coverage_complete: boolean | null;
+  estimated_narration_duration_seconds: number | null;
   source_code: string | null;
+  audio_path: string | null;
+  subtitle_path: string | null;
+  extra_info_path: string | null;
+  tts_mode: string | null;
+  tts_duration_ms: number | null;
+  tts_word_count: number | null;
+  tts_usage_characters: number | null;
+  target_duration_seconds: number | null;
+  plan_text: string | null;
+  review_summary: string | null;
+  review_approved: boolean | null;
+  review_blocking_issues: string[];
+  review_suggested_edits: string[];
+  review_frame_paths: string[];
 }
 
 export interface Task {

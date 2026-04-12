@@ -45,3 +45,11 @@ Use this skill to keep voice-over aligned with what the viewer is seeing now.
 - Does the narration describe the current visual state instead of future steps?
 - Is the spoken rhythm short enough to sound natural?
 - Does the narration cover the whole animation from opening to ending?
+
+## Required structured handoff
+
+When this skill is used in the main pipeline, the final structured output should include:
+
+- `beat_to_narration_map`: one short mapping line per beat, in order
+- `narration_coverage_complete`: `true` only if the narration covers the full beat sequence
+- `estimated_narration_duration_seconds`: a compact estimate of spoken duration
