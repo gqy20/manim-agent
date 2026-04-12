@@ -21,7 +21,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # NOTE: texlive-full is ~5-7 GB but required by Manim's MathTex/Tex mobjects
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential gcc g++ \
-    libcairo2-dev libpango1.0-dev pangocairo-dev \
+    libcairo2-dev libpango1.0-dev \
     ffmpeg \
     texlive-full \
     latexmk \
