@@ -21,6 +21,7 @@ Use this as the umbrella workflow router for Manim tasks.
 4. Apply `layout-safety` on dense beats as an advisory audit before accepting the implementation.
 5. Apply `narration-sync` before finalizing narration.
 6. Use `render-review` after rendering and before reporting success.
+7. Apply `intro-outro` after render-review when branded packaging is requested (optional).
 
 ## Skill routing
 
@@ -30,6 +31,7 @@ Use this as the umbrella workflow router for Manim tasks.
 - `layout-safety`: geometry-based advisory audits for overlap and frame-safety during implementation
 - `narration-sync`: spoken pacing, beat-by-beat narration alignment, narration density control
 - `render-review`: sampled-frame quality review and blocking issue detection
+- `intro-outro`: branded intro/outro design, Revideo or Manim fallback, video concatenation contract
 
 ## Task classification
 
@@ -47,6 +49,7 @@ Choose one primary mode before building:
 - Do not skip the specialized skills when their phase is active.
 - Prefer one `scene.py` file and one main `Scene` class unless the task truly needs more.
 - If the first render fails, fix implementation problems before redesigning the lesson.
+- If intro-outro is requested, emit `intro_spec` and/or `outro_spec` in structured output before finishing.
 
 ## Component Library
 
@@ -103,3 +106,4 @@ Or import individually: `from components.text_helpers import cjk_text`
 - For render quality (presets, caching, performance, file size), read `references/render-quality.md`.
 - For the 3Blue1Brown visual style profile (colors, typography, animation pacing, compositional patterns), read `references/style-3b1b.md`.
 - For layout or failure patterns, read only the specific reference you need.
+- For intro/outro templates and video assembly, read `../intro-outro/SKILL.md`.

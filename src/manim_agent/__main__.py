@@ -98,6 +98,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=60,
         help="Target final video duration in seconds (default: 60)",
     )
+    parser.add_argument(
+        "--intro-outro",
+        action="store_true",
+        help="Generate branded intro and/or outro segments.",
+    )
+    parser.add_argument(
+        "--intro-outro-backend",
+        choices=["revideo", "manim"],
+        default="revideo",
+        help="Backend for intro/outro generation (default: revideo).",
+    )
 
     return parser.parse_args(argv)
 
@@ -121,6 +132,8 @@ async def main() -> None:
             cwd=args.cwd,
             prompt_file=args.prompt_file,
             max_turns=args.max_turns,
+            intro_outro=args.intro_outro,
+            intro_outro_backend=args.intro_outro_backend,
         )
     except KeyboardInterrupt:
         print(f"\n{_EMOJI['cross']} 用户中断")

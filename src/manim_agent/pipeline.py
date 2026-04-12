@@ -13,7 +13,7 @@ import re
 import sys
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -678,6 +678,8 @@ async def run_pipeline(
     max_turns: int = 50,
     log_callback: Callable[[str], None] | None = None,
     preset: str = "default",
+    intro_outro: bool = False,
+    intro_outro_backend: str = "revideo",
     _dispatcher_ref: list[Any] | None = None,
     event_callback: Callable[[PipelineEvent], None] | None = None,
 ) -> str:
@@ -1238,6 +1240,34 @@ async def run_pipeline(
         )
         if po is not None:
             po.final_video_output = final_video
+
+        # --- Phase 5b: Optional intro/outro concat ---
+        if intro_outro and po is not None:
+            concat_parts: list[str | None] = []
+
+            if po.intro_video_path and Path(po.intro_video_path).exists():
+                concat_parts.append(po.intro_video_path)
+
+            concat_parts.append(final_video)  # Main video always present
+
+            if po.outro_video_path and Path(po.outro_video_path).exists():
+                concat_parts.append(po.outro_video_path)
+
+            if len(concat_parts) > 1:
+                dispatcher._print("[MUX] Phase 5b: concatenating intro/outro segments")
+                _emit_status(
+                    event_callback,
+                    task_status="running",
+                    phase="concat",
+                    message="Concatenating intro/outro segments",
+                )
+                final_video = await video_builder.concat_videos(
+                    video_paths=cast("list[str]", concat_parts),
+                    output_path=output_path,
+                )
+                if po is not None:
+                    po.final_video_output = final_video
+                dispatcher._print(f"[MUX] Concatenated video: {final_video}")
 
         dispatcher._print(f"\n{_EMOJI['check']} Video generation complete: {final_video}")
         return final_video

@@ -15,7 +15,12 @@ def format_target_duration(seconds: int) -> str:
     return f"{minutes}m {remainder}s"
 
 
-def build_user_prompt(user_text: str, target_duration_seconds: int) -> str:
+def build_user_prompt(
+    user_text: str,
+    target_duration_seconds: int,
+    *,
+    include_intro_outro: bool = False,
+) -> str:
     """Legacy single-pass execution guidance."""
     normalized = user_text.strip()
     target_duration = format_target_duration(target_duration_seconds)
@@ -45,12 +50,21 @@ def build_user_prompt(user_text: str, target_duration_seconds: int) -> str:
         "- Return structured_output.narration as natural Simplified Chinese unless the user explicitly requests another language.\n"
         "- Make the narration spoken and synchronized with the animation, and cover the full flow rather than collapsing into a one-sentence summary.\n"
     )
+    if include_intro_outro:
+        guidance += (
+            "\n- Use the `intro-outro` skill to design branded intro and/or outro segments.\n"
+            "- Emit `intro_spec` and/or `outro_spec` in structured_output if appropriate for this content.\n"
+            "- If you generate intro or outro video files, report their paths as `intro_video_path` and `outro_video_path`.\n"
+            "- Keep intro and outro segments between 3–5 seconds each.\n"
+        )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
 
 def build_scene_plan_prompt(
     user_text: str,
     target_duration_seconds: int,
+    *,
+    include_intro_outro: bool = False,
 ) -> str:
     """Build a planning-only prompt that must stop after the visible plan."""
     normalized = user_text.strip()
@@ -66,6 +80,11 @@ def build_scene_plan_prompt(
         "- Return a Markdown plan with these exact section headings: `Mode`, `Learning Goal`, `Audience`, `Beat List`, `Narration Outline`, `Visual Risks`, and `Build Handoff`.\n"
         "- Keep the plan compact and implementation-ready.\n"
     )
+    if include_intro_outro:
+        guidance += (
+            "- If appropriate for this content, include an `Intro / Outro Planning` section "
+            "in the plan that specifies desired intro/outro styles, durations, and key text.\n"
+        )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
 
@@ -73,6 +92,8 @@ def build_implementation_prompt(
     user_text: str,
     target_duration_seconds: int,
     plan_text: str,
+    *,
+    include_intro_outro: bool = False,
 ) -> str:
     """Build the implementation prompt after a planning pass has been accepted."""
     normalized = user_text.strip()
@@ -100,6 +121,15 @@ def build_implementation_prompt(
         "- Do not use absolute repository paths, do not cd to the repo root, and do not invoke `.venv/Scripts/python` directly.\n"
         "- Return structured_output.narration as natural Simplified Chinese unless the user explicitly requests another language.\n"
         "- Make the narration spoken and synchronized with the animation, and cover the full flow rather than collapsing into a one-sentence summary.\n"
+    )
+    if include_intro_outro:
+        guidance += (
+            "- If the approved plan includes an Intro / Outro Planning section, "
+            "use the `intro-outro` skill to implement those segments.\n"
+            "- Emit `intro_spec`/`outro_spec` and `intro_video_path`/`outro_video_path` in structured_output if applicable.\n"
+            "- Render intro/outro scenes using Manim fallback (TitleCard/EndingCard) or Revideo as appropriate.\n"
+        )
+    guidance += (
         "\nApproved visible scene plan:\n"
         f"{plan_text}\n"
     )

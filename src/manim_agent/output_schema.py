@@ -180,6 +180,35 @@ class PipelineOutput(BaseModel):
         default=None,
         description="Whether AI vision analysis was used during render review.",
     )
+    # --- Intro/Outro fields ---
+    intro_requested: bool | None = Field(
+        default=None,
+        description="Whether an intro segment was requested for this run.",
+    )
+    outro_requested: bool | None = Field(
+        default=None,
+        description="Whether an outro segment was requested for this run.",
+    )
+    intro_spec: dict[str, Any] | None = Field(
+        default=None,
+        description="Structured intro specification (title, style, duration, colors).",
+    )
+    outro_spec: dict[str, Any] | None = Field(
+        default=None,
+        description="Structured outro specification (message, style, duration, colors).",
+    )
+    intro_video_path: str | None = Field(
+        default=None,
+        description="Path to the rendered intro MP4 segment, if generated.",
+    )
+    outro_video_path: str | None = Field(
+        default=None,
+        description="Path to the rendered outro MP4 segment, if generated.",
+    )
+    intro_outro_backend: str | None = Field(
+        default=None,
+        description="Backend used for intro/outro generation: 'revideo' or 'manim'.",
+    )
 
     @field_validator("video_output")
     @classmethod
@@ -376,6 +405,34 @@ class PipelineOutput(BaseModel):
                         "review_vision_analysis_used": {
                             "type": "boolean",
                             "description": "Whether AI vision analysis was used during render review.",
+                        },
+                        "intro_requested": {
+                            "type": ["boolean", "null"],
+                            "description": "Whether an intro segment was requested for this run.",
+                        },
+                        "outro_requested": {
+                            "type": ["boolean", "null"],
+                            "description": "Whether an outro segment was requested for this run.",
+                        },
+                        "intro_spec": {
+                            "type": ["object", "null"],
+                            "description": "Structured intro specification (title, style, duration, colors).",
+                        },
+                        "outro_spec": {
+                            "type": ["object", "null"],
+                            "description": "Structured outro specification (message, style, duration, colors).",
+                        },
+                        "intro_video_path": {
+                            "type": ["string", "null"],
+                            "description": "Path to the rendered intro MP4 segment, if generated.",
+                        },
+                        "outro_video_path": {
+                            "type": ["string", "null"],
+                            "description": "Path to the rendered outro MP4 segment, if generated.",
+                        },
+                        "intro_outro_backend": {
+                            "type": ["string", "null"],
+                            "description": "Backend used for intro/outro generation: 'revideo' or 'manim'.",
                         },
                     },
                     "required": [

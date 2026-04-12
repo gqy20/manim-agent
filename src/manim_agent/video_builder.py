@@ -177,3 +177,84 @@ async def build_final_video(
         raise RuntimeError(f"ffmpeg failed (exit code {proc.returncode}): {stderr.decode().strip()}")
 
     return output_path
+
+
+async def concat_videos(
+    video_paths: list[str],
+    output_path: str,
+) -> str:
+    """Concatenate multiple MP4 videos in order using FFmpeg concat demuxer.
+
+    Uses stream copy (-c copy) so no re-encoding occurs — this is fast
+    and preserves original quality.  All input videos must share the same
+    resolution, framerate, and codec.
+
+    Args:
+        video_paths: Ordered list of MP4 file paths
+                    (e.g. [intro.mp4, main.mp4, outro.mp4]).
+                    None / empty values are silently skipped.
+        output_path: Destination path for the concatenated output.
+
+    Returns:
+        The output_path on success.
+
+    Raises:
+        FileNotFoundError: If any specified video file does not exist.
+        RuntimeError: If FFmpeg concat fails or no valid inputs remain.
+    """
+    import tempfile
+
+    # Filter out None/empty and validate existence
+    valid_paths: list[str] = []
+    for p in video_paths:
+        if not p:
+            continue
+        if not Path(p).exists():
+            raise FileNotFoundError(f"Video file not found: {p}")
+        valid_paths.append(p)
+
+    if len(valid_paths) < 2:
+        # Nothing to concatenate — copy single input to output if needed
+        if len(valid_paths) == 1 and valid_paths[0] != output_path:
+            import shutil
+
+            shutil.copy2(valid_paths[0], output_path)
+        return output_path
+
+    # Write concat list file (required by FFmpeg concat demuxer)
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", delete=False, encoding="utf-8"
+    ) as list_file:
+        for p in valid_paths:
+            # Escape single-quotes for safe 0 protocol handling
+            safe = p.replace("'", "'\\''")
+            list_file.write(f"file '{safe}'\n")
+        list_path = list_file.name
+
+    try:
+        cmd = [
+            "ffmpeg",
+            "-y",                           # Overwrite output
+            "-f", "concat",                  # Concat demuxer format
+            "-safe", "0",                   # Allow unsafe paths (needed for absolute)
+            "-i", list_path,                # Input list file
+            "-c", "copy",                   # Stream copy — no re-encoding
+            output_path,
+        ]
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg concat failed (exit code {proc.returncode}): {stderr.decode().strip()}"
+            )
+    finally:
+        # Clean up temp list file
+        Path(list_path).unlink(missing_ok=True)
+
+    return output_path
