@@ -1,4 +1,5 @@
 export type TaskStatus = "pending" | "running" | "completed" | "failed";
+export type TaskDurationSeconds = 30 | 60 | 180 | 300;
 
 export interface TaskCreatePayload {
   user_text: string;
@@ -7,6 +8,7 @@ export interface TaskCreatePayload {
   quality: "high" | "medium" | "low";
   preset: "default" | "educational" | "presentation" | "proof" | "concept";
   no_tts: boolean;
+  target_duration_seconds: TaskDurationSeconds;
 }
 
 export interface PipelineOutputData {

@@ -215,6 +215,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Claude 最大交互轮次 (default: 50)",
     )
 
+    parser.add_argument(
+        "--target-duration",
+        type=int,
+        choices=[30, 60, 180, 300],
+        default=60,
+        help="Target final video duration in seconds (default: 60)",
+    )
+
     return parser.parse_args(argv)
 
 
@@ -408,11 +416,25 @@ def _report_stream_statistics(
                 logger.debug("CLI STDERR(all): %s", sline[:200])
 
 
-def _build_user_prompt(user_text: str) -> str:
+def _format_target_duration(seconds: int) -> str:
+    """Format a target runtime for prompt guidance."""
+    if seconds < 60:
+        return f"{seconds} seconds"
+    minutes, remainder = divmod(seconds, 60)
+    if remainder == 0:
+        return f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
+    return f"{minutes}m {remainder}s"
+
+
+def _build_user_prompt(user_text: str, target_duration_seconds: int) -> str:
     """Add execution-critical constraints to the user prompt."""
     normalized = user_text.strip()
+    target_duration = _format_target_duration(target_duration_seconds)
     guidance = (
         "\n\nExecution requirements:\n"
+        f"- Target final video duration: about {target_duration}.\n"
+        "- Design the beat count, pacing, and narration density to land close to that target runtime.\n"
+        "- Prefer shorter, more focused explanations for 30-second and 1-minute runs, and more developed walkthroughs for 3-minute and 5-minute runs.\n"
         "- The `manim-production` plugin is mandatory for every task in this runtime.\n"
         "- Treat `manim-production` as already available when the task begins.\n"
         "- Do not check plugin availability with `python -c`, `import`, `pip`, shell probes, or path inspection.\n"
@@ -456,6 +478,33 @@ def _narration_is_too_short_for_video(narration: str, video_duration: float | No
         return False
     estimated = _estimate_spoken_duration_seconds(narration)
     return estimated < max(4.0, video_duration * 0.45)
+
+
+def _allowed_duration_deviation_seconds(target_duration_seconds: int) -> float:
+    """Return the acceptable runtime deviation for a requested target duration."""
+    return min(45.0, max(8.0, target_duration_seconds * 0.2))
+
+
+def _duration_target_issue(
+    actual_duration_seconds: float | None,
+    target_duration_seconds: int,
+) -> str | None:
+    """Return a blocking duration issue message when render length misses the target badly."""
+    if actual_duration_seconds is None or actual_duration_seconds <= 0:
+        return None
+
+    allowed_deviation = _allowed_duration_deviation_seconds(target_duration_seconds)
+    deviation = abs(actual_duration_seconds - target_duration_seconds)
+    if deviation <= allowed_deviation:
+        return None
+
+    target_label = _format_target_duration(target_duration_seconds)
+    actual_label = _format_target_duration(round(actual_duration_seconds))
+    return (
+        f"Rendered duration {actual_duration_seconds:.1f}s ({actual_label}) is too far from "
+        f"the requested target of {target_duration_seconds}s ({target_label}). "
+        f"Allowed deviation is {allowed_deviation:.1f}s."
+    )
 
 
 def _build_fallback_narration(user_text: str) -> str:
@@ -507,6 +556,8 @@ async def _run_render_review(
     plan_text: str,
     video_output: str,
     frame_paths: list[str],
+    target_duration_seconds: int,
+    actual_duration_seconds: float | None,
     cwd: str,
     system_prompt: str,
     quality: str,
@@ -514,6 +565,11 @@ async def _run_render_review(
 ) -> RenderReviewOutput:
     """Ask Claude to review sampled render frames and return a structured verdict."""
     frame_bullets = "\n".join(f"- {path}" for path in frame_paths)
+    measured_duration = (
+        f"{actual_duration_seconds:.2f}s"
+        if actual_duration_seconds is not None and actual_duration_seconds > 0
+        else "unknown"
+    )
     review_prompt = (
         "Use the `render-review` skill to inspect sampled frames from a rendered Manim video.\n"
         "Do not write, edit, or render anything in this pass. Only review the output.\n"
@@ -522,6 +578,9 @@ async def _run_render_review(
         "Blocking issues include: empty or title-only opening, overcrowded frame, unclear focal point, "
         "key conclusion not shown through visible change, or weak ending payoff.\n\n"
         f"Original user request:\n{user_text}\n\n"
+        "Duration target:\n"
+        f"- requested runtime: about {_format_target_duration(target_duration_seconds)}\n"
+        f"- measured render runtime: {measured_duration}\n\n"
         "Visible plan / build context:\n"
         f"{plan_text or '(no plan text available)'}\n\n"
         f"Rendered video path:\n- {video_output}\n\n"
@@ -560,6 +619,7 @@ async def run_pipeline(
     model: str = "speech-2.8-hd",
     quality: str = "high",
     no_tts: bool = False,
+    target_duration_seconds: int = 60,
     cwd: str = ".",
     prompt_file: str | None = None,
     max_turns: int = 50,
@@ -586,7 +646,7 @@ async def run_pipeline(
         quality=quality,
         log_callback=log_callback,
     )
-    user_prompt = _build_user_prompt(user_text)
+    user_prompt = _build_user_prompt(user_text, target_duration_seconds)
 
     hook_state = create_hook_state(event_callback=event_callback)
     hook_state_token = activate_hook_state(hook_state)
@@ -605,7 +665,10 @@ async def run_pipeline(
     )
     dispatcher._print(_LOG_SEPARATOR)
     dispatcher._print(f"  {_EMOJI['gear']} Phase 1/4: start Claude Agent SDK")
-    dispatcher._print(f"  quality={quality} preset={preset} max_turns={max_turns}")
+    dispatcher._print(
+        f"  quality={quality} preset={preset} max_turns={max_turns} "
+        f"target_duration={target_duration_seconds}s"
+    )
     if options.plugins:
         plugin_labels = ", ".join(
             Path(plugin["path"]).name for plugin in options.plugins if plugin.get("path")
@@ -759,6 +822,8 @@ async def run_pipeline(
             plan_text=_extract_visible_scene_plan_text(dispatcher.collected_text),
             video_output=video_output,
             frame_paths=review_frames,
+            target_duration_seconds=target_duration_seconds,
+            actual_duration_seconds=po.duration_seconds if po is not None else None,
             cwd=resolved_cwd,
             system_prompt=system_prompt,
             quality=quality,
@@ -775,6 +840,21 @@ async def run_pipeline(
             raise RuntimeError(
                 "Rendered video failed the render-review gate. "
                 + "; ".join(review_result.blocking_issues or [review_result.summary])
+            )
+
+        duration_issue = _duration_target_issue(
+            po.duration_seconds if po is not None else None,
+            target_duration_seconds,
+        )
+        if duration_issue is not None:
+            dispatcher._print(f"  [REVIEW][BLOCK] {duration_issue}")
+            raise RuntimeError(
+                "Rendered video failed the duration-target gate. " + duration_issue
+            )
+        if po is not None and po.duration_seconds is not None:
+            dispatcher._print(
+                "  [REVIEW] Duration check passed: "
+                f"{po.duration_seconds:.1f}s vs target {target_duration_seconds}s"
             )
 
         if no_tts:
@@ -875,6 +955,7 @@ async def main() -> None:
             model=args.model,
             quality=args.quality,
             no_tts=args.no_tts,
+            target_duration_seconds=args.target_duration,
             cwd=args.cwd,
             prompt_file=args.prompt_file,
             max_turns=args.max_turns,

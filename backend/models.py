@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -23,6 +23,7 @@ class TaskCreateRequest(BaseModel):
     quality: str = "high"  # high | medium | low
     preset: str = "default"  # default | educational | presentation | proof | concept
     no_tts: bool = False
+    target_duration_seconds: Literal[30, 60, 180, 300] = 60
 
 
 class PipelineOutputData(BaseModel):

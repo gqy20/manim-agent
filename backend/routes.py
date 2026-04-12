@@ -248,13 +248,14 @@ def _cleanup_output_dir(output_dir: Path, *, keep_mp4: bool = True) -> None:
 async def create_task(req: TaskCreateRequest) -> TaskResponse:
     """Create a task & start the pipeline in background."""
     logger.info(
-        "POST /api/tasks received: text_len=%d voice=%s model=%s quality=%s preset=%s no_tts=%s",
+        "POST /api/tasks received: text_len=%d voice=%s model=%s quality=%s preset=%s no_tts=%s target_duration_seconds=%s",
         len(req.user_text),
         req.voice_id,
         req.model,
         req.quality,
         req.preset,
         req.no_tts,
+        req.target_duration_seconds,
     )
     task = await _store.create(req)
     task_id = task["id"]
@@ -326,6 +327,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     model=req.model,
                     quality=req.quality,
                     no_tts=req.no_tts,
+                    target_duration_seconds=req.target_duration_seconds,
                     cwd=str(output_dir),
                     max_turns=50,
                     preset=req.preset,
@@ -402,6 +404,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 model=req.model,
                 quality=req.quality,
                 no_tts=req.no_tts,
+                target_duration_seconds=req.target_duration_seconds,
                 cwd=str(output_dir),
                 max_turns=50,
                 preset=req.preset,

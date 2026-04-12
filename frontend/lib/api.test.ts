@@ -23,6 +23,7 @@ describe("api client", () => {
         quality: "high",
         preset: "default",
         no_tts: false,
+        target_duration_seconds: 60,
       },
       pipeline_output: null,
     };
@@ -33,6 +34,7 @@ describe("api client", () => {
       quality: "high",
       preset: "default",
       no_tts: false,
+      target_duration_seconds: 60,
     };
 
     vi.stubGlobal(
@@ -68,6 +70,7 @@ describe("api client", () => {
         quality: "medium",
         preset: "proof",
         no_tts: false,
+        target_duration_seconds: 180,
       },
       pipeline_output: null,
     };
@@ -111,4 +114,3 @@ describe("api client", () => {
     expect(getVideoUrl("task-1")).toBe("/api/tasks/task-1/video");
   });
 });
-

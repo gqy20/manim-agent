@@ -20,6 +20,7 @@ function buildTask(overrides: Partial<Task> = {}): Task {
       quality: "high",
       preset: "default",
       no_tts: false,
+      target_duration_seconds: 60,
     },
     pipeline_output: null,
     ...overrides,

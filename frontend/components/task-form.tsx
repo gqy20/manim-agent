@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { createTask } from "@/lib/api";
 import { logger } from "@/lib/logger";
+import type { TaskDurationSeconds } from "@/types";
 import { Loader2, Wand2, ChevronDown, Sparkles } from "lucide-react";
 
 /* ── Data ────────────────────────────────────────── */
@@ -42,6 +43,13 @@ const PRESETS = [
   { value: "concept", label: "概念可视化" },
 ];
 
+const DURATIONS: { value: TaskDurationSeconds; label: string }[] = [
+  { value: 30, label: "30秒" },
+  { value: 60, label: "1分钟" },
+  { value: 180, label: "3分钟" },
+  { value: 300, label: "5分钟" },
+];
+
 const TEMPLATES = [
   { text: "用动画演示勾股定理的证明过程", icon: "📐" },
   { text: "可视化二次函数 y=ax²+bx+c 的图像变换", icon: "📈" },
@@ -53,11 +61,13 @@ const TEMPLATES = [
 
 /* ── Helpers ─────────────────────────────────────── */
 
-function getLabel<T extends { id?: string; value?: string; label: string }>(
+function getLabel<T extends { id?: string | number; value?: string | number; label: string }>(
   list: T[],
   key: string,
 ): string {
-  return list.find((item) => (item.id ?? item.value) === key)?.label ?? key;
+  return (
+    list.find((item) => String(item.id ?? item.value) === key)?.label ?? key
+  );
 }
 
 /* ── Component ───────────────────────────────────── */
@@ -68,6 +78,7 @@ export function TaskForm() {
   const [voiceId, setVoiceId] = useState("female-tianmei");
   const [quality, setQuality] = useState<"high" | "medium" | "low">("high");
   const [preset, setPreset] = useState<"default" | "educational" | "presentation" | "proof" | "concept">("default");
+  const [targetDurationSeconds, setTargetDurationSeconds] = useState<TaskDurationSeconds>(60);
   const [noTts, setNoTts] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +115,7 @@ export function TaskForm() {
           quality,
           preset,
           no_tts: noTts,
+          target_duration_seconds: targetDurationSeconds,
         })
           .then((task) => {
             if (!task?.id) {
@@ -186,7 +198,7 @@ export function TaskForm() {
 
       {/* Advanced options */}
       <div className="pt-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 pb-2">
           {/* Voice */}
           <div className="flex items-center gap-4">
             <label className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">音色</label>
@@ -227,6 +239,29 @@ export function TaskForm() {
               <SelectContent className="bg-black/80 backdrop-blur-xl border border-white/10">
                 {PRESETS.map((p) => (
                   <SelectItem key={p.value} value={p.value} className="text-[11px] text-white/70 focus:bg-white/10 focus:text-white">{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Duration */}
+          <div className="flex items-center gap-4">
+            <label className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">时长</label>
+            <Select
+              value={String(targetDurationSeconds)}
+              onValueChange={(v) =>
+                v && setTargetDurationSeconds(Number(v) as TaskDurationSeconds)
+              }
+              disabled={submitting}
+            >
+              <SelectTrigger className="w-full bg-transparent border-white/10 hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 transition-colors h-8 text-[11px] text-white/80 shadow-none font-medium">
+                <SelectValue>{getLabel(DURATIONS, String(targetDurationSeconds))}</SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-black/80 backdrop-blur-xl border border-white/10">
+                {DURATIONS.map((duration) => (
+                  <SelectItem key={duration.value} value={String(duration.value)} className="text-[11px] text-white/70 focus:bg-white/10 focus:text-white">
+                    {duration.label}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
