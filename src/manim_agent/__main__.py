@@ -64,8 +64,29 @@ from .hooks import (
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 
 logger = logging.getLogger(__name__)
-REPO_ROOT = Path(__file__).resolve().parents[2]
-MANIM_PLUGIN_DIR = REPO_ROOT / "plugins" / "manim-production"
+
+
+def _resolve_repo_root(cwd: str | None = None) -> Path:
+    """Best-effort repo root discovery for both editable and installed package layouts."""
+    marker_parts = ("plugins", "manim-production", ".codex-plugin", "plugin.json")
+    candidates: list[Path] = []
+
+    env_root = os.environ.get("MANIM_AGENT_REPO_ROOT")
+    if env_root:
+        candidates.append(Path(env_root).resolve())
+
+    if cwd:
+        resolved_cwd = Path(cwd).resolve()
+        candidates.extend([resolved_cwd, *resolved_cwd.parents])
+
+    module_path = Path(__file__).resolve()
+    candidates.extend(module_path.parents)
+
+    for candidate in candidates:
+        if (candidate / Path(*marker_parts)).exists():
+            return candidate
+
+    return module_path.parents[2]
 
 
 def _emit_status(
@@ -90,11 +111,13 @@ def _emit_status(
     )
 
 
-def _get_local_plugins() -> list[dict[str, str]]:
+def _get_local_plugins(cwd: str | None = None) -> list[dict[str, str]]:
     """Return repo-local Claude plugins that should be injected into every task."""
-    manifest_path = MANIM_PLUGIN_DIR / ".codex-plugin" / "plugin.json"
+    repo_root = _resolve_repo_root(cwd)
+    plugin_dir = repo_root / "plugins" / "manim-production"
+    manifest_path = plugin_dir / ".codex-plugin" / "plugin.json"
     if manifest_path.exists():
-        return [{"type": "local", "path": str(MANIM_PLUGIN_DIR)}]
+        return [{"type": "local", "path": str(plugin_dir)}]
 
     logger.warning("Local plugin manifest not found: %s", manifest_path)
     return []
@@ -231,7 +254,9 @@ def _build_options(
 
     # ── 确保 Claude CLI 子进程能找到 manim ──
     # 继承当前环境变量，但确保 .venv\Scripts 在 PATH 中
-    venv_scripts = str(Path(__file__).parent.parent.parent / ".venv" / "Scripts")
+    repo_root = _resolve_repo_root(resolved_cwd)
+    venv_bin_dir = repo_root / ".venv" / ("Scripts" if os.name == "nt" else "bin")
+    venv_scripts = str(venv_bin_dir)
     current_path = os.environ.get("PATH", "")
     path_parts = [p for p in current_path.split(os.pathsep) if p]
     if venv_scripts not in path_parts:
@@ -277,11 +302,14 @@ def _build_options(
             "Glob",
             "Grep",
         ],
+        # Claude Code's full startup path is brittle in Railway containers.
+        # bare mode keeps the SDK query path lean while still supporting tool use.
+        extra_args={"bare": None},
         # ── 环境变量：确保 manim 可被 Claude CLI 找到 ──
         env=venv_env,
         # ── SDK Hook 系统：替代手动 ToolUseBlock 迭代 ──
         hooks=hooks,
-        plugins=_get_local_plugins(),
+        plugins=_get_local_plugins(resolved_cwd),
         # ── 启用文件检查点以支持 rewind_files ──
         enable_file_checkpointing=True,
     )
