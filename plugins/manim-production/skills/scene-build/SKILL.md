@@ -21,7 +21,8 @@ Implement Manim code from a scene plan.
 2. Preserve the beat order unless render/debug issues require a small change.
 3. Write one main `scene.py` file unless the user explicitly asks for more.
 4. Keep one main `Scene` class unless there is a strong reason to split.
-5. Render, inspect, and simplify if the result feels crowded.
+5. Use `layout-safety` on dense beats as an advisory audit before the final render pass.
+6. Render, inspect, and simplify if the result feels crowded.
 
 ## Beat-to-code mapping
 
@@ -34,6 +35,7 @@ Implement Manim code from a scene plan.
 
 - Confirm the code matches the planned beat order.
 - Confirm labels stay near the objects they describe.
+- Confirm dense beats have been reviewed with the geometry-based layout safety check when the composition is crowded.
 - Confirm there is a clear ending frame.
 - Confirm the final narration covers all beats in order.
 

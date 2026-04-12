@@ -18,14 +18,16 @@ Use this as the umbrella workflow router for Manim tasks.
 1. Use `scene-plan` first and emit a visible plan before coding.
 2. Use `scene-build` only after that plan exists.
 3. Apply `scene-direction` during planning and implementation to keep each beat visually strong.
-4. Apply `narration-sync` before finalizing narration.
-5. Use `render-review` after rendering and before reporting success.
+4. Apply `layout-safety` on dense beats as an advisory audit before accepting the implementation.
+5. Apply `narration-sync` before finalizing narration.
+6. Use `render-review` after rendering and before reporting success.
 
 ## Skill routing
 
 - `scene-plan`: beat structure, learning sequence, narration outline, build handoff
 - `scene-build`: plan-to-code execution, render/debug loop, implementation refinement
 - `scene-direction`: opening hook, focal hierarchy, motion-led explanation, ending payoff
+- `layout-safety`: geometry-based advisory audits for overlap and frame-safety during implementation
 - `narration-sync`: spoken pacing, beat-by-beat narration alignment, narration density control
 - `render-review`: sampled-frame quality review and blocking issue detection
 

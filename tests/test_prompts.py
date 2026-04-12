@@ -23,6 +23,7 @@ class TestSystemPrompt:
         assert "manim-production" in prompts.SYSTEM_PROMPT
         assert "/scene-plan" in prompts.SYSTEM_PROMPT
         assert "/scene-build" in prompts.SYSTEM_PROMPT
+        assert "layout-safety" in prompts.SYSTEM_PROMPT
 
 
 class TestGetPrompt:
@@ -87,3 +88,4 @@ class TestGetPrompt:
         result = prompts.get_prompt("测试", cwd="/tmp/task")
         assert "/scene-plan" in result
         assert "/scene-build" in result
+        assert "layout-safety" in result

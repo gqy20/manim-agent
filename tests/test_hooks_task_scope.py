@@ -1,6 +1,7 @@
 import pytest
 
-from manim_agent.hooks import _on_pre_tool_use, REPO_ROOT
+from manim_agent.hooks import _on_pre_tool_use
+from manim_agent.repo_paths import resolve_repo_root
 
 
 async def _call_pre_tool_use(tool_name: str, tool_input: dict, cwd: str):
@@ -57,8 +58,9 @@ class TestHookTaskScope:
 
     @pytest.mark.asyncio
     async def test_plugin_reference_read_is_allowed(self):
+        repo_root = resolve_repo_root()
         plugin_ref = str(
-            (REPO_ROOT / "plugins" / "manim-production" / "skills" / "manim-production" / "references" / "scene-patterns.md")
+            (repo_root / "plugins" / "manim-production" / "skills" / "manim-production" / "references" / "scene-patterns.md")
             .resolve()
         )
         result = await _call_pre_tool_use(
@@ -71,8 +73,9 @@ class TestHookTaskScope:
 
     @pytest.mark.asyncio
     async def test_plugin_reference_write_is_still_denied(self):
+        repo_root = resolve_repo_root()
         plugin_ref = str(
-            (REPO_ROOT / "plugins" / "manim-production" / "skills" / "manim-production" / "references" / "scene-patterns.md")
+            (repo_root / "plugins" / "manim-production" / "skills" / "manim-production" / "references" / "scene-patterns.md")
             .resolve()
         )
         result = await _call_pre_tool_use(

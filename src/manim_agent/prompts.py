@@ -55,6 +55,8 @@ Do not decide to bypass the plugin workflow because a manual probe failed.
 Use the plugin as the primary workflow guide across planning, coding, rendering, narration, and review.
 Before coding, produce a visible scene plan and then implement from that plan instead of improvising directly in code.
 Apply the relevant plugin skills during planning, build, direction, narration, and render review.
+Route the work through `/scene-plan`, `/scene-build`, `/scene-direction`, `/layout-safety`, `/narration-sync`, and `/render-review` as the stage cues for this workflow.
+Use the `layout-safety` skill as an advisory audit for dense beats with labels, formulas, braces, arrows, or other objects that can overlap, and interpret its warnings with visual judgment.
 If plugin behavior seems unavailable or inconsistent, continue following the plugin workflow and report the issue in your final summary instead of switching to a non-plugin workflow.
 # Working Directory
 **重要：所有文件必须写入当前工作目录（cwd），不要使用 /root/ 或其他绝对路径。**

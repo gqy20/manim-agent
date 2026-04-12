@@ -11,9 +11,10 @@ This plugin standardizes the workflow for planning, building, directing, and rev
 1. `/scene-plan`
 2. `/scene-build`
 3. `/scene-direction`
-4. `/narration-sync`
-5. `/render-review`
-6. Final pass under `manim-production`
+4. `/layout-safety`
+5. `/narration-sync`
+6. `/render-review`
+7. Final pass under `manim-production`
 
 These labels are stage names and skill entry points. The runtime may require the skills implicitly even when the model does not literally type each slash command.
 
@@ -23,6 +24,7 @@ These labels are stage names and skill entry points. The runtime may require the
 - `scene-plan`: beat-by-beat planning and build handoff
 - `scene-build`: plan-to-code implementation and render refinement
 - `scene-direction`: opening hook, focal hierarchy, motion-led explanation, and ending payoff
+- `layout-safety`: geometry-based advisory checks for overlap, crowding, and frame overflow on dense beats
 - `narration-sync`: spoken narration alignment and pacing
 - `render-review`: sampled-frame review and blocking issue detection before success
 
@@ -38,6 +40,8 @@ The backend enforces a few stages as hard gates instead of treating them as opti
 - duration-target check after render review
 
 These gates are implemented in runtime code, not only in prompt text.
+
+`layout-safety` is intentionally not a hard backend gate. It is an implementation-time review aid for crowded compositions, and its warnings should be interpreted with visual judgment rather than treated as automatic failures.
 
 ## Notes
 

@@ -15,7 +15,7 @@
   "interface": {
     "displayName": "Manim Production",
     "shortDescription": "Planning, build workflow, and quality rules for Manim animation generation.",
-    "longDescription": "Provides Manim-focused skills for scene planning, scene building, scene direction, narration alignment, math visualization, and anti-pattern guidance for educational animation tasks.",
+    "longDescription": "Provides Manim-focused skills for scene planning, scene building, scene direction, layout safety, narration alignment, math visualization, and anti-pattern guidance for educational animation tasks.",
     "developerName": "manim-agent",
     "category": "Developer Tools",
     "capabilities": ["Write", "Quality Control"],
@@ -23,9 +23,9 @@
     "privacyPolicyURL": "https://example.com/privacy",
     "termsOfServiceURL": "https://example.com/terms",
     "defaultPrompt": [
-      "Use the scene-plan skill first and show a visible beat-by-beat plan before coding.",
-      "Use the scene-build skill only after the plan exists.",
-      "Use the scene-direction, narration-sync, and render-review skills at their respective phases.",
+      "Use /scene-plan first and show a visible beat-by-beat plan before coding.",
+      "Use /scene-build only after the plan exists.",
+      "Use /scene-direction, /layout-safety, /narration-sync, and /render-review at their respective phases.",
       "Review this Manim scene for pacing, layout, narration quality, and beat structure."
     ],
     "brandColor": "#1F6FEB"
