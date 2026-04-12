@@ -386,6 +386,14 @@ def _narration_is_too_short_for_video(narration: str, video_duration: float | No
     return estimated < max(4.0, video_duration * 0.45)
 
 
+def _build_fallback_narration(user_text: str) -> str:
+    """Build a minimal narration fallback when structured narration is missing."""
+    cleaned = " ".join(user_text.split()).strip()
+    if cleaned:
+        return cleaned
+    return "下面我们来看这个动画的主要内容。"
+
+
 async def run_pipeline(
     user_text: str,
     output_path: str,
@@ -575,13 +583,16 @@ async def run_pipeline(
         narration_text = (
             po.narration.strip()
             if po and po.narration and po.narration.strip()
-            else ""
+            else _build_fallback_narration(user_text)
         )
-        if not narration_text:
-            raise RuntimeError(
-                "Claude did not provide structured_output.narration. "
-                "TTS requires narration from the primary structured output."
+        if po is not None and (not po.narration or not po.narration.strip()):
+            po.narration = narration_text
+            warning = (
+                "Claude omitted structured_output.narration. "
+                "Using fallback narration derived from the user request."
             )
+            dispatcher._print(f"  [WARN] {warning}")
+            logger.warning("run_pipeline: %s fallback=%r", warning, narration_text)
         if _narration_is_too_short_for_video(
             narration_text,
             po.duration_seconds if po is not None else None,

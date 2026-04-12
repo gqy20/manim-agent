@@ -695,8 +695,8 @@ class _MessageDispatcher:
         """打印工具调用信息 + 发射 TOOL_START 结构化事件。"""
         icon = _EMOJI.get(block.name.lower(), "\u25b6")
         input_summary = self._summarize_input(block.input)
-        self._print(f"  {icon} {block.name} \u2192 {input_summary}")
         logger.debug("_log_tool_use: id=%s, name=%s", block.id, block.name)
+        logger.debug("_log_tool_use: summary=%s", input_summary)
         if block.name == "Bash" and isinstance(block.input, dict):
             command = str(block.input.get("command", "")).strip()
             if command:
@@ -781,7 +781,7 @@ class _MessageDispatcher:
         preview = block.thinking[:80].replace("\n", " ")
         if len(block.thinking) > 80:
             preview += "..."
-        self._print(f"  {_EMOJI['think']} {preview}")
+        logger.debug("_log_thinking: preview=%s", preview)
         # 发射结构化事件
         self._emit_event(
             PipelineEvent(

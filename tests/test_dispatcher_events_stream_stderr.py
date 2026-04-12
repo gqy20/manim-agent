@@ -94,11 +94,52 @@ class TestDispatcherStructuredEvents:
         dispatcher.event_callback = events.append
 
         dispatcher.dispatch(
-            _make_assistant_message(ToolUseBlock(id="tu_003", name="Read", input={"file_path": "scene.py"}))
+            TaskProgressMessage(
+                subtype="task_progress",
+                task_id="task-1",
+                description="rendering",
+                usage=TaskUsage(total_tokens=5000, tool_uses=3, duration_ms=10000),
+                uuid="u1",
+                session_id="s1",
+                data={},
+            )
         )
 
         assert logs
+        assert any(item.event_type == EventType.PROGRESS for item in events)
+
+    def test_tool_use_does_not_duplicate_into_plain_logs(self):
+        logs = []
+        events = []
+        dispatcher = _MessageDispatcher(verbose=False, log_callback=logs.append)
+        dispatcher.event_callback = events.append
+
+        dispatcher.dispatch(
+            _make_assistant_message(
+                ToolUseBlock(id="tu_003", name="Read", input={"file_path": "scene.py"})
+            )
+        )
+
+        assert not logs
         assert any(item.event_type == EventType.TOOL_START for item in events)
+
+    def test_thinking_does_not_duplicate_into_plain_logs(self):
+        logs = []
+        events = []
+        dispatcher = _MessageDispatcher(verbose=False, log_callback=logs.append)
+        dispatcher.event_callback = events.append
+
+        dispatcher.dispatch(
+            _make_assistant_message(
+                ThinkingBlock(
+                    thinking="I should animate the transform first.",
+                    signature="sig-1",
+                )
+            )
+        )
+
+        assert not logs
+        assert any(item.event_type == EventType.THINKING for item in events)
 
 
 class TestDispatcherStreamEventHandling:
