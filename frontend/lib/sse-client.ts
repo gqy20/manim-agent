@@ -3,6 +3,7 @@ import { isStatusPayload } from "@/types";
 import { logger } from "@/lib/logger";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+const DEV_BACKEND_ORIGIN = "http://127.0.0.1:8471";
 
 const ALL_EVENT_TYPES: SSEEventType[] = [
   "log",
@@ -56,6 +57,24 @@ function parseIncomingEvent(raw: string): SSEEvent | null {
   return null;
 }
 
+function resolveSSEBaseUrl(): string {
+  if (API_BASE) {
+    return API_BASE;
+  }
+
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const { hostname, port, protocol } = window.location;
+  const isLocalHost = hostname === "localhost" || hostname === "127.0.0.1";
+  if (protocol.startsWith("http") && isLocalHost && port && port !== "8471") {
+    return DEV_BACKEND_ORIGIN;
+  }
+
+  return "";
+}
+
 export function connectTaskEvents(
   taskId: string,
   onEvent: (event: SSEEvent) => void,
@@ -65,7 +84,7 @@ export function connectTaskEvents(
 ): () => void {
   const cfg = { ...DEFAULT_RECONNECT, ...options };
   const state: ReconnectState = { attempt: 0, timerId: null, aborted: false };
-  const eventsUrl = `${API_BASE}/api/tasks/${taskId}/events`;
+  const eventsUrl = `${resolveSSEBaseUrl()}/api/tasks/${taskId}/events`;
   console.debug(`[SSE] connectTaskEvents called taskId=${taskId} url=${eventsUrl}`);
 
   let es: EventSource | null = null;

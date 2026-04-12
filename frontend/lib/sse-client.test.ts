@@ -107,7 +107,7 @@ describe("connectTaskEvents", () => {
     const es = lastEventSource();
     expect(es).toBeDefined();
     expect(MockEventSource.openCount).toBe(1);
-    expect(es!.url).toBe("/api/tasks/task-1/events");
+    expect(es!.url).toMatch(/\/api\/tasks\/task-1\/events$/);
 
     es?.triggerEvent(
       "status",
