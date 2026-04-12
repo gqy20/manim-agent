@@ -172,6 +172,14 @@ class PipelineOutput(BaseModel):
         default_factory=list,
         description="Sampled frame image paths inspected during render review.",
     )
+    review_frame_analyses: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Per-frame visual analysis details from render review.",
+    )
+    review_vision_analysis_used: bool | None = Field(
+        default=None,
+        description="Whether AI vision analysis was used during render review.",
+    )
 
     @field_validator("video_output")
     @classmethod
@@ -359,6 +367,15 @@ class PipelineOutput(BaseModel):
                             "type": "array",
                             "description": "Sampled frame image paths inspected during render review.",
                             "items": {"type": "string"},
+                        },
+                        "review_frame_analyses": {
+                            "type": "array",
+                            "description": "Per-frame visual analysis details from render review.",
+                            "items": {"type": "object"},
+                        },
+                        "review_vision_analysis_used": {
+                            "type": "boolean",
+                            "description": "Whether AI vision analysis was used during render review.",
                         },
                     },
                     "required": [

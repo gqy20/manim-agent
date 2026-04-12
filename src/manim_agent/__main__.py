@@ -683,6 +683,37 @@ def _has_narration_sync_summary(po: PipelineOutput | None) -> bool:
     return po.estimated_narration_duration_seconds is not None
 
 
+def _build_frame_labels(
+    implemented_beats: list[str] | None,
+    count: int,
+) -> list[str]:
+    """Generate beat-aligned labels for extracted review frames.
+
+    Returns labels like ``["opening", "beat_1__Intro", ..., "ending"]``.
+    """
+    if count <= 0 or not implemented_beats:
+        return [f"frame_{i + 1}" for i in range(count)]
+
+    labels: list[str] = ["opening"]
+    n_beats = len(implemented_beats)
+
+    if count > 2:
+        middle_slots = count - 2
+        for i in range(middle_slots):
+            beat_idx = min(i, n_beats - 1)
+            beat_name = implemented_beats[beat_idx].replace(" ", "_")
+            labels.append(f"beat_{beat_idx + 1}__{beat_name}")
+
+    if count >= 2:
+        last_beat = implemented_beats[-1].replace(" ", "_")
+        labels.append(f"ending__{last_beat}")
+
+    # Pad / trim to exact count
+    while len(labels) < count:
+        labels.append(f"frame_{len(labels) + 1}")
+    return labels[:count]
+
+
 async def _run_render_review(
     *,
     user_text: str,
@@ -695,21 +726,32 @@ async def _run_render_review(
     system_prompt: str,
     quality: str,
     log_callback: Callable[[str], None] | None,
+    implemented_beats: list[str] | None = None,
 ) -> RenderReviewOutput:
     """Ask Claude to review sampled render frames and return a structured verdict."""
-    frame_bullets = "\n".join(f"- {path}" for path in frame_paths)
+    beat_labels = _build_frame_labels(implemented_beats, len(frame_paths))
+    labeled_frames = "\n".join(
+        f"- Frame {i + 1} [{label}]: {path}"
+        for i, (path, label) in enumerate(zip(frame_paths, beat_labels))
+    )
     measured_duration = (
         f"{actual_duration_seconds:.2f}s"
         if actual_duration_seconds is not None and actual_duration_seconds > 0
         else "unknown"
     )
     review_prompt = (
-        "Use the `render-review` skill to inspect sampled frames from a rendered Manim video.\n"
-        "Do not write, edit, or render anything in this pass. Only review the output.\n"
-        "Inspect the frame image files with Read if needed.\n"
-        "Mark `approved` as false if there are blocking visual issues.\n"
-        "Blocking issues include: empty or title-only opening, overcrowded frame, unclear focal point, "
-        "key conclusion not shown through visible change, or weak ending payoff.\n\n"
+        "Use the `render-review` skill to review this rendered Manim video.\n"
+        "Do not write, edit, or render anything in this pass. Only review the output.\n\n"
+
+        "## MANDATORY: Visual Analysis of Each Frame\n"
+        "You MUST use the Read tool to examine EVERY frame image file listed below.\n"
+        "For each frame, provide a visual assessment covering:\n"
+        "- What is visibly on screen (objects, text, formulas, labels, arrows)\n"
+        "- Visual density (sparse / balanced / crowded)\n"
+        "- Whether the focal point is clear and unambiguous\n"
+        "- Label and formula readability (clear / partially obscured / illegible)\n"
+        "- Any visual issues (overlap, cutoff, too small, wrong position, etc.)\n\n"
+
         f"Original user request:\n{user_text}\n\n"
         "Duration target:\n"
         f"- requested runtime: about {_format_target_duration(target_duration_seconds)}\n"
@@ -717,14 +759,14 @@ async def _run_render_review(
         "Visible plan / build context:\n"
         f"{plan_text or '(no plan text available)'}\n\n"
         f"Rendered video path:\n- {video_output}\n\n"
-        "Sampled review frames:\n"
-        f"{frame_bullets}\n"
+        "Sampled review frames (MUST read each one):\n"
+        f"{labeled_frames}\n"
     )
 
     review_options = _build_options(
         cwd=cwd,
         system_prompt=system_prompt,
-        max_turns=12,
+        max_turns=16,
         quality=quality,
         log_callback=log_callback,
         output_format=RenderReviewOutput.output_format_schema(),
@@ -1105,6 +1147,7 @@ async def run_pipeline(
         review_frames = await render_review.extract_review_frames(
             video_output,
             resolved_cwd,
+            implemented_beats=po.implemented_beats if po else None,
         )
         review_result: RenderReviewOutput | None = None
         review_warning: str | None = None
@@ -1120,6 +1163,7 @@ async def run_pipeline(
                 system_prompt=system_prompt,
                 quality=quality,
                 log_callback=log_callback,
+                implemented_beats=po.implemented_beats if po else None,
             )
         except RuntimeError as exc:
             if "structured verdict" not in str(exc):
@@ -1145,11 +1189,19 @@ async def run_pipeline(
                 po.review_blocking_issues = list(review_result.blocking_issues)
                 po.review_suggested_edits = list(review_result.suggested_edits)
                 po.review_frame_paths = list(review_frames)
+                po.review_frame_analyses = [
+                    fa.model_dump() for fa in (review_result.frame_analyses or [])
+                ]
+                po.review_vision_analysis_used = review_result.vision_analysis_used
             dispatcher.partial_review_summary = review_result.summary
             dispatcher.partial_review_approved = review_result.approved
             dispatcher.partial_review_blocking_issues = list(review_result.blocking_issues)
             dispatcher.partial_review_suggested_edits = list(review_result.suggested_edits)
             dispatcher.partial_review_frame_paths = list(review_frames)
+            dispatcher.partial_review_frame_analyses = [
+                fa.model_dump() for fa in (review_result.frame_analyses or [])
+            ]
+            dispatcher.partial_review_vision_analysis_used = review_result.vision_analysis_used
             if not review_result.approved:
                 raise RuntimeError(
                     "Rendered video failed the render-review gate. "

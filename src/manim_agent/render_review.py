@@ -31,14 +31,73 @@ def _build_review_timestamps(duration_seconds: float) -> list[float]:
     return unique
 
 
-async def extract_review_frames(video_path: str, output_dir: str) -> list[str]:
-    """Extract a few PNG frames for visual review."""
+def build_beat_aligned_timestamps(
+    duration_seconds: float,
+    implemented_beats: list[str] | None = None,
+    max_frames: int = 6,
+) -> list[float]:
+    """Compute frame extraction timestamps aligned to beat boundaries.
+
+    When *implemented_beats* is provided, extracts one frame per beat midpoint
+    plus opening and ending frames.  Falls back to ``_build_review_timestamps``
+    when no beat data is available.
+    """
+    if not implemented_beats or duration_seconds <= 0:
+        return _build_review_timestamps(duration_seconds)
+
+    n_beats = len(implemented_beats)
+    target = min(n_beats + 2, max_frames)
+    candidates: list[float] = []
+
+    # Opening frame
+    candidates.append(min(0.5, duration_seconds * 0.05))
+
+    # Distribute middle frames across beats
+    usable_start = 1.0
+    usable_end = max(duration_seconds - 1.0, usable_start + 1.0)
+    usable_span = usable_end - usable_start
+
+    if n_beats > 0 and target > 2:
+        middle_count = target - 2
+        for i in range(middle_count):
+            # Map i onto beat indices (round-robin if more slots than beats)
+            beat_frac = (i + 0.5) / middle_count
+            ts = usable_start + beat_frac * usable_span
+            candidates.append(ts)
+
+    # Ending frame
+    candidates.append(max(duration_seconds - 0.75, 0.0))
+
+    # Deduplicate & clamp
+    unique: list[float] = []
+    for ts in sorted(candidates):
+        rounded = round(max(ts, 0.0), 2)
+        if rounded not in unique and rounded <= duration_seconds:
+            unique.append(rounded)
+    return unique
+
+
+async def extract_review_frames(
+    video_path: str,
+    output_dir: str,
+    implemented_beats: list[str] | None = None,
+) -> list[str]:
+    """Extract a few PNG frames for visual review.
+
+    When *implemented_beats* is provided, timestamps are aligned to beat
+    boundaries for more representative sampling.
+    """
     video = Path(video_path)
     review_dir = Path(output_dir) / "review_frames"
     review_dir.mkdir(parents=True, exist_ok=True)
 
     duration_seconds = await _get_duration(str(video))
-    timestamps = _build_review_timestamps(duration_seconds)
+    if implemented_beats:
+        timestamps = build_beat_aligned_timestamps(
+            duration_seconds, implemented_beats
+        )
+    else:
+        timestamps = _build_review_timestamps(duration_seconds)
     frame_paths: list[str] = []
 
     for index, timestamp in enumerate(timestamps, start=1):

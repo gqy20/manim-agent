@@ -91,6 +91,8 @@ class PipelineOutputData(BaseModel):
     review_blocking_issues: list[str] = Field(default_factory=list)
     review_suggested_edits: list[str] = Field(default_factory=list)
     review_frame_paths: list[str] = Field(default_factory=list)
+    review_frame_analyses: list[dict] = Field(default_factory=list)
+    review_vision_analysis_used: bool | None = None
 
 
 class TaskResponse(BaseModel):
