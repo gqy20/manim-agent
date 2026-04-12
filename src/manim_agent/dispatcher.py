@@ -75,6 +75,8 @@ class _MessageDispatcher:
         self.tool_use_count = 0
         self.tool_stats: dict[str, int] = {}
         self.collected_text: list[str] = []
+        self.implementation_started: bool = False
+        self.implementation_start_reason: str | None = None
         # ── 消息统计（调试用）──
         self._msg_count: int = 0
         self._msg_type_stats: dict[str, int] = {}
@@ -846,6 +848,7 @@ class _MessageDispatcher:
             command = str(block.input.get("command", "")).strip()
             if command:
                 self._bash_commands.append(command)
+        self._mark_implementation_start(block)
         # 发射结构化事件
         self._emit_event(
             PipelineEvent(
@@ -857,6 +860,29 @@ class _MessageDispatcher:
                 ),
             )
         )
+
+    def _mark_implementation_start(self, block: ToolUseBlock) -> None:
+        """Capture the first tool call that clearly begins code or render work."""
+        if self.implementation_started:
+            return
+
+        name = block.name
+        input_dict = block.input if isinstance(block.input, dict) else {}
+
+        if name in ("Write", "Edit"):
+            file_path = str(input_dict.get("file_path", "")).replace("\\", "/").lower()
+            if file_path.endswith(".py") or file_path.endswith("/scene.py"):
+                self.implementation_started = True
+                self.implementation_start_reason = f"{name} {file_path or 'python file'}"
+                return
+
+        if name == "Bash":
+            command = str(input_dict.get("command", "")).replace("\\", "/").lower()
+            implementation_markers = ("scene.py", "cat >", "tee ", "python -c", "manim ")
+            if any(marker in command for marker in implementation_markers):
+                self.implementation_started = True
+                preview = " ".join(command.split())[:120]
+                self.implementation_start_reason = f"Bash {preview}"
 
     def _log_tool_result(self, block: ToolResultBlock) -> None:
         """打印工具执行结果 + 发射 TOOL_RESULT 结构化事件。"""

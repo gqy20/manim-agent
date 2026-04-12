@@ -728,6 +728,41 @@ async def run_pipeline(
     try:
         async for message in query(prompt=user_prompt, options=options):
             dispatcher.dispatch(message)
+            if dispatcher.implementation_started:
+                if not _has_visible_scene_plan(dispatcher.collected_text):
+                    dispatcher._print("")
+                    dispatcher._print(
+                        f"{_EMOJI['cross']} Blocking implementation before visible scene plan."
+                    )
+                    if dispatcher.implementation_start_reason:
+                        dispatcher._print(
+                            "  First implementation step: "
+                            f"{dispatcher.implementation_start_reason}"
+                        )
+                    dispatcher._print(
+                        "  Emit the required planning scaffold before writing scene.py, "
+                        "editing Python files, or running Manim."
+                    )
+                    raise RuntimeError(
+                        "Claude began implementation before emitting the required visible scene-plan pass."
+                    )
+                if not _has_scene_plan_skill_signature(dispatcher.collected_text):
+                    dispatcher._print("")
+                    dispatcher._print(
+                        f"{_EMOJI['cross']} Blocking implementation before scene-plan skill signature."
+                    )
+                    if dispatcher.implementation_start_reason:
+                        dispatcher._print(
+                            "  First implementation step: "
+                            f"{dispatcher.implementation_start_reason}"
+                        )
+                    dispatcher._print(
+                        "  Expected line in the visible plan: "
+                        f"Skill Signature: {_PLAN_SKILL_SIGNATURE}"
+                    )
+                    raise RuntimeError(
+                        "Claude began implementation before emitting the scene-plan skill signature."
+                    )
 
         _report_stream_statistics(dispatcher, _cli_stderr_lines)
 
