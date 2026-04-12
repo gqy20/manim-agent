@@ -27,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # FFmpeg (video muxing)
     ffmpeg \
     # Node.js runtime for Next.js standalone server
-    curl git wget nodejs \
+    curl git wget nodejs gosu \
     # TeX/LaTeX for Manim MathTex (~500MB vs texlive-full ~6GB)
     texlive-latex-extra \
     texlive-latex-recommended \
@@ -65,8 +65,6 @@ RUN mkdir -p /app/backend/output /app/backend/logs && \
 # ── Start script: run both Next.js and FastAPI ─────────────────
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
-
-USER appuser
 
 EXPOSE 8000
 

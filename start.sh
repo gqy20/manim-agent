@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+if [ "$(id -u)" = "0" ]; then
+  mkdir -p /app/backend/output /app/backend/logs /home/appuser
+  chown -R appuser:appuser /app/backend/output /app/backend/logs /home/appuser
+  export HOME=/home/appuser
+  exec gosu appuser "$0" "$@"
+fi
+
 echo "=== Manim Agent Starting ==="
 APP_PORT="${PORT:-8000}"
 NEXT_PORT_VALUE="${NEXT_PORT:-3000}"
