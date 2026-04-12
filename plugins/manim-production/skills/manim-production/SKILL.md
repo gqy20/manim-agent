@@ -11,7 +11,9 @@ Follow this workflow when working on a Manim task.
 
 - Use `/scene-plan` first for most educational, proof, concept, function, or geometry tasks.
 - Use `/scene-build` after a plan exists and implementation should follow that plan.
-- Use this `manim-production` skill as the umbrella quality guide across both steps.
+- Use `/scene-direction` to enforce stronger opening beats, visual focus, motion-led explanation, and ending payoff.
+- Use `/narration-sync` to keep spoken narration aligned to the current beat and visual timing.
+- Use this `manim-production` skill as the umbrella quality guide across all steps.
 - Skip `/scene-plan` only for genuinely tiny one-beat demos.
 
 ## Classify the task
@@ -32,12 +34,21 @@ Choose one primary mode before writing code:
 - For implementation style, read `references/code-style.md`.
 - For common failure cases, read `references/anti-patterns.md`.
 
+## Skill responsibilities
+
+- `/scene-plan`: beat structure, learning sequence, narration outline, and build handoff
+- `/scene-build`: plan-to-code execution, render/debug loop, and implementation refinement
+- `/scene-direction`: opening hook, per-beat visual focus, motion-first explanation, and ending payoff
+- `/narration-sync`: spoken pacing, beat-by-beat narration alignment, and narration density control
+
 ## Plan before coding
 
 - Keep one main learning objective per scene.
 - Prefer one scene file and one main `Scene` class unless the task truly needs more.
 - Decide the visual sequence first: setup, reveal, transform, takeaway.
 - Keep each beat focused on one new idea.
+- Ensure the opening beat introduces both the topic and a visible object, not a title card alone.
+- Ensure every important conclusion is shown through a visible change, not just stated as text.
 
 ## Check before rendering
 
@@ -46,6 +57,8 @@ Choose one primary mode before writing code:
 - Confirm narration describes what the viewer is seeing now, not future steps.
 - Confirm colors, labels, and emphasis are consistent.
 - Confirm there is a clear ending state or takeaway frame.
+- Confirm each beat has one primary focal object or formula.
+- Confirm the ending frame clearly resolves the question introduced at the start.
 
 ## If the first render fails
 

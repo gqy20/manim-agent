@@ -15,7 +15,7 @@
   "interface": {
     "displayName": "Manim Production",
     "shortDescription": "Planning, build workflow, and quality rules for Manim animation generation.",
-    "longDescription": "Provides Manim-focused skills for scene planning, scene building, narration alignment, math visualization, and anti-pattern guidance for educational animation tasks.",
+    "longDescription": "Provides Manim-focused skills for scene planning, scene building, scene direction, narration alignment, math visualization, and anti-pattern guidance for educational animation tasks.",
     "developerName": "manim-agent",
     "category": "Developer Tools",
     "capabilities": ["Write", "Quality Control"],

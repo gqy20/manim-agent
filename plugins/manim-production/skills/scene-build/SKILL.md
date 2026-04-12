@@ -1,6 +1,9 @@
 ---
 name: scene-build
 description: Build a Manim scene from an existing scene plan. Use when a beat-by-beat plan already exists and the next step is to implement, render, and refine the animation code. Trigger for requests like "build from this plan", "implement this storyboard", "turn this scene plan into Manim", or after running /scene-plan.
+version: 1.0.0
+argument-hint: " [build-handoff]"
+allowed-tools: [Read, Write, Edit, Bash, Glob, Grep]
 ---
 
 # Scene Build

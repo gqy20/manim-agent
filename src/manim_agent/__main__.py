@@ -68,7 +68,10 @@ logger = logging.getLogger(__name__)
 
 def _resolve_repo_root(cwd: str | None = None) -> Path:
     """Best-effort repo root discovery for both editable and installed package layouts."""
-    marker_parts = ("plugins", "manim-production", ".codex-plugin", "plugin.json")
+    marker_options = (
+        ("plugins", "manim-production", ".claude-plugin", "plugin.json"),
+        ("plugins", "manim-production", ".codex-plugin", "plugin.json"),
+    )
     candidates: list[Path] = []
 
     env_root = os.environ.get("MANIM_AGENT_REPO_ROOT")
@@ -83,8 +86,9 @@ def _resolve_repo_root(cwd: str | None = None) -> Path:
     candidates.extend(module_path.parents)
 
     for candidate in candidates:
-        if (candidate / Path(*marker_parts)).exists():
-            return candidate
+        for marker_parts in marker_options:
+            if (candidate / Path(*marker_parts)).exists():
+                return candidate
 
     return module_path.parents[2]
 
@@ -115,11 +119,15 @@ def _get_local_plugins(cwd: str | None = None) -> list[dict[str, str]]:
     """Return repo-local Claude plugins that should be injected into every task."""
     repo_root = _resolve_repo_root(cwd)
     plugin_dir = repo_root / "plugins" / "manim-production"
-    manifest_path = plugin_dir / ".codex-plugin" / "plugin.json"
-    if manifest_path.exists():
-        return [{"type": "local", "path": str(plugin_dir)}]
+    manifest_paths = [
+        plugin_dir / ".claude-plugin" / "plugin.json",
+        plugin_dir / ".codex-plugin" / "plugin.json",
+    ]
+    for manifest_path in manifest_paths:
+        if manifest_path.exists():
+            return [{"type": "local", "path": str(plugin_dir)}]
 
-    logger.warning("Local plugin manifest not found: %s", manifest_path)
+    logger.warning("Local plugin manifest not found: %s", manifest_paths)
     return []
 
 
@@ -399,10 +407,16 @@ def _build_user_prompt(user_text: str) -> str:
     normalized = user_text.strip()
     guidance = (
         "\n\nExecution requirements:\n"
-        "- If the `manim-production` plugin is available, use it as the primary guide for scene planning, narration, math visualization, and final self-review.\n"
-        "- For most non-trivial educational animations, use `/scene-plan` first to produce a beat-by-beat scene plan before coding.\n"
-        "- After a plan exists, use `/scene-build` to implement the animation while keeping the planned beat order unless debugging requires a small change.\n"
+        "- The `manim-production` plugin is mandatory for every task in this runtime.\n"
+        "- Treat `manim-production` as already available when the task begins.\n"
+        "- Do not check plugin availability with `python -c`, `import`, `pip`, shell probes, or path inspection.\n"
+        "- Do not switch to a non-plugin workflow because a manual plugin check failed.\n"
+        "- Start every task with `/scene-plan` before coding the scene.\n"
+        "- After the plan exists, use `/scene-build` to implement the animation while keeping the planned beat order unless debugging requires a very small fix.\n"
+        "- Use `/scene-direction` to enforce a strong opening, one focal idea per beat, motion-led explanation, and a clear ending payoff.\n"
+        "- Use `/narration-sync` to keep the spoken explanation aligned to the current beat and visual timing.\n"
         "- Use the `manim-production` skill as the umbrella quality guide across planning, implementation, rendering, and final review.\n"
+        "- If plugin behavior appears inconsistent, keep following the plugin workflow and report the issue later instead of bypassing it.\n"
         "- Keep every file inside the task directory only.\n"
         "- Write the main script to scene.py unless multiple files are truly necessary.\n"
         "- Use GeneratedScene as the main Manim Scene class unless the user explicitly asks otherwise.\n"

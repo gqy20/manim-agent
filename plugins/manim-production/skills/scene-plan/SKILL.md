@@ -1,6 +1,9 @@
 ---
 name: scene-plan
 description: Create a scene plan before writing Manim code. Use when the task needs beat-by-beat planning, scene segmentation, narration outline, pacing decisions, or visual teaching structure before implementation. Trigger for requests like "plan the animation", "split this into scenes", "design the storyboard", "how should this Manim lesson be structured", or before building a teaching animation that needs stronger structure.
+version: 1.0.0
+argument-hint: " [topic-or-goal]"
+allowed-tools: [Read, Glob, Grep]
 ---
 
 # Scene Plan
