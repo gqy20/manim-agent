@@ -1,6 +1,6 @@
 import pytest
 
-from manim_agent.hooks import _on_pre_tool_use
+from manim_agent.hooks import _on_pre_tool_use, REPO_ROOT
 
 
 async def _call_pre_tool_use(tool_name: str, tool_input: dict, cwd: str):
@@ -54,3 +54,32 @@ class TestHookTaskScope:
         )
 
         assert result["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+    @pytest.mark.asyncio
+    async def test_plugin_reference_read_is_allowed(self):
+        plugin_ref = str(
+            (REPO_ROOT / "plugins" / "manim-production" / "skills" / "manim-production" / "references" / "scene-patterns.md")
+            .resolve()
+        )
+        result = await _call_pre_tool_use(
+            "Read",
+            {"file_path": plugin_ref},
+            r"D:\repo\backend\output\task-1",
+        )
+
+        assert result["hookSpecificOutput"]["permissionDecision"] == "allow"
+
+    @pytest.mark.asyncio
+    async def test_plugin_reference_write_is_still_denied(self):
+        plugin_ref = str(
+            (REPO_ROOT / "plugins" / "manim-production" / "skills" / "manim-production" / "references" / "scene-patterns.md")
+            .resolve()
+        )
+        result = await _call_pre_tool_use(
+            "Write",
+            {"file_path": plugin_ref, "content": "mutate"},
+            r"D:\repo\backend\output\task-1",
+        )
+
+        assert result["decision"] == "block"
+        assert "Only files inside the task directory are allowed." in result["reason"]

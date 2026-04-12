@@ -16,6 +16,10 @@ from claude_agent_sdk.types import (
 )
 
 logger = logging.getLogger(__name__)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PLUGIN_READONLY_DIRS = (
+    REPO_ROOT / "plugins",
+)
 
 
 def normalize_path_string(path_str: str) -> str:
@@ -48,6 +52,25 @@ def _is_within_directory(path_str: str, cwd: str) -> bool:
         return False
 
 
+def _is_within_any_directory(path_str: str, roots: tuple[Path, ...]) -> bool:
+    normalized_path = normalize_path_string(path_str)
+    if not normalized_path:
+        return False
+
+    try:
+        resolved_path = Path(normalized_path).resolve()
+    except OSError:
+        return False
+
+    for root in roots:
+        try:
+            resolved_path.relative_to(root.resolve())
+            return True
+        except ValueError:
+            continue
+    return False
+
+
 def _bash_contains_out_of_scope_path(command: str, cwd: str) -> str | None:
     patterns = [
         r"([A-Za-z]:[\\/][^\s`\"']+)",
@@ -75,6 +98,16 @@ def _write_scope_denial(file_path: str) -> str:
         "Only files inside the task directory are allowed. "
         f"Rejected path: {normalized}. "
         f"Retry with a relative path inside the task directory, for example `{suggested_name}`."
+    )
+
+
+def _read_scope_denial(file_path: str) -> str:
+    normalized = normalize_path_string(file_path)
+    basename = Path(normalized).name or "reference.md"
+    return (
+        "Read access is limited to the task directory and approved local plugin references. "
+        f"Rejected path: {normalized}. "
+        f"Retry with a path inside the task directory or an approved plugin reference such as `{basename}`."
     )
 
 
@@ -155,7 +188,15 @@ async def _on_pre_tool_use(
     cwd = input_data.get("cwd", "")
 
     deny_reason: str | None = None
-    if tool_name in ("Read", "Write", "Edit") and isinstance(tool_input, dict):
+    if tool_name == "Read" and isinstance(tool_input, dict):
+        file_path = tool_input.get("file_path", "")
+        if (
+            file_path
+            and not _is_within_directory(file_path, cwd)
+            and not _is_within_any_directory(file_path, PLUGIN_READONLY_DIRS)
+        ):
+            deny_reason = _read_scope_denial(file_path)
+    elif tool_name in ("Write", "Edit") and isinstance(tool_input, dict):
         file_path = tool_input.get("file_path", "")
         if file_path and not _is_within_directory(file_path, cwd):
             deny_reason = _write_scope_denial(file_path)
