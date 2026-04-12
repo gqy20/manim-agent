@@ -25,8 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcairo2-dev libpango1.0-dev \
     # FFmpeg (video muxing)
     ffmpeg \
-    # Node.js (for Next.js standalone)
-    curl git wget nodejs npm \
+    # Node.js runtime for Next.js standalone server
+    curl git wget nodejs \
     # TeX/LaTeX for Manim MathTex (~500MB vs texlive-full ~6GB)
     texlive-latex-extra \
     texlive-latex-recommended \
