@@ -64,35 +64,13 @@ from .hooks import (
 )
 
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
+from . import prompt_builder, runtime_options, pipeline_gates
 
 logger = logging.getLogger(__name__)
 
 
 def _resolve_repo_root(cwd: str | None = None) -> Path:
-    """Best-effort repo root discovery for both editable and installed package layouts."""
-    marker_options = (
-        ("plugins", "manim-production", ".claude-plugin", "plugin.json"),
-        ("plugins", "manim-production", ".codex-plugin", "plugin.json"),
-    )
-    candidates: list[Path] = []
-
-    env_root = os.environ.get("MANIM_AGENT_REPO_ROOT")
-    if env_root:
-        candidates.append(Path(env_root).resolve())
-
-    if cwd:
-        resolved_cwd = Path(cwd).resolve()
-        candidates.extend([resolved_cwd, *resolved_cwd.parents])
-
-    module_path = Path(__file__).resolve()
-    candidates.extend(module_path.parents)
-
-    for candidate in candidates:
-        for marker_parts in marker_options:
-            if (candidate / Path(*marker_parts)).exists():
-                return candidate
-
-    return module_path.parents[2]
+    return runtime_options.resolve_repo_root(cwd)
 
 
 def _emit_status(
@@ -118,37 +96,11 @@ def _emit_status(
 
 
 def _get_local_plugins(cwd: str | None = None) -> list[dict[str, str]]:
-    """Return repo-local Claude plugins that should be injected into every task."""
-    repo_root = _resolve_repo_root(cwd)
-    plugin_dir = repo_root / "plugins" / "manim-production"
-    manifest_paths = [
-        plugin_dir / ".claude-plugin" / "plugin.json",
-        plugin_dir / ".codex-plugin" / "plugin.json",
-    ]
-    for manifest_path in manifest_paths:
-        if manifest_path.exists():
-            return [{"type": "local", "path": str(plugin_dir)}]
-
-    logger.warning("Local plugin manifest not found: %s", manifest_paths)
-    return []
+    return runtime_options.get_local_plugins(cwd)
 
 
 def _select_permission_mode() -> str:
-    """Choose a Claude Code permission mode that works in the current runtime.
-
-    Railway containers run as root, where Claude Code rejects bypass mode.
-    Fall back to a non-root-safe mode there while preserving the more hands-off
-    local developer experience elsewhere.
-    """
-    geteuid = getattr(os, "geteuid", None)
-    try:
-        is_root = callable(geteuid) and geteuid() == 0
-    except OSError:
-        is_root = False
-
-    if is_root:
-        return "auto"
-    return "bypassPermissions"
+    return runtime_options.select_permission_mode()
 
 
 # ── CLI 参数解析 ──────────────────────────────────────────────
@@ -258,6 +210,7 @@ def _build_options(
     quality: str = "high",
     log_callback: Callable[[str], None] | None = None,
     output_format: dict[str, Any] | None = None,
+    use_default_output_format: bool = True,
     allowed_tools: list[str] | None = None,
 ) -> ClaudeAgentOptions:
     """构建 ClaudeAgentOptions，含会话隔离和日志回调。
@@ -341,7 +294,11 @@ def _build_options(
         # ── 日志回调 ──
         stderr=bound_stderr,
         # ── 结构化输出 schema ──
-        output_format=output_format or PipelineOutput.output_format_schema(),
+        output_format=(
+            output_format
+            if output_format is not None
+            else (PipelineOutput.output_format_schema() if use_default_output_format else None)
+        ),
         # ── 工具白名单：收敛攻击面，仅允许 pipeline 必需的工具（参照 Distill）──
         allowed_tools=resolved_allowed_tools,
         # Claude Code's full startup path is brittle in Railway containers.
@@ -456,6 +413,56 @@ def _build_user_prompt(user_text: str, target_duration_seconds: int) -> str:
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
 
+def _build_scene_plan_prompt(user_text: str, target_duration_seconds: int) -> str:
+    """Build a planning-only prompt that must stop after the visible plan."""
+    normalized = user_text.strip()
+    target_duration = _format_target_duration(target_duration_seconds)
+    guidance = (
+        "\n\nPlanning pass only:\n"
+        f"- Target final video duration: about {target_duration}.\n"
+        "- Use the `scene-plan` skill and stop after producing the visible plan.\n"
+        "- Do not write, edit, or render any code in this pass.\n"
+        "- Use only lightweight reference reads if needed.\n"
+        "- Return a Markdown plan with these exact section headings: `Mode`, `Learning Goal`, `Audience`, `Beat List`, `Narration Outline`, `Visual Risks`, and `Build Handoff`.\n"
+        f"- Include the exact line `Skill Signature: {_PLAN_SKILL_SIGNATURE}` inside `Build Handoff`.\n"
+        "- Keep the plan compact and implementation-ready.\n"
+    )
+    return f"{normalized}{guidance}" if normalized else guidance.strip()
+
+
+def _build_implementation_prompt(
+    user_text: str,
+    target_duration_seconds: int,
+    plan_text: str,
+) -> str:
+    """Build the implementation prompt after a planning pass has been accepted."""
+    normalized = user_text.strip()
+    target_duration = _format_target_duration(target_duration_seconds)
+    guidance = (
+        "\n\nImplementation pass:\n"
+        f"- Target final video duration: about {target_duration}.\n"
+        "- The visible scene plan below is approved. Implement from it instead of creating a new plan.\n"
+        "- Use the `scene-build`, `scene-direction`, `narration-sync`, and `render-review` skills during their respective phases.\n"
+        "- Preserve the planned beat order unless debugging requires a very small fix.\n"
+        "- Do not begin with a fresh planning pass; begin implementation from the approved plan.\n"
+        "- In structured_output, include `implemented_beats` as the ordered beat titles that were actually built.\n"
+        "- In structured_output, include `build_summary` as a short summary of what the build phase implemented.\n"
+        "- In structured_output, include `deviations_from_plan` as an array, even if it is empty.\n"
+        "- In structured_output, include `beat_to_narration_map` with one short narration mapping line per beat.\n"
+        "- In structured_output, include `narration_coverage_complete` and `estimated_narration_duration_seconds`.\n"
+        "- Keep every file inside the task directory only.\n"
+        "- Write the main script to scene.py unless multiple files are truly necessary.\n"
+        "- Use GeneratedScene as the main Manim Scene class unless the user explicitly asks otherwise.\n"
+        "- Run Manim directly from the task directory with `manim ... scene.py GeneratedScene`.\n"
+        "- Do not use absolute repository paths, do not cd to the repo root, and do not invoke `.venv/Scripts/python` directly.\n"
+        "- Return structured_output.narration as natural Simplified Chinese unless the user explicitly requests another language.\n"
+        "- Make the narration spoken and synchronized with the animation, and cover the full flow rather than collapsing into a one-sentence summary.\n"
+        "\nApproved visible scene plan:\n"
+        f"{plan_text}\n"
+    )
+    return f"{normalized}{guidance}" if normalized else guidance.strip()
+
+
 def _estimate_spoken_duration_seconds(text: str) -> float:
     """Roughly estimate spoken duration for mixed Chinese/Latin narration."""
     normalized = text.strip()
@@ -467,6 +474,42 @@ def _estimate_spoken_duration_seconds(text: str) -> float:
     punctuation = len(re.findall(r"[，。！？,.!?；;：:、]", normalized))
 
     return (cjk_chars / 3.8) + (latin_words / 2.5) + (punctuation * 0.12)
+
+
+def _merge_result_summaries(*summaries: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Combine phase summaries into one aggregate summary."""
+    usable = [summary for summary in summaries if summary]
+    if not usable:
+        return None
+
+    merged: dict[str, Any] = {
+        "turns": 0,
+        "cost_usd": 0.0,
+        "duration_ms": 0,
+        "is_error": False,
+        "stop_reason": None,
+        "errors": [],
+    }
+    saw_cost = False
+    for summary in usable:
+        turns = summary.get("turns")
+        if isinstance(turns, int):
+            merged["turns"] += turns
+        duration_ms = summary.get("duration_ms")
+        if isinstance(duration_ms, int):
+            merged["duration_ms"] += duration_ms
+        cost_usd = summary.get("cost_usd")
+        if isinstance(cost_usd, (int, float)):
+            merged["cost_usd"] += float(cost_usd)
+            saw_cost = True
+        merged["is_error"] = merged["is_error"] or bool(summary.get("is_error"))
+        merged["stop_reason"] = summary.get("stop_reason") or merged["stop_reason"]
+        errors = summary.get("errors") or []
+        if isinstance(errors, list):
+            merged["errors"].extend(errors)
+    if not saw_cost:
+        merged["cost_usd"] = None
+    return merged
 
 
 def _narration_is_too_short_for_video(narration: str, video_duration: float | None) -> bool:
@@ -670,7 +713,17 @@ async def run_pipeline(
     )
     system_prompt = full_system_prompt
 
-    options = _build_options(
+    planning_options = _build_options(
+        cwd=resolved_cwd,
+        system_prompt=system_prompt,
+        max_turns=min(max_turns, 16),
+        prompt_file=prompt_file,
+        quality=quality,
+        log_callback=log_callback,
+        use_default_output_format=False,
+        allowed_tools=["Read", "Glob", "Grep"],
+    )
+    build_options = _build_options(
         cwd=resolved_cwd,
         system_prompt=system_prompt,
         max_turns=max_turns,
@@ -678,7 +731,6 @@ async def run_pipeline(
         quality=quality,
         log_callback=log_callback,
     )
-    user_prompt = _build_user_prompt(user_text, target_duration_seconds)
 
     hook_state = create_hook_state(event_callback=event_callback)
     hook_state_token = activate_hook_state(hook_state)
@@ -693,21 +745,21 @@ async def run_pipeline(
 
     dispatcher._print(f"\n{_LOG_SEPARATOR}")
     dispatcher._print(
-        f"  Claude Agent Log                              Session: {options.session_id[:8]}..."
+        f"  Claude Agent Log                              Session: {build_options.session_id[:8]}..."
     )
     dispatcher._print(_LOG_SEPARATOR)
-    dispatcher._print(f"  {_EMOJI['gear']} Phase 1/4: start Claude Agent SDK")
+    dispatcher._print(f"  {_EMOJI['gear']} Phase 1/5: scene planning pass")
     dispatcher._print(
         f"  quality={quality} preset={preset} max_turns={max_turns} "
         f"target_duration={target_duration_seconds}s"
     )
-    if options.plugins:
+    if build_options.plugins:
         plugin_labels = ", ".join(
-            Path(plugin["path"]).name for plugin in options.plugins if plugin.get("path")
+            Path(plugin["path"]).name for plugin in build_options.plugins if plugin.get("path")
         )
         dispatcher._print(f"  [SYS] Plugins loaded: {plugin_labels}")
-    if options.allowed_tools:
-        dispatcher._print(f"  [SYS] Allowed tools: {', '.join(options.allowed_tools)}")
+    if planning_options.allowed_tools:
+        dispatcher._print(f"  [SYS] Allowed tools: {', '.join(planning_options.allowed_tools)}")
     _emit_status(
         event_callback,
         task_status="running",
@@ -723,10 +775,60 @@ async def run_pipeline(
         if _orig_log_callback:
             _orig_log_callback(line)
 
-    options.stderr = _counting_log_callback
+    planning_options.stderr = _counting_log_callback
+    build_options.stderr = _counting_log_callback
 
     try:
-        async for message in query(prompt=user_prompt, options=options):
+        planning_result_summary: dict[str, Any] | None = None
+        planning_prompt = _build_scene_plan_prompt(user_text, target_duration_seconds)
+        async for message in query(prompt=planning_prompt, options=planning_options):
+            dispatcher.dispatch(message)
+        planning_result_summary = dispatcher.result_summary
+
+        if not _has_visible_scene_plan(dispatcher.collected_text):
+            dispatcher._print("")
+            dispatcher._print(
+                f"{_EMOJI['cross']} Missing required scene plan before implementation."
+            )
+            dispatcher._print(
+                "  The assistant must emit a visible planning pass with Mode, Learning Goal,"
+            )
+            dispatcher._print(
+                "  Audience, Beat List, Narration Outline, Visual Risks, and Build Handoff"
+            )
+            raise RuntimeError(
+                "Claude skipped the required scene-plan pass. "
+                "A visible planning scaffold is mandatory before implementation."
+            )
+
+        if not _has_scene_plan_skill_signature(dispatcher.collected_text):
+            dispatcher._print("")
+            dispatcher._print(
+                f"{_EMOJI['cross']} Missing scene-plan skill signature in the visible plan."
+            )
+            dispatcher._print(
+                "  Expected line: "
+                f"Skill Signature: {_PLAN_SKILL_SIGNATURE}"
+            )
+            raise RuntimeError(
+                "Visible scene plan is missing the scene-plan skill signature. "
+                "The plugin may have been injected but not consumed by Claude."
+            )
+
+        plan_text = _extract_visible_scene_plan_text(dispatcher.collected_text)
+        dispatcher.partial_target_duration_seconds = target_duration_seconds
+        dispatcher.partial_plan_text = plan_text
+        dispatcher._print("  [PLAN] Visible scene plan accepted.")
+        dispatcher._print(f"  {_EMOJI['gear']} Phase 2/5: implementation pass")
+        if build_options.allowed_tools:
+            dispatcher._print(f"  [SYS] Allowed tools: {', '.join(build_options.allowed_tools)}")
+
+        user_prompt = _build_implementation_prompt(
+            user_text,
+            target_duration_seconds,
+            plan_text,
+        )
+        async for message in query(prompt=user_prompt, options=build_options):
             dispatcher.dispatch(message)
             if dispatcher.implementation_started:
                 if not _has_visible_scene_plan(dispatcher.collected_text):
@@ -769,7 +871,10 @@ async def run_pipeline(
         if _dispatcher_ref is not None:
             _dispatcher_ref.append(dispatcher)
 
-        result_summary = dispatcher.result_summary
+        result_summary = _merge_result_summaries(
+            planning_result_summary,
+            dispatcher.result_summary,
+        )
         if result_summary is not None:
             dispatcher.partial_run_turns = result_summary.get("turns")
             dispatcher.partial_run_duration_ms = result_summary.get("duration_ms")
@@ -777,46 +882,7 @@ async def run_pipeline(
         dispatcher.partial_run_tool_use_count = dispatcher.tool_use_count
         dispatcher.partial_run_tool_stats = dict(dispatcher.tool_stats)
 
-        if not _has_visible_scene_plan(dispatcher.collected_text):
-            dispatcher._print("")
-            dispatcher._print(
-                f"{_EMOJI['cross']} Missing required scene plan before implementation."
-            )
-            dispatcher._print(
-                "  The assistant must emit a visible planning pass with Mode, Learning Goal,"
-            )
-            dispatcher._print(
-                "  Audience, Beat List, Narration Outline, Visual Risks, and Build Handoff"
-            )
-            dispatcher._print("  before writing scene.py or rendering.")
-            raise RuntimeError(
-                "Claude skipped the required scene-plan pass. "
-                "A visible planning scaffold is mandatory before implementation."
-            )
-
-        if not _has_scene_plan_skill_signature(dispatcher.collected_text):
-            dispatcher._print("")
-            dispatcher._print(
-                f"{_EMOJI['cross']} Missing scene-plan skill signature in the visible plan."
-            )
-            dispatcher._print(
-                "  Expected line: "
-                f"Skill Signature: {_PLAN_SKILL_SIGNATURE}"
-            )
-            dispatcher._print(
-                "  This usually means the runtime prompt was followed, but the "
-                "scene-plan skill contents were not actually consumed."
-            )
-            raise RuntimeError(
-                "Visible scene plan is missing the scene-plan skill signature. "
-                "The plugin may have been injected but not consumed by Claude."
-            )
-
-        plan_text = _extract_visible_scene_plan_text(dispatcher.collected_text)
-        dispatcher.partial_target_duration_seconds = target_duration_seconds
-        dispatcher.partial_plan_text = plan_text
-
-        dispatcher._print(f"  {_EMOJI['gear']} Phase 2/4: resolve render output")
+        dispatcher._print(f"  {_EMOJI['gear']} Phase 3/5: resolve render output")
         logger.debug(
             "run_pipeline: phase2: dispatcher.video_output before extraction = %r",
             dispatcher.video_output,
@@ -929,7 +995,7 @@ async def run_pipeline(
             failure_phase = dispatcher.task_notification_status or "unknown"
             raise RuntimeError(
                 "Claude did not produce a valid pipeline output. "
-                f"Phase 2/4 outcome status={failure_phase}. "
+                f"Phase 3/5 outcome status={failure_phase}. "
                 "The agent may have failed to render the scene."
             )
 
@@ -999,8 +1065,8 @@ async def run_pipeline(
             if po is not None:
                 po.final_video_output = video_output
             dispatcher._print(f"\n{_EMOJI['video']} Output silent video: {video_output}")
-            dispatcher._print("  [SKIP] Phase 3/4 skipped: TTS synthesis disabled by no_tts option.")
-            dispatcher._print("  [SKIP] Phase 4/4 skipped: Video muxing requires TTS output and is disabled.")
+            dispatcher._print("  [SKIP] Phase 4/5 skipped: TTS synthesis disabled by no_tts option.")
+            dispatcher._print("  [SKIP] Phase 5/5 skipped: Video muxing requires TTS output and is disabled.")
             _emit_status(
                 event_callback,
                 task_status="running",
@@ -1009,7 +1075,7 @@ async def run_pipeline(
             )
             return video_output
 
-        dispatcher._print(f"  {_EMOJI['gear']} Phase 3/4: synthesize TTS")
+        dispatcher._print(f"  {_EMOJI['gear']} Phase 4/5: synthesize TTS")
         _emit_status(
             event_callback,
             task_status="running",
@@ -1060,7 +1126,7 @@ async def run_pipeline(
         dispatcher._print(f"  [TTS] Output mode: {subtitle_label}")
         dispatcher._print(f"  TTS done: {tts_result.duration_ms}ms, {tts_result.word_count} chars")
 
-        dispatcher._print("[MUX] Phase 4/4: mux final video")
+        dispatcher._print("[MUX] Phase 5/5: mux final video")
         dispatcher._print("[MUX] FFmpeg in progress... (video + audio + subtitle)")
         _emit_status(
             event_callback,
