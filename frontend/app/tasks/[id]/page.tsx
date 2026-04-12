@@ -112,11 +112,25 @@ export default function TaskDetailPage() {
         }
 
         if (isStatusPayload(event)) {
-          setTask((prev) =>
-            prev && prev.status !== event.data.task_status
-              ? { ...prev, status: event.data.task_status }
-              : prev,
-          );
+          setTask((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              status: event.data.task_status,
+              error:
+                event.data.task_status === "failed"
+                  ? event.data.message ?? prev.error
+                  : prev.error,
+              video_path:
+                event.data.video_path !== undefined
+                  ? event.data.video_path
+                  : prev.video_path,
+              pipeline_output:
+                event.data.pipeline_output !== undefined
+                  ? event.data.pipeline_output
+                  : prev.pipeline_output,
+            };
+          });
           if (event.data.task_status === "completed" || event.data.task_status === "failed") {
             void refreshTaskSnapshot(task.id);
           }

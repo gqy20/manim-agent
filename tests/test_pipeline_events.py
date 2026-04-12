@@ -13,6 +13,7 @@ import pytest
 from manim_agent.pipeline_events import (
     EventType,
     PipelineEvent,
+    StatusPayload,
     ToolStartPayload,
     ToolResultPayload,
     ThinkingPayload,
@@ -94,6 +95,18 @@ class TestPipelineEventStatus:
             evt = PipelineEvent(event_type=EventType.STATUS, data=status)
             assert evt.event_type == EventType.STATUS
             assert evt.data == status
+
+    def test_structured_status_can_carry_final_artifacts(self):
+        payload = StatusPayload(
+            task_status="completed",
+            phase="done",
+            message="Pipeline completed",
+            video_path="https://example.com/final.mp4",
+            pipeline_output={"narration": "方圆相生"},
+        )
+        evt = PipelineEvent(event_type=EventType.STATUS, data=payload)
+        assert evt.data.video_path == "https://example.com/final.mp4"
+        assert evt.data.pipeline_output == {"narration": "方圆相生"}
 
 
 class TestPipelineEventError:

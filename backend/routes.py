@@ -53,6 +53,8 @@ def _status_event(
     *,
     phase: str | None = None,
     message: str | None = None,
+    video_path: str | None = None,
+    pipeline_output: dict[str, Any] | None = None,
 ) -> PipelineEvent:
     """Build a structured status event for SSE consumers."""
     status_value = task_status.value if isinstance(task_status, TaskStatus) else task_status
@@ -62,6 +64,8 @@ def _status_event(
             task_status=status_value,
             phase=phase,
             message=message,
+            video_path=video_path,
+            pipeline_output=pipeline_output,
         ),
     )
 
@@ -72,7 +76,9 @@ def _terminal_status_payload(task: dict[str, Any]) -> dict[str, Any]:
     return {
         "task_status": status,
         "phase": "done" if status == TaskStatus.COMPLETED.value else None,
-        "message": task.get("error"),
+        "message": "Pipeline completed" if status == TaskStatus.COMPLETED.value else task.get("error"),
+        "video_path": task.get("video_path"),
+        "pipeline_output": task.get("pipeline_output"),
     }
 
 
@@ -332,6 +338,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     TaskStatus.COMPLETED,
                     phase="done",
                     message="Pipeline completed",
+                    video_path=_video_url,
+                    pipeline_output=po_data,
                 ),
             )
         except Exception as exc:
@@ -402,6 +410,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     TaskStatus.COMPLETED,
                     phase="done",
                     message="Pipeline completed",
+                    video_path=_video_url,
+                    pipeline_output=po_data,
                 ),
             )
         except Exception as exc:

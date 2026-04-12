@@ -96,6 +96,14 @@ class StatusPayload(BaseModel):
     task_status: str = Field(..., description="Task lifecycle status")
     phase: Optional[str] = Field(default=None, description="Current pipeline phase id")
     message: Optional[str] = Field(default=None, description="Optional human-readable note")
+    video_path: Optional[str] = Field(
+        default=None,
+        description="Final local or remote video URL when available",
+    )
+    pipeline_output: Optional[dict[str, Any]] = Field(
+        default=None,
+        description="Structured pipeline output when available",
+    )
 
 
 # ── 统一事件模型 ──────────────────────────────────────────────
