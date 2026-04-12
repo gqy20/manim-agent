@@ -63,4 +63,17 @@ End with a short `Build Handoff` section that tells the implementation step:
 - the recommended main scene class name
 - the intended scene flow in one line
 - any constraints such as "avoid MathTex" or "keep all labels on screen"
+- **recommended components** from `components/` library (e.g., "use `ProofStepStack` for derivation beats", "use `TeachingScene` as base class", "use `ZoneLayout` for screen zoning")
 - `Skill Signature: mp-scene-plan-v1`
+
+### Component selection guide for Build Handoff
+
+When writing the Build Handoff, suggest components based on scene mode:
+
+| Scene mode | Recommended components |
+|-----------|----------------------|
+| `proof-walkthrough` | `ProofStepStack`, `StepLabel`, `StepKind`, `FormulaTransform`, `TeachingScene` |
+| `geometry-construction` | `LabelGroup`, `HighlightBox`, `Callout`, `ZoneLayout`, `mixed_text` |
+| `function-visualization` | `cjk_title`, `math_line`, `Callout`, `ZoneLayout` |
+| `concept-explainer` | `TitleCard`, `EndingCard`, `reveal`, `emphasize`, `shrink_to_corner` |
+| `quick-demo` | `cjk_text`, `math_line`, `write_in`, basic layout |

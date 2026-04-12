@@ -65,6 +65,26 @@ Choose animations that match the mathematical semantics of what you are showing:
 | Extending an **existing idea** | `Stretch`, `scale` | Replace with larger version |
 | Making something **temporarily stand out** | `ease_out_back` + scale pulse | Static highlight only |
 
+### Using animation helpers
+
+The `components.animation_helpers` module provides semantic animation functions that automatically bind the correct `rate_func` and `run_time` from the Motion=Meaning mapping above:
+
+| To convey | Helper function | What it does internally |
+|-----------|-----------------|----------------------|
+| Introducing a **new concept** | `reveal(obj)` | `GrowFromCenter` + `ease_out_cubic` + auto run_time |
+| A **derivation / step-by-step** process | `write_in(obj)` | `Write` + `linear` + auto run_time |
+| Emphasizing a **key result** | `emphasize(obj)` | `Indicate` + `ease_out_back` + auto run_time |
+| An **equivalence** or **transformation** | `transform_step(a, b)` | `ReplacementTransform` + `ease_in_out_sine` + auto run_time |
+| Focal **circle highlight** | `highlight_circle(obj)` | `Circumscribe` + auto run_time |
+| **Visual persistence** (shrink old to corner) | `shrink_to_corner(obj)` | `scale(0.45)` + `to_corner(DL)` |
+
+Each helper returns the animation object so you can still override parameters if needed:
+```python
+self.play(reveal(new_concept), run_time=2.0)  # override default timing
+```
+
+Import: `from components.animation_helpers import reveal, write_in, emphasize, transform_step, shrink_to_corner`
+
 ### Rate function (easing) selection
 
 The `rate_func` parameter controls how animation speed changes over time.

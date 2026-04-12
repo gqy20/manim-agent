@@ -137,6 +137,35 @@ self.play(Transform(a, b), run_time=2.0, rate_func=ease_in_out_sine)
 self.play(Indicate(term), rate_func=ease_out_back)
 ```
 
+## Component library usage
+
+Prefer component functions over raw Manim API calls. Components handle CJK safety, consistent styling, and correct timing automatically.
+
+### Do / Don't
+
+| Pattern | Don't (raw API) | Do (component) |
+|---------|-----------------|----------------|
+| Chinese text | `Text("勾股定理").scale(0.6).set_color(WHITE)` | `cjk_title("勾股定理")` |
+| Math formula | `MathTex(r"a^2+b^2").scale(1.0).set_color(BLUE)` | `math_line(r"a^2+b^2")` |
+| Mixed CJK+math | `VGroup(Text("其中"), MathTex(r"x")).arrange(RIGHT)` | `mixed_text("其中", r"x")` |
+| Subtitle | `Text("步骤1", font_size=24).set_color(GRAY)` | `subtitle("步骤1")` |
+| Title card | Manual positioning + Write/FadeIn | `TitleCard.get_title_mobjects(title="...")` |
+| Proof steps | Manual VGroup arrange + label Text objects | `ProofStepStack()` + `.add_step()` + `.build()` |
+| Step labels | `Text("已知")` with manual styling | `StepLabel(StepKind.GIVEN)` → "已知" |
+| Corner annotation | `Text("条件").to_corner(UL)` | `Callout.create("条件", corner=UL)` |
+| Highlight box | `SurroundingRectangle(target, ...)` | `HighlightBox.outline(target)` |
+| Vertex labels | Multiple `MathTex().next_to()` calls | `LabelGroup()` + `.add_vertex("A", pt)` + `.build()` |
+| Animation timing | Guessing `run_time=1.5` | `reveal(obj)`, `write_in(obj)`, `emphasize(obj)` — auto-timed |
+| Buffer values | Hardcoded `buff=0.25` | `BUFFER.MED_SMALL`, `BUFFER.LARGE` etc. |
+| Colors | Hardcoded `color=BLUE` | `COLOR_PALETTE.given`, `COLOR_PALETTE.highlight` etc. |
+
+### When components don't cover your need
+
+For patterns not yet in the component library:
+1. Use raw Manim API but import constants from `components.config` for consistency.
+2. Follow CJK rules from the table above (Chinese → `Text()`, math → `MathTex()`).
+3. Use `BUFFER.*` and `COLOR_PALETTE.*` instead of magic numbers/colors.
+
 ## Use references only when needed
 
 - For code style and render hygiene, read `../manim-production/references/code-style.md`.

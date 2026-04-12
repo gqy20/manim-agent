@@ -48,6 +48,52 @@ Choose one primary mode before building:
 - Prefer one `scene.py` file and one main `Scene` class unless the task truly needs more.
 - If the first render fails, fix implementation problems before redesigning the lesson.
 
+## Component Library
+
+Reusable Python components in `components/` that encapsulate documented patterns into LLM-friendly APIs.
+
+### Import pattern
+
+```python
+from components import (
+    BUFFER, COLOR_PALETTE, TEXT_SIZES, SCREEN_ZONES,
+    cjk_text, cjk_title, math_line, mixed_text, subtitle,
+    TitleCard, EndingCard,
+    ProofStepStack, FormulaTransform, StepLabel, StepKind,
+    Callout, HighlightBox, LabelGroup,
+    ZoneLayout, ModeLayout, SceneMode,
+    reveal, write_in, emphasize, transform_step, shrink_to_corner, highlight_circle,
+    TeachingScene,
+)
+```
+
+Or import individually: `from components.text_helpers import cjk_text`
+
+### Component quick reference
+
+| What you need | Use this | Module |
+|---------------|----------|--------|
+| Style constants (buffers, colors, sizes) | `BUFFER.SMALL`, `COLOR_PALETTE.given`, `TEXT_SIZES.title` | `config.py` |
+| Chinese text | `cjk_text("文本")`, `cjk_title("标题")` | `text_helpers.py` |
+| Math formula | `math_line(r"a^2+b^2")` | `text_helpers.py` |
+| Mixed CJK+math | `mixed_text("其中", r"x=2")` | `text_helpers.py` |
+| Subtitle/caption | `subtitle("注释")` | `text_helpers.py` |
+| Title card | `TitleCard.get_title_mobjects(title="...")` | `titles.py` |
+| Ending card | `EndingCard.get_ending_mobjects(message="...")` | `titles.py` |
+| Proof step stack | `ProofStepStack()` + `.add_step()` + `.build()` | `formula_display.py` |
+| Formula transform | `FormulaTransform(original, target_latex)` | `formula_display.py` |
+| Step labels | `StepLabel(StepKind.GIVEN)`, `StepLabel(StepKind.STEP, 1)` | `formula_display.py` |
+| Corner callout | `Callout.create("已知", corner=UL)` | `annotations.py` |
+| Highlight box | `HighlightBox.outline(target)`, `HighlightBox.filled(target)` | `annotations.py` |
+| Vertex/angle/length labels | `LabelGroup()` + `.add_vertex()` + `.build()` | `annotations.py` |
+| Zone-based layout | `ZoneLayout()` + `.set_title()` + `.build()` | `layouts.py` |
+| Mode-based layout | `ModeLayout(SceneMode.PROOF_WALKTHROUGH)` | `layouts.py` |
+| Semantic animations | `reveal()`, `write_in()`, `emphasize()`, `transform_step()` | `animation_helpers.py` |
+| Shrink-to-corner | `shrink_to_corner(obj)` | `animation_helpers.py` |
+| Teaching scene base class | `class MyScene(TeachingScene): ...` | `scene_templates.py` |
+
+**Rule:** Always prefer component functions over raw Manim API calls for common patterns. Components enforce consistent styling, correct CJK handling, and proper animation timing automatically.
+
 ## References
 
 - For scene flow, read `references/scene-patterns.md`.
