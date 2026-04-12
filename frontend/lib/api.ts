@@ -28,7 +28,16 @@ export async function clarifyContent(
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    throw new Error(`Failed to clarify content: ${res.statusText}`);
+    let detail = res.statusText;
+    try {
+      const data = (await res.json()) as { detail?: string };
+      if (typeof data?.detail === "string" && data.detail.trim()) {
+        detail = data.detail.trim();
+      }
+    } catch {
+      // Fall back to HTTP status text when the response body is not JSON.
+    }
+    throw new Error(detail || "Failed to clarify content");
   }
   return res.json();
 }

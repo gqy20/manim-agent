@@ -1,4 +1,4 @@
-"""Lightweight Anthropic-backed content clarification service."""
+"""Lightweight Anthropic-compatible content clarification service."""
 
 from __future__ import annotations
 
@@ -11,13 +11,26 @@ import httpx
 from .models import ContentClarifyData
 
 
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-DEFAULT_MODEL = os.environ.get("ANTHROPIC_CLARIFIER_MODEL", "claude-3-5-sonnet-latest")
+DEFAULT_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").strip()
+DEFAULT_MODEL = os.environ.get(
+    "ANTHROPIC_CLARIFIER_MODEL",
+    os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
+)
 DEFAULT_MAX_TOKENS = 1400
+
+
+def _resolve_messages_url(base_url: str) -> str:
+    """Resolve an Anthropic-compatible /v1/messages endpoint from a base URL."""
+    normalized = base_url.rstrip("/")
+    if normalized.endswith("/messages"):
+        return normalized
+    if normalized.endswith("/v1"):
+        return f"{normalized}/messages"
+    return f"{normalized}/v1/messages"
+
 
 SYSTEM_PROMPT = """
 你是一个“数学动画内容澄清助手”。
-
 你的任务不是生成代码，也不是安排时长、画质、配音或制作参数。
 你只负责把用户输入的主题说明得更清楚，让它更适合后续生成教学动画。
 
@@ -30,7 +43,7 @@ SYSTEM_PROMPT = """
 - optional_branches: 用户后续可以改成的分支方向数组
 - animation_focus: 最适合动画表达的重点数组
 - ambiguity_notes: 需要提醒用户确认的歧义或可能混淆点数组
-- clarified_brief_cn: 给用户看的中文内容理解确认摘要，1段即可
+- clarified_brief_cn: 给用户看的中文内容理解确认摘要，1 段即可
 - recommended_request_cn: 推荐提交给动画生成系统的中文内容说明，要求比原始输入更清楚、更具体，但不要加入时长、画质、配音、BGM 等执行参数
 
 要求：
@@ -50,7 +63,7 @@ class ContentClarifyError(RuntimeError):
 def _extract_text_content(payload: dict[str, Any]) -> str:
     content = payload.get("content")
     if not isinstance(content, list):
-        raise ContentClarifyError("Anthropic response missing content blocks")
+        raise ContentClarifyError("Clarifier response missing content blocks")
 
     parts: list[str] = []
     for block in content:
@@ -60,7 +73,7 @@ def _extract_text_content(payload: dict[str, Any]) -> str:
                 parts.append(text)
 
     if not parts:
-        raise ContentClarifyError("Anthropic response did not contain text output")
+        raise ContentClarifyError("Clarifier response did not contain text output")
     return "\n".join(parts).strip()
 
 
@@ -86,6 +99,7 @@ async def clarify_content(user_text: str) -> ContentClarifyData:
     if not api_key:
         raise ContentClarifyError("ANTHROPIC_API_KEY is not set")
 
+    api_url = _resolve_messages_url(DEFAULT_BASE_URL)
     payload = {
         "model": DEFAULT_MODEL,
         "max_tokens": DEFAULT_MAX_TOKENS,
@@ -106,11 +120,11 @@ async def clarify_content(user_text: str) -> ContentClarifyData:
     }
 
     async with httpx.AsyncClient(timeout=45.0) as client:
-        response = await client.post(ANTHROPIC_API_URL, headers=headers, json=payload)
+        response = await client.post(api_url, headers=headers, json=payload)
 
     if response.status_code >= 400:
         raise ContentClarifyError(
-            f"Anthropic API error {response.status_code}: {response.text.strip()}"
+            f"Clarifier API error {response.status_code}: {response.text.strip()}"
         )
 
     response_json = response.json()
