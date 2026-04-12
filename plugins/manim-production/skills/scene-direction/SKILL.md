@@ -1,7 +1,7 @@
 ---
 name: scene-direction
 description: Direct the visual language of a Manim scene so it feels like a guided explanation instead of a static slide deck. Use when improving opening beats, focal hierarchy, motion clarity, transformations, visual pacing, or ending payoff in educational animation tasks.
-version: 1.0.0
+version: 1.0.1
 argument-hint: " [scene-or-plan]"
 allowed-tools: [Read, Glob, Grep]
 ---
@@ -44,6 +44,74 @@ Use this skill to shape how the animation feels on screen.
 - End on a stable takeaway frame.
 - The ending should clearly resolve the question, construction, or proof introduced earlier.
 - Prefer visual recall or a final highlighted relationship over a generic bullet summary.
+
+## Motion direction rules (how things move)
+
+The beat direction rules above define *what* appears *when*.  This section defines
+*how* it appears — which animation type, easing, and rhythm to use.  Motion is
+meaning: the way an object moves on screen is itself mathematical information.
+
+### Motion = Meaning mapping
+
+Choose animations that match the mathematical semantics of what you are showing:
+
+| To convey | Use this animation | Avoid |
+|-----------|-------------------|-------|
+| Introducing a **new concept** | `GrowFromCenter`, `GrowFromEdge` | `FadeIn` (too abrupt) |
+| A **derivation / step-by-step** process | `Write`, `Create` | Showing everything at once |
+| An **equivalence** or **transformation** | `Transform`, `ReplacementTransform` | Disappear + reappear |
+| Emphasizing a **key result** | `Indicate`, `Flash`, `Circumscribe` | Color-only flash |
+| Showing a **correspondence** or mapping | `Shift` + optional dashed line | Instant jump |
+| Extending an **existing idea** | `Stretch`, `scale` | Replace with larger version |
+| Making something **temporarily stand out** | `ease_out_back` + scale pulse | Static highlight only |
+
+### Rate function (easing) selection
+
+The `rate_func` parameter controls how animation speed changes over time.
+Manim provides 30+ functions; these are the ones that matter:
+
+| Situation | Recommended rate_func | Why |
+|-----------|----------------------|-----|
+| **Reveals** (FadeIn, Create, Write) | `ease_out_cubic` or `ease_out_quad` | Fast start → gentle stop feels natural for appearance |
+| **Transformations** (Transform, ReplacementTransform) | `ease_in_out_sine` or `smooth` | Both endpoints smooth; good for shape morphing |
+| **Emphasis** (Indicate, Flash, Circumscribe) | `ease_out_back` or `ease_out_elastic` | Overshoot draws extra attention to the target |
+| **Mechanical / linear motion** | `linear` | Constant speed = mechanical feel |
+| **Default / unsure** | `smooth` | Sigmoid curve; never looks wrong |
+| **Never use for reveals** | `ease_in_*` | Slow start makes appearance feel sluggish |
+
+### Progressive reveal discipline
+
+This is the single most important motion principle from professional math
+animation (e.g. 3b1b style):
+
+> **Never show the complete final state all at once.**
+> **Each play() call should introduce or change at most 2–3 mobjects.**
+
+Consequences:
+- Split complex beats into multiple `self.play()` + `self.wait()` steps.
+- If you find yourself passing 4+ mobjects to a single `play()`, split it.
+- Use `LaggedStart(lag_ratio=0.15)` when elements should appear in a cascade
+  (this counts as one orchestrated reveal, not N separate appearances).
+- Use `Succession()` when one thing must finish before the next begins.
+
+### Visual persistence mode
+
+When a beat finishes, important visual information should **remain visible** in
+a diminished form rather than disappearing:
+
+- After a formula is transformed, **shrink the original** and move it to a
+  corner (`to_corner(DL)` or `to_corner(DR)`) at `scale(0.45)`.
+- This lets viewers glance back at earlier steps if they lose the thread.
+- Only `FadeOut` truly temporary elements (highlight flashes, transition arrows).
+- Never FadeOut the previous beat's main content — shrink-to-corner instead.
+
+### Animation pacing vs narration
+
+- Total animation duration per beat ≈ spoken narration length × 0.12–0.18 s/char
+- A 10-character Chinese narration line (~3 seconds spoken) → 2.5–4 s of animation
+- Animations shorter than narration feel rushed; longer feel dragging
+- Use `self.wait(0.3–0.8)` after each reveal to let the viewer register what they saw
+- **Avoid `self.wait(2.0)` or longer** — it makes viewers think the video froze
 
 ## Review checklist
 

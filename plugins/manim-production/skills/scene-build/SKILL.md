@@ -1,7 +1,7 @@
 ---
 name: scene-build
 description: Build a Manim scene from an existing scene plan. Use when a beat-by-beat plan already exists and the next step is to implement, render, and refine the animation code. Trigger for requests like "build from this plan", "implement this storyboard", "turn this scene plan into Manim", or after running /scene-plan.
-version: 1.0.0
+version: 1.0.1
 argument-hint: " [build-handoff]"
 allowed-tools: [Read, Write, Edit, Bash, Glob, Grep]
 ---
@@ -39,11 +39,110 @@ Implement Manim code from a scene plan.
 - Confirm there is a clear ending frame.
 - Confirm the final narration covers all beats in order.
 
+## Animation build rules (how to write play() calls)
+
+### CJK text rendering — mandatory rules
+
+Manim has three text rendering engines with incompatible character support:
+
+| Engine | Class | CJK support | Use for |
+|--------|-------|------------|--------|
+| Pango | `Text()` | **Native** | All Chinese/Japanese/Korean text |
+| LaTeX | `Tex()` | Needs XeLaTeX config | English text with LaTeX formatting |
+| LaTeX math | `MathTex()` | **No Chinese** | Mathematical formulas only |
+
+**Mandatory rules:**
+- Chinese characters → **always use `Text()`**, never `Tex()` or `MathTex()`.
+- Math formulas → always use `MathTex()`, never mix Chinese into it.
+- Mixed Chinese+math line → combine `Text()` + `MathTex()` in a `VGroup`:
+  ```python
+  VGroup(Text("其中"), MathTex(r"x = \sqrt{2}")).arrange(RIGHT, buff=0.1)
+  ```
+- Do not specify custom `font` for `Text()` unless necessary; Pango auto-selects
+  a CJK-capable system font.
+
+### Animation duration bounds
+
+Every `self.play()` call should specify or imply a reasonable duration:
+
+| Animation type | Min | Recommended | Max |
+|---------------|-----|-----------|-----|
+| `FadeIn`, `FadeOut` | 0.3 s | **0.5–0.8 s** | 1.5 s |
+| `Create` (draw shape) | 0.5 s | **1.0–1.5 s** | 3 s |
+| `Write` (write text) | 1.0 s | **1.5–2.0 s** | 4 s |
+| `Transform` / `ReplacementTransform` | 1.0 s | **1.5–2.5 s** | 4 s |
+| `GrowFromCenter` / `GrowFromEdge` | 0.4 s | **0.8–1.2 s** | 2 s |
+| `Indicate` / `Flash` / `Circumscribe` | 0.3 s | **0.5–1.0 s** | 1.5 s |
+| `Shift` / `ApplyMethod` | 0.3 s | **0.5–1.0 s** | 2 s |
+| `Wait` | 0.1 s | **0.3–0.8 s** | 1.5 s |
+
+Duration estimation formula:
+```
+animation_seconds ≈ narration_char_count × 0.15
+```
+(Chinese: ~15 chars per spoken second in normal pace)
+
+### Animation composition patterns
+
+How to combine multiple animations in one `play()` call:
+
+| Pattern | When to use | Example |
+|---------|-------------|---------|
+| Multiple args to `play()` | 2–3 independent simultaneous changes | `self.play(FadeIn(a), Transform(b, c))` |
+| `AnimationGroup()` | Need explicit control over group timing | `self.play(AnimationGroup(anim1, anim2, lag_ratio=0.1))` |
+| `LaggedStart(*anims, lag_ratio=0.15)` | Cascade reveal of related elements | Labels appearing one by one after a formula |
+| `Succession(anim1, anim2)` | Strict sequential (second starts after first ends) | Step 1 must fully complete before step 2 |
+| Separate `play()` calls | Beats or phases with pauses between | `self.play(step1); self.wait(0.5); self.play(step2)` |
+
+**Rules:**
+- Never nest `AnimationGroup` more than 2 levels deep.
+- Prefer separate `play()` calls over giant `AnimationGroup` for readability.
+- Use `lag_ratio=0.1–0.2` for `LaggedStart`; higher values feel sluggish.
+
+### Updater usage
+
+Use `add_updater()` only for these scenarios:
+
+| Scenario | Example | Do NOT use for |
+|----------|---------|----------------|
+| Label follows a moving point | Dot on curve, label tracks it | Static labels |
+| Real-time value display | Coordinate readout updates each frame | One-time annotations |
+| Proportional resize | Two segments maintain ratio as parent grows | Fixed layouts |
+
+Pattern:
+```python
+# Label that follows a moving dot
+label = MathTex(r"(x, y)").add_updater(lambda m: m.next_to(dot, UR))
+self.add(label)
+# ... later, when animation moves dot, label follows automatically
+```
+
+Remove updaters when no longer needed: `label.clear_updaters()`.
+
+### Rate function defaults to set
+
+When writing `self.play()`, explicitly set `rate_func` for non-obvious cases:
+
+```python
+# Default (safe) — omit or set rate_func=smooth
+self.play(Create(circle))
+
+# Reveals — ease out feels natural
+self.play(FadeIn(text), run_time=0.6, rate_func=ease_out_cubic)
+
+# Transforms — smooth both ends
+self.play(Transform(a, b), run_time=2.0, rate_func=ease_in_out_sine)
+
+# Emphasis — slight overshoot draws attention
+self.play(Indicate(term), rate_func=ease_out_back)
+```
+
 ## Use references only when needed
 
 - For code style and render hygiene, read `../manim-production/references/code-style.md`.
 - For math layout and emphasis, read `../manim-production/references/math-visualization-guidelines.md`.
 - For spatial composition, screen zones, element sizing, color palette, and per-mode layout templates, read `../manim-production/references/spatial-composition.md`.
+- For animation selection, rate functions, timing, composition patterns, and motion craft, read `../manim-production/references/animation-craft.md`.
 - For common implementation mistakes, read `references/build-anti-patterns.md`.
 
 ## Final response
