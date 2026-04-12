@@ -29,6 +29,28 @@ class TaskCreateRequest(BaseModel):
     target_duration_seconds: Literal[30, 60, 180, 300] = 60
 
 
+class ContentClarifyRequest(BaseModel):
+    user_text: str = Field(..., min_length=1, max_length=3000)
+
+
+class ContentClarifyData(BaseModel):
+    topic_interpretation: str = Field(..., min_length=1)
+    core_question: str = Field(..., min_length=1)
+    prerequisite_concepts: list[str] = Field(default_factory=list)
+    explanation_path: list[str] = Field(default_factory=list)
+    scope_boundaries: list[str] = Field(default_factory=list)
+    optional_branches: list[str] = Field(default_factory=list)
+    animation_focus: list[str] = Field(default_factory=list)
+    ambiguity_notes: list[str] = Field(default_factory=list)
+    clarified_brief_cn: str = Field(..., min_length=1)
+    recommended_request_cn: str = Field(..., min_length=1)
+
+
+class ContentClarifyResponse(BaseModel):
+    original_user_text: str
+    clarification: ContentClarifyData
+
+
 class PipelineOutputData(BaseModel):
     """完成任务的 pipeline 结构化输出数据（API 响应用）。"""
 

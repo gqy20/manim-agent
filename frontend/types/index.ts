@@ -14,6 +14,28 @@ export interface TaskCreatePayload {
   target_duration_seconds: TaskDurationSeconds;
 }
 
+export interface ClarifyContentPayload {
+  user_text: string;
+}
+
+export interface ContentClarifyData {
+  topic_interpretation: string;
+  core_question: string;
+  prerequisite_concepts: string[];
+  explanation_path: string[];
+  scope_boundaries: string[];
+  optional_branches: string[];
+  animation_focus: string[];
+  ambiguity_notes: string[];
+  clarified_brief_cn: string;
+  recommended_request_cn: string;
+}
+
+export interface ClarifyContentResponse {
+  original_user_text: string;
+  clarification: ContentClarifyData;
+}
+
 export interface PipelineOutputData {
   video_output: string | null;
   final_video_output: string | null;

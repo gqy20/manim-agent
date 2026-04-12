@@ -20,10 +20,13 @@ except ImportError:
 
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
 from .pipeline_runner import PipelineExecutionError, _pipeline_body
+from .content_clarifier import ContentClarifyError, clarify_content
 
 from manim_agent.pipeline_events import EventType, PipelineEvent, StatusPayload
 
 from .models import (
+    ContentClarifyRequest,
+    ContentClarifyResponse,
     TaskCreateRequest,
     TaskListResponse,
     TaskResponse,
@@ -38,6 +41,7 @@ from .task_store import TaskStore
 _USE_PIPELINE_THREAD = os.environ.get("MANIM_AGENT_TEST_MODE") != "1"
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+clarify_router = APIRouter(prefix="/api", tags=["clarify"])
 logger = logging.getLogger(__name__)
 
 _store: TaskStore  # set via set_store()
@@ -46,6 +50,20 @@ _sse_mgr: SSESubscriptionManager = SSESubscriptionManager()
 _r2_client: R2Client | None = None
 _OUTPUT_ROOT = Path("backend/output")
 _DEFAULT_KEEP_LOCAL_MP4_TASKS = 20
+
+
+@clarify_router.post("/clarify-content", response_model=ContentClarifyResponse)
+async def clarify_content_route(req: ContentClarifyRequest) -> ContentClarifyResponse:
+    """Clarify a short user topic into a richer content brief."""
+    try:
+        clarification = await clarify_content(req.user_text)
+    except ContentClarifyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return ContentClarifyResponse(
+        original_user_text=req.user_text,
+        clarification=clarification,
+    )
 
 
 def _status_event(

@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 from dotenv import load_dotenv
 
-from .routes import router, set_store, init_r2_client, _r2_client
+from .routes import clarify_router, router, set_store, init_r2_client, _r2_client
 from .task_store import TaskStore
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -151,6 +151,7 @@ app.add_middleware(
 app.add_middleware(_SSEDisconnectMiddleware)
 
 app.include_router(router)
+app.include_router(clarify_router)
 
 # Serve generated videos as static files
 output_dir = Path("backend/output")

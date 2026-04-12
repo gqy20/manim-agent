@@ -1,4 +1,9 @@
-import type { Task, TaskCreatePayload } from "@/types";
+import type {
+  ClarifyContentPayload,
+  ClarifyContentResponse,
+  Task,
+  TaskCreatePayload,
+} from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
@@ -10,6 +15,20 @@ export async function createTask(payload: TaskCreatePayload): Promise<Task> {
   });
   if (!res.ok) {
     throw new Error(`Failed to create task: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function clarifyContent(
+  payload: ClarifyContentPayload,
+): Promise<ClarifyContentResponse> {
+  const res = await fetch(`${API_BASE}/api/clarify-content`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to clarify content: ${res.statusText}`);
   }
   return res.json();
 }
