@@ -5,11 +5,12 @@ import { useParams } from "next/navigation";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import Link from "next/link";
-import { ArrowLeft, Film, Loader2, Play, Terminal, XCircle } from "lucide-react";
+import { ArrowLeft, Check, Copy, FileCode2, Film, Loader2, Play, Terminal, XCircle } from "lucide-react";
 
 import { LogViewer } from "@/components/log-viewer";
 import { PipelineProgress } from "@/components/pipeline-progress";
 import { VideoPlayer } from "@/components/video-player";
+import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getTask, getVideoUrl } from "@/lib/api";
 import { logger } from "@/lib/logger";
@@ -37,6 +38,93 @@ function DetailSkeleton() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ManimScriptPanel({
+  sceneFile,
+  sceneClass,
+  sourceCode,
+}: {
+  sceneFile: string | null;
+  sceneClass: string | null;
+  sourceCode: string | null;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!sourceCode) return;
+    try {
+      await navigator.clipboard.writeText(sourceCode);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const hasScript = !!sourceCode;
+  const hasMeta = !!sceneFile || !!sceneClass;
+
+  if (!hasScript && !hasMeta) {
+    return null;
+  }
+
+  return (
+    <div className="glass-card rounded-xl border border-white/8 bg-white/[0.03] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-cyan-500/70">
+            <FileCode2 className="h-3.5 w-3.5" />
+            <h3 className="text-[10px] font-mono uppercase tracking-widest">Manim Script</h3>
+          </div>
+          <p className="text-xs text-muted-foreground/70">
+            这是本次生成任务最终用于渲染的视频脚本快照。
+          </p>
+        </div>
+        {hasScript && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleCopy}
+            className="border-white/10 bg-white/[0.02] text-white/75 hover:bg-white/[0.05] hover:text-white"
+          >
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        )}
+      </div>
+
+      {hasMeta && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-white/6 bg-black/20 px-3 py-2">
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/55">Scene File</p>
+            <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-white/70">
+              {sceneFile ?? "Unavailable"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-white/6 bg-black/20 px-3 py-2">
+            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/55">Scene Class</p>
+            <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-white/70">
+              {sceneClass ?? "Unavailable"}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {hasScript ? (
+        <div className="mt-4 overflow-hidden rounded-xl border border-white/8 bg-black/50 shadow-inner">
+          <pre className="max-h-[420px] overflow-auto px-4 py-4 font-mono text-[12px] leading-6 text-white/78">
+            <code>{sourceCode}</code>
+          </pre>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-lg border border-dashed border-white/10 bg-black/20 px-4 py-5 text-[11px] text-white/45">
+          脚本元数据已返回，但当前任务没有附带源码文本。
+        </div>
+      )}
     </div>
   );
 }
@@ -409,6 +497,11 @@ export default function TaskDetailPage() {
               </div>
             </div>
           )}
+          <ManimScriptPanel
+            sceneFile={task.pipeline_output?.scene_file ?? null}
+            sceneClass={task.pipeline_output?.scene_class ?? null}
+            sourceCode={task.pipeline_output?.source_code ?? null}
+          />
         </div>
       </div>
     </main>
