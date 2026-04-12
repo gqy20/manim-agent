@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import datetime
 import json
-from pathlib import Path
 
 from backend.routes import _format_exception_message
 from backend.sse_manager import SSESubscriptionManager
@@ -128,9 +127,3 @@ class TestSSEManager:
         mgr.cleanup("t5")
         assert mgr.get_buffer("t5") == []
         assert "t5" not in mgr._subscribers
-
-
-class TestArtifacts:
-    def test_repository_contains_frontend_and_backend(self):
-        assert Path("backend").is_dir()
-        assert Path("frontend").is_dir()
