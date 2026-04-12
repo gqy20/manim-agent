@@ -56,7 +56,6 @@ describe("FrontendLogger", () => {
     const entries: LogEntry[] = [];
 
     // 拦截 buffer 来捕获 entry（通过 spy）
-    const origLog = (logger as unknown as { log: typeof logger.log }).log.bind(logger);
     vi.spyOn(logger as unknown as { log: typeof logger.log }, "log").mockImplementation(
       (level, module, message, context) => {
         const entry = { timestamp: new Date().toISOString(), level, module, message, context, userAgent: "test-agent", url: "/test", sessionId: logger.sessionId };

@@ -112,7 +112,7 @@ export function connectTaskEvents(
           es?.close();
           onComplete?.();
         }
-      } catch (err) {
+      } catch {
         logger.warn("sse-client", "Failed to parse SSE event", { raw: e.data.slice(0, 120) });
       }
     };

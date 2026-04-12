@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/select";
 import { createTask } from "@/lib/api";
 import { logger } from "@/lib/logger";
-import type { TaskCreatePayload } from "@/types";
 import { Loader2, Wand2, ChevronDown, Sparkles } from "lucide-react";
 
 /* ── Data ────────────────────────────────────────── */

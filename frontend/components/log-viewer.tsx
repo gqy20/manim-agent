@@ -1,112 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type {
-  SSEEvent,
-  ToolStartPayload,
-  ToolResultPayload,
-  ThinkingPayload,
   ProgressPayload,
+  SSEEvent,
+  ThinkingPayload,
+  ToolResultPayload,
+  ToolStartPayload,
 } from "@/types";
 import {
-  isToolStart,
-  isToolResult,
-  isThinking,
   isProgress,
   isStatusPayload,
+  isThinking,
+  isToolResult,
+  isToolStart,
 } from "@/types";
 
 interface LogViewerProps {
   events: SSEEvent[];
   isRunning: boolean;
 }
-
-// ── 图标组件 ──────────────────────────────────────────────
-
-function ToolIcon({ name }: { name: string }) {
-  const iconMap: Record<string, string> = {
-    Write: "\u270f\ufe0f",
-    Edit: "\u270f\ufe0f",
-    Bash: "\U0001f528",
-    Read: "\U0001f4cf",
-    Glob: "\U0001f50d",
-  };
-  return <span>{iconMap[name] || "\u25b6"}</span>;
-}
-
-// ── 统计栏 ────────────────────────────────────────────────
-
-function StatsBar({ events }: { events: SSEEvent[] }) {
-  const stats = useMemo(() => {
-    let logs = 0, thinking = 0, toolStarts = 0, toolResults = 0,
-        progressEvents = 0, errors = 0;
-    let lastProgress: ProgressPayload | null = null;
-
-    for (const evt of events) {
-      switch (evt.type) {
-        case "log": logs++; break;
-        case "thinking": thinking++; break;
-        case "tool_start": toolStarts++; break;
-        case "tool_result": toolResults++; break;
-        case "progress":
-          progressEvents++;
-          if (typeof evt.data === "object" && evt.data !== null) {
-            lastProgress = evt.data as ProgressPayload;
-          }
-          break;
-        case "status": break;
-        default: break;
-      }
-      // 检测错误日志
-      if (evt.type === "log" && typeof evt.data === "string") {
-        const d = evt.data.toLowerCase();
-        if (d.includes("[err]") || d.includes("[trace]")) errors++;
-      }
-    }
-
-    return { logs, thinking, toolStarts, toolResults, progressEvents, errors, lastProgress };
-  }, [events]);
-
-  const p = stats.lastProgress;
-  return (
-    <div className="flex items-center gap-3 px-3 py-1.5 text-[10px] font-mono border-b border-border/20 bg-surface/40 text-muted-foreground/60 flex-wrap">
-      <span title="文本日志">
-        \ud83d\udcdd {stats.logs}
-      </span>
-      {stats.thinking > 0 && (
-        <span title="思考块">
-          \ud83e\udde0 {stats.thinking}
-        </span>
-      )}
-      {stats.toolStarts > 0 && (
-        <span title="工具调用">
-          \U0001f527 {stats.toolStarts}/{stats.toolResults}
-        </span>
-      )}
-      {p && (
-        <>
-          <span title="当前轮次">
-            \ud83d\udd02 Turn {p.turn}
-          </span>
-          <span title="Token 消耗">
-            \ud83d\udcca {p.total_tokens.toLocaleString()}
-          </span>
-          <span title="已用时间">
-            \u23f1 {(p.elapsed_ms / 1000).toFixed(1)}s
-          </span>
-        </>
-      )}
-      {stats.errors > 0 && (
-        <span className="text-red-400/70 ml-auto" title="错误数量">
-          \u274c {stats.errors}
-        </span>
-      )}
-    </div>
-  );
-}
-
-// ── 阶段标记 ──────────────────────────────────────────────
 
 interface PhaseMarker {
   id: string;
@@ -115,37 +30,138 @@ interface PhaseMarker {
   className: string;
 }
 
-/** 从事件内容中检测 pipeline 阶段。 */
-function detectPhase(evt: SSEEvent, index: number, allEvents: SSEEvent[]): PhaseMarker | null {
-  if (evt.type !== "log" || typeof evt.data !== "string") return null;
-  const d = evt.data;
+function formatEventTime(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "--:--:--";
+  }
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
 
-  // 匹配已知阶段模式
-  if (d.includes("[PROGRESS]") || d.includes("Phase 1")) {
-    return { id: `phase-${index}`, label: "初始化", icon: "\U0001f504", className: "phase-init" };
-  }
-  if (d.includes("Phase 2") || d.toLowerCase().includes("scene") && d.toLowerCase().includes("generat")) {
-    return { id: `phase-${index}`, label: "场景生成", icon: "\U0001f3a8", className: "phase-scene" };
-  }
-  if (d.includes("Phase 3") || d.toLowerCase().includes("render")) {
-    return { id: `phase-${index}`, label: "视频渲染", icon: "\U0001f39e", className: "phase-render" };
-  }
-  if (d.includes("Phase 4") || d.includes("TTS") || d.toLowerCase().includes("narration") || d.toLowerCase().includes("voice")) {
-    return { id: `phase-${index}`, label: "语音合成", icon: "\U0001f3a4", className: "phase-tts" };
-  }
-  if (d.includes("[SUMMARY]") || d.includes("Session Summary")) {
-    return { id: `phase-${index}`, label: "完成摘要", icon: "\U0001f4cb", className: "phase-summary" };
-  }
+function ToolIcon({ name }: { name: string }) {
+  const iconMap: Record<string, string> = {
+    Write: "W",
+    Edit: "E",
+    Bash: ">_",
+    Read: "R",
+    Glob: "*",
+  };
+  return <span className="font-mono text-[10px]">{iconMap[name] || "?"}</span>;
+}
 
-  // 检测工具调用密集区域 → 标记为执行阶段
-  if (isToolStart(evt)) {
-    // 检查前面几个事件是否也是 tool_start（连续工具调用）
-    const recentTools = allEvents.slice(Math.max(0, index - 3), index)
-      .filter(e => isToolStart(e));
-    if (recentTools.length === 0 || index < 3) {
-      // 第一个 tool_start 或间隔后的第一个
-      return { id: `phase-${index}`, label: "工具执行", icon: "\U0001f527", className: "phase-tools" };
+function StatsBar({ events }: { events: SSEEvent[] }) {
+  const stats = useMemo(() => {
+    let logs = 0;
+    let thinking = 0;
+    let toolStarts = 0;
+    let toolResults = 0;
+    let progressEvents = 0;
+    let errors = 0;
+    let lastProgress: ProgressPayload | null = null;
+
+    for (const event of events) {
+      switch (event.type) {
+        case "log":
+          logs += 1;
+          break;
+        case "thinking":
+          thinking += 1;
+          break;
+        case "tool_start":
+          toolStarts += 1;
+          break;
+        case "tool_result":
+          toolResults += 1;
+          break;
+        case "progress":
+          progressEvents += 1;
+          if (typeof event.data === "object" && event.data !== null) {
+            lastProgress = event.data as ProgressPayload;
+          }
+          break;
+        default:
+          break;
+      }
+
+      if (event.type === "log" && typeof event.data === "string") {
+        const lower = event.data.toLowerCase();
+        if (lower.includes("[err]") || lower.includes("[trace]") || lower.includes("failed")) {
+          errors += 1;
+        }
+      }
     }
+
+    return { errors, lastProgress, logs, progressEvents, thinking, toolResults, toolStarts };
+  }, [events]);
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-b border-border/20 bg-surface/40 px-3 py-1.5 text-[10px] font-mono text-muted-foreground/60">
+      <span title="Text logs">LOG {stats.logs}</span>
+      {stats.thinking > 0 && <span title="Reasoning blocks">THINK {stats.thinking}</span>}
+      {stats.toolStarts > 0 && (
+        <span title="Tool activity">TOOLS {stats.toolStarts}</span>
+      )}
+      {stats.toolResults > 0 && <span title="Completed tool results">RESULTS {stats.toolResults}</span>}
+      {stats.progressEvents > 0 && <span title="Structured progress">PROG {stats.progressEvents}</span>}
+      {stats.lastProgress && (
+        <>
+          <span title="Current turn">TURN {stats.lastProgress.turn}</span>
+          <span title="Token usage">{stats.lastProgress.total_tokens.toLocaleString()} TOKENS</span>
+          <span title="Elapsed">{(stats.lastProgress.elapsed_ms / 1000).toFixed(1)}S</span>
+        </>
+      )}
+      {stats.errors > 0 && (
+        <span className="ml-auto text-red-400/70" title="Error lines">
+          ERR {stats.errors}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function detectPhase(event: SSEEvent, index: number): PhaseMarker | null {
+  if (isStatusPayload(event)) {
+    const phase = event.data.phase;
+    if (!phase) return null;
+
+    const structuredMap: Record<string, PhaseMarker> = {
+      init: { id: `phase-${index}`, label: "Initialize", icon: "INIT", className: "phase-init" },
+      scene: { id: `phase-${index}`, label: "Build Scene", icon: "SCN", className: "phase-scene" },
+      render: { id: `phase-${index}`, label: "Render Video", icon: "RND", className: "phase-render" },
+      tts: { id: `phase-${index}`, label: "Generate Voice", icon: "TTS", className: "phase-tts" },
+      mux: { id: `phase-${index}`, label: "Mux Final", icon: "MUX", className: "phase-mux" },
+      done: { id: `phase-${index}`, label: "Complete", icon: "DONE", className: "phase-summary" },
+    };
+
+    return structuredMap[phase] ?? null;
+  }
+
+  if (event.type !== "log" || typeof event.data !== "string") return null;
+  const line = event.data;
+  const lower = line.toLowerCase();
+
+  if (line.includes("[PROGRESS]") || line.includes("Phase 1")) {
+    return { id: `phase-${index}`, label: "Initialize", icon: "INIT", className: "phase-init" };
+  }
+  if (line.includes("Phase 2") || lower.includes("scene")) {
+    return { id: `phase-${index}`, label: "Build Scene", icon: "SCN", className: "phase-scene" };
+  }
+  if (line.includes("Phase 3") || lower.includes("render")) {
+    return { id: `phase-${index}`, label: "Render Video", icon: "RND", className: "phase-render" };
+  }
+  if (line.includes("Phase 4") || line.includes("[TTS]") || lower.includes("voice")) {
+    return { id: `phase-${index}`, label: "Generate Voice", icon: "TTS", className: "phase-tts" };
+  }
+  if (lower.includes("[mux]") || lower.includes("ffmpeg")) {
+    return { id: `phase-${index}`, label: "Mux Final", icon: "MUX", className: "phase-mux" };
+  }
+  if (line.includes("[SUMMARY]") || lower.includes("completed")) {
+    return { id: `phase-${index}`, label: "Complete", icon: "DONE", className: "phase-summary" };
   }
 
   return null;
@@ -153,59 +169,75 @@ function detectPhase(evt: SSEEvent, index: number, allEvents: SSEEvent[]): Phase
 
 function PhaseDivider({ marker }: { marker: PhaseMarker }) {
   const colorMap: Record<string, string> = {
-    "phase-init": "border-cyan-500/30 text-cyan-400 bg-cyan-500/[0.04]",
-    "phase-scene": "border-purple-500/30 text-purple-400 bg-purple-500/[0.04]",
-    "phase-render": "border-green-500/30 text-green-400 bg-green-500/[0.04]",
-    "phase-tts": "border-orange-500/30 text-orange-400 bg-orange-500/[0.04]",
-    "phase-summary": "border-blue-500/30 text-blue-400 bg-blue-500/[0.04]",
-    "phase-tools": "border-blue-500/30 text-blue-400 bg-blue-500/[0.04]",
+    "phase-init": "border-cyan-500/30 bg-cyan-500/[0.04] text-cyan-400",
+    "phase-scene": "border-violet-500/30 bg-violet-500/[0.04] text-violet-400",
+    "phase-render": "border-green-500/30 bg-green-500/[0.04] text-green-400",
+    "phase-tts": "border-orange-500/30 bg-orange-500/[0.04] text-orange-400",
+    "phase-mux": "border-sky-500/30 bg-sky-500/[0.04] text-sky-400",
+    "phase-summary": "border-emerald-500/30 bg-emerald-500/[0.04] text-emerald-400",
   };
-  const cls = colorMap[marker.className] || colorMap["phase-tools"];
 
   return (
-    <div key={marker.id} className={`flex items-center gap-2 py-1 px-3 my-2 rounded-md border ${cls}`}>
-      <span>{marker.icon}</span>
+    <div className={`my-2 flex items-center gap-2 rounded-md border px-3 py-1 ${colorMap[marker.className]}`}>
+      <span className="font-mono text-[10px] uppercase tracking-wider">{marker.icon}</span>
       <span className="text-[11px] font-medium">{marker.label}</span>
     </div>
   );
 }
 
-// ── 子组件：各类事件渲染器 ────────────────────────────────
+function classifyLog(line: string): string {
+  const lower = line.toLowerCase();
+  if (lower.includes("[err]") || lower.includes("error") || lower.includes("failed") || lower.includes("traceback")) {
+    return "log-error";
+  }
+  if (lower.includes("warning") || lower.includes("warn")) {
+    return "log-warning";
+  }
+  if (lower.includes("[ok]") || lower.includes("done") || lower.includes("complete") || lower.includes("success")) {
+    return "log-success";
+  }
+  if (lower.includes("phase") || lower.includes("[progress]") || lower.includes("[summary]")) {
+    return "log-step";
+  }
+  if (!line.trim()) {
+    return "log-dim";
+  }
+  return "log-info";
+}
 
-function LogLine({ text }: { text: string }) {
-  const cls = classifyLog(text);
+function LogLine({ text, timestamp }: { text: string; timestamp: string }) {
   return (
-    <pre className={`${cls} whitespace-pre-wrap break-all`}>{text}</pre>
+    <div className="my-0.5 flex items-start gap-3">
+      <span className="pt-[2px] text-[10px] font-mono text-white/20">{formatEventTime(timestamp)}</span>
+      <pre className={`${classifyLog(text)} whitespace-pre-wrap break-all`}>{text}</pre>
+    </div>
   );
 }
 
-function ToolStartView({ payload }: { payload: ToolStartPayload }) {
+function ToolStartView({ payload, timestamp }: { payload: ToolStartPayload; timestamp: string }) {
   return (
-    <div className="flex items-start gap-2 py-1.5 px-2 rounded-md bg-blue-500/[0.05] border border-blue-500/10 my-0.5">
-      <span className="text-blue-400 shrink-0 mt-0.5">
+    <div className="my-0.5 flex items-start gap-3 rounded-md border border-blue-500/10 bg-blue-500/[0.05] px-2 py-1.5">
+      <span className="pt-[2px] text-[10px] font-mono text-white/20">{formatEventTime(timestamp)}</span>
+      <span className="mt-0.5 shrink-0 text-blue-400">
         <ToolIcon name={payload.name} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-blue-300 font-medium text-[11px]">
-            {payload.name}
-          </span>
-          <span className="text-blue-500/40 text-[10px] font-mono">
-            {payload.tool_use_id.slice(-8)}
-          </span>
+          <span className="text-[11px] font-medium text-blue-300">{payload.name}</span>
+          <span className="text-[10px] font-mono text-blue-500/40">{payload.tool_use_id.slice(-8)}</span>
         </div>
         {Object.keys(payload.input_summary).length > 0 && (
           <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
-            {Object.entries(payload.input_summary).slice(0, 4).map(([k, v]) => (
-              <span key={k} className="text-blue-200/50 text-[10px] font-mono truncate max-w-[180px]">
-                {k}={typeof v === "string" ? v.slice(0, 40) + (v.length > 40 ? "..." : "") : JSON.stringify(v).slice(0, 30)}
-              </span>
-            ))}
-            {Object.keys(payload.input_summary).length > 4 && (
-              <span className="text-blue-300/40 text-[10px]">
-                +{Object.keys(payload.input_summary).length - 4} more
-              </span>
-            )}
+            {Object.entries(payload.input_summary)
+              .slice(0, 4)
+              .map(([key, value]) => (
+                <span key={key} className="max-w-[180px] truncate text-[10px] font-mono text-blue-200/50">
+                  {key}=
+                  {typeof value === "string"
+                    ? `${value.slice(0, 40)}${value.length > 40 ? "..." : ""}`
+                    : JSON.stringify(value).slice(0, 30)}
+                </span>
+              ))}
           </div>
         )}
       </div>
@@ -213,113 +245,122 @@ function ToolStartView({ payload }: { payload: ToolStartPayload }) {
   );
 }
 
-function ToolResultView({ payload }: { payload: ToolResultPayload }) {
-  const isError = payload.is_error;
-  const bg = isError ? "bg-red-500/[0.04]" : "bg-green-500/[0.04]";
-  const border = isError
-    ? "border-red-500/10"
-    : "border-green-500/10";
-  const textColor = isError ? "text-red-300" : "text-green-300";
-  const icon = isError ? "\u274c" : "\u2705";
+function ToolResultView({ payload, timestamp }: { payload: ToolResultPayload; timestamp: string }) {
+  const tone = payload.is_error
+    ? "border-red-500/10 bg-red-500/[0.04] text-red-300"
+    : "border-green-500/10 bg-green-500/[0.04] text-green-300";
 
   return (
-    <div
-      className={`flex items-center gap-2 py-1 px-2 rounded-md ${bg} border ${border} my-0.5 ml-6`}
-    >
-      <span className={textColor}>{icon}</span>
+    <div className={`my-0.5 ml-6 flex items-center gap-3 rounded-md border px-2 py-1 ${tone}`}>
+      <span className="text-[10px] font-mono text-white/20">{formatEventTime(timestamp)}</span>
+      <span>{payload.is_error ? "ERR" : "OK"}</span>
       {payload.content && (
-        <span className={`${textColor}/70 text-[11px] truncate max-w-[280px]`}>
-          {payload.content.length > 120
-            ? payload.content.slice(0, 120) + "..."
-            : payload.content}
+        <span className="max-w-[280px] truncate text-[11px] text-current/75">
+          {payload.content.length > 120 ? `${payload.content.slice(0, 120)}...` : payload.content}
         </span>
       )}
       {payload.duration_ms != null && (
-        <span className="text-muted-foreground/40 text-[10px] ml-auto shrink-0">
-          {payload.duration_ms}ms
-        </span>
+        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/40">{payload.duration_ms}ms</span>
       )}
     </div>
   );
 }
 
-function ThinkingView({ payload }: { payload: ThinkingPayload }) {
+function ThinkingView({ payload, timestamp }: { payload: ThinkingPayload; timestamp: string }) {
   const [expanded, setExpanded] = useState(false);
-  const preview = payload.preview ?? payload.thinking.slice(0, 97) + "...";
+  const preview = payload.preview ?? `${payload.thinking.slice(0, 97)}...`;
 
   return (
-    <div className="my-0.5 border-l-2 border-purple-500/25 pl-3 py-1">
-      <button
-        type="button"
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-purple-300/80 hover:text-purple-300 text-[11px] w-full text-left"
-      >
-        <span className="transition-transform inline-block"
-          style={{ transform: expanded ? "rotate(90deg)" : "none" }}
-        >&#9654;</span>
-        <span>\U0001f4ad</span>
-        <span className="truncate flex-1">{preview}</span>
-        {payload.signature && (
-          <span className="text-purple-400/30 text-[10px] font-mono shrink-0">
-            {payload.signature.slice(0, 12)}
+    <div className="my-0.5 flex items-start gap-3 border-l-2 border-purple-500/25 py-1 pl-3">
+      <span className="pt-[2px] text-[10px] font-mono text-white/20">{formatEventTime(timestamp)}</span>
+      <div className="min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={() => setExpanded((current) => !current)}
+          className="flex w-full items-center gap-1.5 text-left text-[11px] text-purple-300/80 hover:text-purple-300"
+        >
+          <span className="inline-block transition-transform" style={{ transform: expanded ? "rotate(90deg)" : "none" }}>
+            &gt;
+          </span>
+          <span>THINK</span>
+          <span className="flex-1 truncate">{preview}</span>
+        </button>
+        {expanded && (
+          <pre className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-purple-200/50">
+            {payload.thinking}
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProgressView({ payload, timestamp }: { payload: ProgressPayload; timestamp: string }) {
+  return (
+    <div className="my-0.5 flex items-center gap-3 rounded-sm bg-surface/30 px-2 py-1 text-[11px] text-muted-foreground/60">
+      <span className="text-[10px] font-mono text-white/20">{formatEventTime(timestamp)}</span>
+      <span>STEP</span>
+      <span>Turn {payload.turn}</span>
+      <span className="font-mono font-medium text-cyan-400/70">{payload.total_tokens.toLocaleString()} tokens</span>
+      <span>{payload.tool_uses} tools</span>
+      <span className="ml-auto text-[10px]">{(payload.elapsed_ms / 1000).toFixed(1)}s</span>
+    </div>
+  );
+}
+
+function StatusView({
+  payload,
+  timestamp,
+}: {
+  payload: { message: string | null; phase: string | null; task_status: string };
+  timestamp: string;
+}) {
+  const isDone = payload.task_status === "completed";
+  const isError = payload.task_status === "failed";
+  const tone = isDone
+    ? "border-emerald-500/20 bg-emerald-500/[0.05] text-emerald-300"
+    : isError
+      ? "border-red-500/20 bg-red-500/[0.05] text-red-300"
+      : "border-cyan-500/20 bg-cyan-500/[0.05] text-cyan-300";
+
+  return (
+    <div className={`my-1 rounded-md border px-3 py-2 ${tone}`}>
+      <div className="flex items-center gap-2 text-[11px] font-medium">
+        <span>{isDone ? "OK" : isError ? "ERR" : "RUN"}</span>
+        <span className="uppercase tracking-wide">{payload.task_status}</span>
+        {payload.phase && (
+          <span className="rounded-full border border-current/15 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-current/80">
+            {payload.phase}
           </span>
         )}
-      </button>
-      {expanded && (
-        <pre className="text-purple-200/50 text-[11px] mt-1 whitespace-pre-wrap break-words leading-relaxed">
-          {payload.thinking}
-        </pre>
-      )}
+        <span className="ml-auto text-[10px] font-mono text-current/55">{formatEventTime(timestamp)}</span>
+      </div>
+      {payload.message && <p className="mt-1 text-[11px] leading-relaxed text-current/75">{payload.message}</p>}
     </div>
   );
 }
 
-function ProgressView({ payload }: { payload: ProgressPayload }) {
-  return (
-    <div className="flex items-center gap-3 py-1 px-2 text-[11px] text-muted-foreground/60 my-0.5 bg-surface/30 rounded-sm">
-      <span>\u2699\ufe0f</span>
-      <span>Turn {payload.turn}</span>
-      <span className="text-cyan-400/70 font-mono font-medium">
-        {payload.total_tokens.toLocaleString()} tokens
-      </span>
-      <span>{payload.tool_uses} tools</span>
-      {payload.last_tool_name && (
-        <span className="text-blue-400/50">{payload.last_tool_name}</span>
-      )}
-      <span className="ml-auto text-[10px]">
-        {(payload.elapsed_ms / 1000).toFixed(1)}s
-      </span>
-    </div>
-  );
+function EventRenderer({ event }: { event: SSEEvent }) {
+  if (isToolStart(event)) {
+    return <ToolStartView payload={event.data} timestamp={event.timestamp} />;
+  }
+  if (isToolResult(event)) {
+    return <ToolResultView payload={event.data} timestamp={event.timestamp} />;
+  }
+  if (isThinking(event)) {
+    return <ThinkingView payload={event.data} timestamp={event.timestamp} />;
+  }
+  if (isProgress(event)) {
+    return <ProgressView payload={event.data} timestamp={event.timestamp} />;
+  }
+  if (isStatusPayload(event)) {
+    return <StatusView payload={event.data} timestamp={event.timestamp} />;
+  }
+  if (typeof event.data === "string") {
+    return <LogLine text={event.data} timestamp={event.timestamp} />;
+  }
+  return <LogLine text={JSON.stringify(event.data)} timestamp={event.timestamp} />;
 }
-
-// ── 分类函数（向后兼容） ──────────────────────────────────
-
-function classifyLog(line: string): string {
-  const lower = line.toLowerCase();
-  if (lower.includes("[err]") || lower.includes("error") || lower.includes("failed")
-      || lower.includes("exception") || lower.includes("traceback")) {
-    return "log-error";
-  }
-  if (lower.includes("warning") || lower.includes("warn")) {
-    return "log-warning";
-  }
-  if (lower.includes("\u2713") || lower.includes("done")
-      || lower.includes("complete") || lower.includes("success")
-      || lower.includes("[ok]")) {
-    return "log-success";
-  }
-  if (/^(==|\u2192|\u25b8|\u25cf|\u25a0|\[.*?\])/.test(line)
-      || lower.includes("step") || lower.includes("stage")
-      || lower.includes("phase") || lower.includes("[progress]")
-      || lower.includes("[summary]")) {
-    return "log-step";
-  }
-  if (line.trim().length === 0) return "log-dim";
-  return "log-info";
-}
-
-// ── 主组件 ────────────────────────────────────────────────
 
 export function LogViewer({ events, isRunning }: LogViewerProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -328,141 +369,68 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events]);
 
-  // Pre-compute phase marker indices once per events change (O(n) instead of O(n²))
   const phaseMarkers = useMemo(() => {
     const markers: { index: number; marker: PhaseMarker }[] = [];
-    events.forEach((evt, i) => {
-      const phase = detectPhase(evt, i, events);
-      if (phase) markers.push({ index: i, marker: phase });
+    events.forEach((event, index) => {
+      const marker = detectPhase(event, index);
+      if (marker) {
+        markers.push({ index, marker });
+      }
     });
     return markers;
   }, [events]);
 
-  const phaseIndexSet = useMemo(
-    () => new Set(phaseMarkers.map((m) => m.index)),
-    [phaseMarkers],
-  );
-  const phaseMap = useMemo(
-    () => new Map(phaseMarkers.map((m) => [m.index, m.marker])),
-    [phaseMarkers],
-  );
+  const phaseIndexSet = useMemo(() => new Set(phaseMarkers.map((item) => item.index)), [phaseMarkers]);
+  const phaseMap = useMemo(() => new Map(phaseMarkers.map((item) => [item.index, item.marker])), [phaseMarkers]);
 
   return (
-    <div className="relative rounded-xl overflow-hidden border border-white/10 bg-black/40 backdrop-blur-xl shadow-2xl transition-all duration-300 ring-1 ring-white/5">
-      {/* 噪点纹理层 */}
-      <div className="absolute inset-0 pointer-events-none opacity-[0.04] mix-blend-screen bg-[url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E')]" />
+    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300">
+      <div className="pointer-events-none absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E')] opacity-[0.04] mix-blend-screen" />
 
-      {/* Terminal header bar */}
-      <div className="relative z-10 flex items-center gap-2 px-4 py-3 bg-white/[0.02] border-b border-white/[0.05]">
-        <div className="flex gap-1 items-center">
-          <span className="w-1.5 h-3.5 bg-cyan-500/80 shrink-0 rounded-[1px]" />
-          <span className="w-1.5 h-3.5 bg-blue-500/40 shrink-0 rounded-[1px] animate-pulse" />
+      <div className="relative z-10 flex items-center gap-2 border-b border-white/[0.05] bg-white/[0.02] px-4 py-3">
+        <div className="flex items-center gap-1">
+          <span className="h-3.5 w-1.5 rounded-[1px] bg-cyan-500/80" />
+          <span className="h-3.5 w-1.5 animate-pulse rounded-[1px] bg-blue-500/40" />
         </div>
-        <span className="text-[10px] text-cyan-400/80 font-mono tracking-widest uppercase ml-1 mt-0.5">
+        <span className="ml-1 mt-0.5 font-mono text-[10px] uppercase tracking-widest text-cyan-400/80">
           SYS.LOGS
         </span>
         {isRunning && (
           <span className="ml-auto flex items-center gap-2">
-            <span className="w-1 h-3 bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
-            <span className="text-[10px] text-green-400 font-mono uppercase tracking-wider">Active</span>
+            <span className="h-3 w-1 animate-pulse bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
+            <span className="font-mono text-[10px] uppercase tracking-wider text-green-400">Active</span>
           </span>
         )}
       </div>
 
-      {/* Statistics bar */}
       {events.length > 0 && <StatsBar events={events} />}
 
-      {/* Event content */}
-      <ScrollArea className={`h-[480px] w-full bg-transparent p-4 font-mono text-xs leading-5 relative z-10`}>
+      <ScrollArea className="relative z-10 h-[480px] w-full bg-transparent p-4 font-mono text-xs leading-5">
         <div className="space-y-0">
           {events.length === 0 && (
-            <div className="flex flex-col gap-2 pt-2 px-1 text-white/30 font-mono text-[11px] uppercase tracking-widest">
+            <div className="flex flex-col gap-2 px-1 pt-2 font-mono text-[11px] uppercase tracking-widest text-white/30">
               <span className="log-dim">Awaiting system boot...</span>
               <div className="flex items-center gap-2.5">
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-500" />
                 </span>
                 <span className="animate-pulse text-cyan-500/70">Initializing Claude Agent SDK</span>
               </div>
             </div>
           )}
-          {events.map((evt, i) => {
-            const elements: React.ReactNode[] = [];
-
-            // O(1) lookup from pre-computed phase map
-            if (phaseIndexSet.has(i)) {
-              elements.push(<PhaseDivider key={`phase-${i}`} marker={phaseMap.get(i)!} />);
+          {events.map((event, index) => {
+            const nodes: ReactNode[] = [];
+            if (phaseIndexSet.has(index)) {
+              nodes.push(<PhaseDivider key={`phase-${index}`} marker={phaseMap.get(index)!} />);
             }
-
-            elements.push(
-              <EventRenderer key={`evt-${i}`} event={evt} index={i} />
-            );
-
-            return elements;
+            nodes.push(<EventRenderer key={`event-${index}`} event={event} />);
+            return nodes;
           })}
-          {isRunning && (
-            <pre className="text-green-400 animate-pulse inline-block">
-              &#9608;
-            </pre>
-          )}
+          {isRunning && <pre className="inline-block animate-pulse text-green-400">_</pre>}
           <div ref={bottomRef} />
         </div>
       </ScrollArea>
     </div>
   );
-}
-
-// ── 事件分发渲染器 ────────────────────────────────────────
-
-function EventRenderer({ event, index }: { event: SSEEvent; index?: number }) {
-  // 结构化事件
-  if (isToolStart(event)) {
-    return <ToolStartView payload={event.data} />;
-  }
-  if (isToolResult(event)) {
-    return <ToolResultView payload={event.data} />;
-  }
-  if (isThinking(event)) {
-    return <ThinkingView payload={event.data} />;
-  }
-  if (isProgress(event)) {
-    return <ProgressView payload={event.data} />;
-  }
-  if (isStatusPayload(event)) {
-    const statusMap: Record<string, { icon: string }> = {
-      pending: { icon: "⏳" },
-      running: { icon: "▶" },
-      completed: { icon: "✅" },
-      failed: { icon: "❌" },
-    };
-    const s = statusMap[event.data.task_status] ?? { icon: "•" };
-    const phaseSuffix = event.data.phase ? ` (${event.data.phase})` : "";
-    const messageSuffix = event.data.message ? ` - ${event.data.message}` : "";
-    return (
-      <LogLine
-        text={`${s.icon} Status: ${event.data.task_status}${phaseSuffix}${messageSuffix}`}
-      />
-    );
-  }
-
-  // Backward compatibility: plain-text log / status / error events
-  if (typeof event.data === "string") {
-    // status 事件也渲染为可见日志
-    if (event.type === "status") {
-      const statusMap: Record<string, { icon: string; cls: string }> = {
-        pending: { icon: "\u23F3", cls: "log-step" },
-        running: { icon: "\u25B6", cls: "log-success" },
-        completed: { icon: "\u2705", cls: "log-success" },
-        failed: { icon: "\u274C", cls: "log-error" },
-      };
-      const s = statusMap[event.data as string]
-        ?? { icon: "\u2022", cls: "log-info" };
-      return <LogLine text={`${s.icon} Status: ${event.data}`} />;
-    }
-    return <LogLine text={event.data} />;
-  }
-
-  // 兜底：未知结构化数据转为 JSON 字符串
-  return <LogLine text={JSON.stringify(event.data)} />;
 }

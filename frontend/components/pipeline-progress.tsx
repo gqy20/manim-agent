@@ -1,66 +1,65 @@
 "use client";
 
 import { useMemo } from "react";
+import type { ReactNode } from "react";
 import type { SSEEvent, StatusPayload } from "@/types";
 import { isStatusPayload } from "@/types";
 import {
-  Loader2,
-  Sparkles,
-  Film,
-  Clapperboard,
-  Mic,
+  AlertTriangle,
   CheckCircle2,
+  Clapperboard,
+  Combine,
+  Film,
+  Loader2,
+  Mic,
+  Sparkles,
 } from "lucide-react";
-
-// ── Pipeline Phase Definition ──────────────────────────────
 
 export interface PipelinePhase {
   id: string;
   label: string;
-  icon: React.ReactNode;
-  /** Legacy-only fallback keywords for older log-only backends */
+  icon: ReactNode;
   keywords: string[];
 }
 
-/** Ordered pipeline phases — index = step order. */
+const PHASE_ORDER = ["init", "scene", "render", "tts", "mux", "done"] as const;
+
 const PIPELINE_PHASES: PipelinePhase[] = [
   {
     id: "init",
-    label: "初始化",
+    label: "Initialize",
     icon: <Sparkles className="h-3.5 w-3.5" />,
-    keywords: ["[PROGRESS]", "Phase 1", "Connecting", "Initializing"],
+    keywords: ["[progress]", "phase 1", "connect", "init"],
   },
   {
     id: "scene",
-    label: "场景生成",
+    label: "Build Scene",
     icon: <Film className="h-3.5 w-3.5" />,
-    keywords: [
-      "Phase 2",
-      "scene",
-      "generat",
-      "Write",
-      "Edit",
-      "manim",
-      ".py",
-    ],
+    keywords: ["scene", "write", "edit", ".py", "generatedscene"],
   },
   {
     id: "render",
-    label: "视频渲染",
+    label: "Render Video",
     icon: <Clapperboard className="h-3.5 w-3.5" />,
-    keywords: ["Phase 3", "render", "Rendering", "-qh", "-qm", "-ql"],
+    keywords: ["phase 2", "render", "manim", "-qh", "-qm", "-ql"],
   },
   {
     id: "tts",
-    label: "语音合成",
+    label: "Generate Voice",
     icon: <Mic className="h-3.5 w-3.5" />,
-    keywords: ["Phase 4", "TTS", "narration", "voice", "speech"],
+    keywords: ["phase 3", "[tts]", "voice", "speech", "narration"],
+  },
+  {
+    id: "mux",
+    label: "Mux Final",
+    icon: <Combine className="h-3.5 w-3.5" />,
+    keywords: ["phase 4", "[mux]", "ffmpeg", "final video"],
   },
   {
     id: "done",
-    label: "完成",
+    label: "Complete",
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
-    keywords: ["[SUMMARY]", "Session Summary", "completed", "final.mp4"],
+    keywords: ["[summary]", "completed", "final.mp4"],
   },
 ];
 
@@ -76,30 +75,25 @@ interface PipelineProgressProps {
   taskStatus: string;
 }
 
-const PHASE_ORDER = ["init", "scene", "render", "tts", "done"] as const;
-
 function getActivePhaseIndexFromStatus(
   phase: StatusPayload["phase"] | undefined,
 ): number {
   if (!phase) return -1;
-  if (phase === "mux" || phase === "done") {
-    return PHASE_ORDER.indexOf("done");
-  }
   return PHASE_ORDER.indexOf(phase as (typeof PHASE_ORDER)[number]);
 }
 
 function detectLegacyPhaseFromLogs(events: SSEEvent[]): number {
   const logText = events
-    .filter((e) => e.type === "log" && typeof e.data === "string")
-    .map((e) => (e.data as string).toLowerCase())
+    .flatMap((event) =>
+      event.type === "log" && typeof event.data === "string" ? [event.data.toLowerCase()] : [],
+    )
     .join(" ");
 
   let maxActiveIndex = -1;
-  for (let i = 0; i < PIPELINE_PHASES.length; i++) {
-    const phase = PIPELINE_PHASES[i];
-    const matched = phase.keywords.some((kw) => logText.includes(kw.toLowerCase()));
-    if (matched) {
-      maxActiveIndex = i;
+  for (let index = 0; index < PIPELINE_PHASES.length; index += 1) {
+    const phase = PIPELINE_PHASES[index];
+    if (phase.keywords.some((keyword) => logText.includes(keyword))) {
+      maxActiveIndex = index;
     }
   }
 
@@ -110,45 +104,33 @@ function detectLegacyPhaseFromLogs(events: SSEEvent[]): number {
   return maxActiveIndex;
 }
 
-// ── Phase Detection ────────────────────────────────────────
-
-/**
- * Scan all events to determine which pipeline phase we're in.
- * Returns an array of PhaseState matching PIPELINE_PHASES order.
- */
-function detectCurrentPhases(
-  events: SSEEvent[],
-  taskStatus: string,
-): PhaseState[] {
+function detectCurrentPhases(events: SSEEvent[], taskStatus: string): PhaseState[] {
   const latestStatusPayload = [...events]
     .reverse()
     .find((event): event is SSEEvent & { data: StatusPayload } => isStatusPayload(event))
     ?.data;
 
-  // If task is terminal, mark everything up to current as done
   const isTerminal = ["completed", "failed"].includes(taskStatus);
   const hasError = taskStatus === "failed";
-
-  // Also check structured event types
-  const hasToolEvents = events.some((e) =>
-    e.type === "tool_start" || e.type === "tool_result",
+  const hasSceneSignals = events.some(
+    (event) =>
+      event.type === "tool_start" ||
+      event.type === "tool_result" ||
+      event.type === "thinking" ||
+      event.type === "progress",
   );
-  const hasProgressEvents = events.some((e) => e.type === "progress");
-  const hasThinkingEvents = events.some((e) => e.type === "thinking");
 
   const states: PhaseState[] = PIPELINE_PHASES.map((phase) => ({
     phase,
-    status: "pending" as PhaseStatus,
+    status: "pending",
   }));
 
   let maxActiveIndex = getActivePhaseIndexFromStatus(latestStatusPayload?.phase);
 
-  // Prefer structured events over log text when status phase is not available yet.
-  if (maxActiveIndex === -1 && (hasToolEvents || hasThinkingEvents || hasProgressEvents)) {
+  if (maxActiveIndex === -1 && hasSceneSignals) {
     maxActiveIndex = PHASE_ORDER.indexOf("scene");
   }
 
-  // Legacy fallback for older servers that only emitted free-form logs.
   if (maxActiveIndex === -1) {
     maxActiveIndex = detectLegacyPhaseFromLogs(events);
   }
@@ -157,73 +139,65 @@ function detectCurrentPhases(
     maxActiveIndex = PHASE_ORDER.indexOf("done");
   }
 
-  // Assign statuses
-  for (let i = 0; i < states.length; i++) {
-    if (i < maxActiveIndex) {
-      states[i].status = "done";
-    } else if (i === maxActiveIndex) {
-      states[i].status = isTerminal
-        ? hasError
-          ? "error"
-          : "done"
-        : "active";
-    } else {
-      states[i].status = isTerminal ? (hasError ? "error" : "pending") : "pending";
+  for (let index = 0; index < states.length; index += 1) {
+    if (index < maxActiveIndex) {
+      states[index].status = "done";
+    } else if (index === maxActiveIndex) {
+      states[index].status = isTerminal ? (hasError ? "error" : "done") : "active";
     }
   }
 
-  // Special case: completed task → all done
   if (taskStatus === "completed") {
-    states.forEach((s) => {
-      if (s.status !== "error") s.status = "done";
+    states.forEach((state) => {
+      state.status = "done";
     });
+  }
+
+  if (taskStatus === "failed") {
+    const activeState = states.find((state) => state.status === "active");
+    if (activeState) {
+      activeState.status = "error";
+    }
   }
 
   return states;
 }
 
-// ── Sub-components ─────────────────────────────────────────
-
 function StepDot({ state }: { state: PhaseState }) {
-  const { status, phase } = state;
-
   const baseClasses =
-    "relative z-10 flex items-center justify-center w-8 h-8 rounded-full border transition-all duration-500";
+    "relative z-10 flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-500";
 
-  switch (status) {
-    case "done":
-      return (
-        <div
-          className={`${baseClasses} bg-emerald-500/15 border-emerald-500/30 text-emerald-400`}
-        >
-          <CheckCircle2 className="h-4 w-4" />
-        </div>
-      );
-    case "active":
-      return (
-        <div
-          className={`${baseClasses} bg-cyan-500/15 border-cyan-500/40 text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.25)]`}
-        >
-          <Loader2 className="h-4 w-4 animate-spin" />
-        </div>
-      );
-    case "error":
-      return (
-        <div
-          className={`${baseClasses} bg-red-500/15 border-red-500/30 text-red-400`}
-        >
-          {phase.icon}
-        </div>
-      );
-    default:
-      return (
-        <div
-          className={`${baseClasses} bg-white/[0.03] border-white/10 text-muted-foreground/30`}
-        >
-          {phase.icon}
-        </div>
-      );
+  if (state.status === "done") {
+    return (
+      <div className={`${baseClasses} border-emerald-500/30 bg-emerald-500/15 text-emerald-400`}>
+        <CheckCircle2 className="h-4 w-4" />
+      </div>
+    );
   }
+
+  if (state.status === "active") {
+    return (
+      <div
+        className={`${baseClasses} border-cyan-500/40 bg-cyan-500/15 text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.25)]`}
+      >
+        <Loader2 className="h-4 w-4 animate-spin" />
+      </div>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <div className={`${baseClasses} border-red-500/30 bg-red-500/15 text-red-400`}>
+        <AlertTriangle className="h-4 w-4" />
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${baseClasses} border-white/10 bg-white/[0.03] text-muted-foreground/30`}>
+      {state.phase.icon}
+    </div>
+  );
 }
 
 function ConnectorLine({
@@ -235,73 +209,77 @@ function ConnectorLine({
   total: number;
   activeUntil: number;
 }) {
+  if (index >= total - 1) return null;
+
   const isActive = index < activeUntil;
-  const isLast = index >= total - 1;
-
-  if (isLast) return null;
-
   return (
-    <div className="flex-1 h-[2px] mx-1 relative overflow-hidden rounded-full">
-      {/* Background track */}
+    <div className="relative mx-1 h-[2px] flex-1 overflow-hidden rounded-full">
       <div className="absolute inset-0 bg-white/[0.06]" />
-      {/* Progress fill */}
       <div
         className={`absolute inset-y-0 left-0 transition-all duration-700 ease-out ${
-          isActive
-            ? "bg-gradient-to-r from-cyan-500/50 to-cyan-400/30"
-            : "w-0"
+          isActive ? "w-full bg-gradient-to-r from-cyan-500/50 to-cyan-400/30" : "w-0"
         }`}
       />
-      {/* Animated shimmer when active */}
-      {isActive && (
-        <div className="absolute inset-0 animate-pulse bg-cyan-400/10" />
-      )}
+      {isActive && <div className="absolute inset-0 animate-pulse bg-cyan-400/10" />}
     </div>
   );
 }
 
-// ── Main Component ──────────────────────────────────────────
-
 export function PipelineProgress({ events, taskStatus }: PipelineProgressProps) {
-  const phases = useMemo(
-    () => detectCurrentPhases(events, taskStatus),
-    [events, taskStatus],
+  const phases = useMemo(() => detectCurrentPhases(events, taskStatus), [events, taskStatus]);
+  const latestStatusPayload = useMemo(
+    () =>
+      [...events]
+        .reverse()
+        .find((event): event is SSEEvent & { data: StatusPayload } => isStatusPayload(event))
+        ?.data,
+    [events],
   );
 
-  // Find the active phase index for connector lines
-  const activeIndex = phases.findIndex((p) => p.status === "active");
-  const doneCount = phases.filter((p) => p.status === "done").length;
+  const activeIndex = phases.findIndex((phase) => phase.status === "active");
+  const doneCount = phases.filter((phase) => phase.status === "done").length;
   const activeUntil = activeIndex >= 0 ? activeIndex : doneCount;
 
   const isIdle = taskStatus === "pending" && events.length === 0;
+  const isCompleted = taskStatus === "completed";
+  const isFailed = taskStatus === "failed";
+  const activePhase = phases.find((phase) => phase.status === "active");
+  const headerLabel = isCompleted
+    ? "Completed"
+    : isFailed
+      ? "Needs Attention"
+      : activePhase?.phase.label ?? latestStatusPayload?.phase ?? (isIdle ? "Idle" : "Running");
+  const headerTone = isCompleted
+    ? "text-emerald-400"
+    : isFailed
+      ? "text-red-400"
+      : isIdle
+        ? "text-muted-foreground/30"
+        : "text-cyan-400";
+  const phaseMessage = latestStatusPayload?.message ?? null;
 
   return (
     <div className="space-y-2.5">
-      {/* Header */}
       <div className="flex items-center gap-2">
-        <Loader2 className={`h-3.5 w-3.5 ${isIdle ? "text-muted-foreground/30" : "text-primary/60"}`} />
+        <Loader2
+          className={`h-3.5 w-3.5 ${isIdle ? "text-muted-foreground/30" : "text-primary/60"}`}
+        />
         <h2 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60">
           Pipeline
         </h2>
-        {!isIdle && (
-          <span className="text-[10px] font-mono text-primary/40">
-            {phases.find((p) => p.status === "active")?.phase.label ?? "Idle"}
-          </span>
-        )}
+        <span className={`text-[10px] font-mono ${headerTone}`}>{headerLabel}</span>
       </div>
 
-      {/* Progress Stepper */}
-      <div className="glass-card rounded-xl p-4 sm:p-5">
-        <div className="flex items-center gap-1">
-          {phases.map((state, i) => (
+      <div className="glass-card space-y-4 rounded-xl p-4 sm:p-5">
+        <div className="flex items-center gap-1 overflow-x-auto pb-1">
+          {phases.map((state, index) => (
             <div key={state.phase.id} className="flex items-center gap-1">
-              {/* Step dot + label */}
               <div className="flex flex-col items-center gap-1.5">
                 <StepDot state={state} />
                 <span
-                  className={`text-[9px] font-mono whitespace-nowrap transition-colors duration-300 ${
+                  className={`whitespace-nowrap text-[9px] font-mono transition-colors duration-300 ${
                     state.status === "active"
-                      ? "text-cyan-400 font-medium"
+                      ? "font-medium text-cyan-400"
                       : state.status === "done"
                         ? "text-emerald-400/70"
                         : state.status === "error"
@@ -312,15 +290,51 @@ export function PipelineProgress({ events, taskStatus }: PipelineProgressProps) 
                   {state.phase.label}
                 </span>
               </div>
-
-              {/* Connector line to next step */}
-              <ConnectorLine
-                index={i}
-                total={phases.length}
-                activeUntil={activeUntil}
-              />
+              <ConnectorLine index={index} total={phases.length} activeUntil={activeUntil} />
             </div>
           ))}
+        </div>
+
+        <div className="rounded-xl border border-white/8 bg-white/[0.02] px-3.5 py-3">
+          <div className="flex items-start gap-3">
+            <div
+              className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border ${
+                isCompleted
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                  : isFailed
+                    ? "border-red-500/30 bg-red-500/10 text-red-400"
+                    : "border-cyan-500/30 bg-cyan-500/10 text-cyan-400"
+              }`}
+            >
+              {isCompleted ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : isFailed ? (
+                <AlertTriangle className="h-4 w-4" />
+              ) : (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              )}
+            </div>
+            <div className="min-w-0 space-y-1">
+              <p className="text-[11px] font-mono uppercase tracking-[0.24em] text-white/45">
+                {isCompleted
+                  ? "Pipeline Complete"
+                  : isFailed
+                    ? "Pipeline Interrupted"
+                    : "Current Phase"}
+              </p>
+              <p className="text-sm text-white/85">
+                {phaseMessage ??
+                  (isCompleted
+                    ? "The backend has finished the task and the UI is syncing the final artifact."
+                    : isFailed
+                      ? "The pipeline reported a failure. Review the log stream to find the last successful step."
+                      : activePhase?.phase.label
+                        ? `${activePhase.phase.label} is currently in progress.`
+                        : "The pipeline is connected and waiting for the next backend update.")}
+              </p>
+              <p className="text-[11px] text-muted-foreground/60">{events.length} events received</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

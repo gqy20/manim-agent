@@ -5,7 +5,7 @@ import { TaskCard } from "@/components/task-card";
 import { listTasks } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import type { Task } from "@/types";
-import { Loader2, History, Inbox, Sparkles, ArrowRight } from "lucide-react";
+import { History, Inbox, Sparkles, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 /* ── Skeleton ────────────────────────────────────── */
