@@ -365,44 +365,6 @@ def _build_user_prompt(user_text: str) -> str:
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
 
-def _build_fallback_narration(user_text: str) -> str:
-    """Convert a raw user request into a more natural spoken narration fallback."""
-    text = user_text.strip()
-    if not text:
-        return text
-
-    # Drop common request prefixes before a colon, e.g. "请生成一个中文讲解短动画：..."
-    text = re.sub(
-        r"^(请|帮我|麻烦|请帮我)?(生成|制作|创建|做|做一个|做一段|做个)?[^：:]{0,24}[：:]",
-        "",
-        text,
-        count=1,
-    ).strip()
-
-    # Remove imperative request openings if they remain.
-    text = re.sub(
-        r"^(请|帮我|麻烦你|请帮我|请用中文|用中文|生成|制作|创建|做一个|做一段|做个|给我)(来|先|再)?",
-        "",
-        text,
-        count=1,
-    ).strip()
-
-    # Normalize command-like trailing phrasing into spoken prose.
-    text = text.replace("最后显示", "最后显示")
-    text = text.replace("最后出现", "最后出现")
-    text = text.strip(" \t\r\n，,。.;；")
-
-    if not text:
-        return user_text.strip()
-
-    if re.search(r"[\u4e00-\u9fff]", text):
-        if not re.search(r"[。！？!?]$", text):
-            text = f"{text}。"
-        return text
-
-    return text if re.search(r"[.!?]$", text) else f"{text}."
-
-
 def _estimate_spoken_duration_seconds(text: str) -> float:
     """Roughly estimate spoken duration for mixed Chinese/Latin narration."""
     normalized = text.strip()
@@ -613,10 +575,13 @@ async def run_pipeline(
         narration_text = (
             po.narration.strip()
             if po and po.narration and po.narration.strip()
-            else _build_fallback_narration(user_text)
+            else ""
         )
-        if po is not None and (not po.narration or not po.narration.strip()):
-            po.narration = narration_text
+        if not narration_text:
+            raise RuntimeError(
+                "Claude did not provide structured_output.narration. "
+                "TTS requires narration from the primary structured output."
+            )
         if _narration_is_too_short_for_video(
             narration_text,
             po.duration_seconds if po is not None else None,

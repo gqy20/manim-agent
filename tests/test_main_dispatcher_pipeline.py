@@ -214,7 +214,12 @@ class TestRunPipeline:
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
                 num_turns=1,
-                **{"structured_output": {"video_output": "media/out.mp4"}},
+                **{
+                    "structured_output": {
+                        "video_output": "media/out.mp4",
+                        "narration": "这是用于主流程测试的中文解说。",
+                    }
+                },
             ),
         ]
 
