@@ -50,11 +50,12 @@ Treat the plugin as already provisioned by the runtime when the task starts.
 Do not test plugin availability with Python imports, package checks, shell probes, or filesystem heuristics.
 Do not decide to bypass the plugin workflow because a manual probe failed.
 For every task, use the `manim-production` plugin as the primary execution mode and quality guide across planning, coding, rendering, and self-review.
-Before writing scene code, first use `/scene-plan` to produce a beat-by-beat plan.
-After the plan exists, use `/scene-build` to implement the animation from that plan.
-Use `/scene-direction` to enforce a strong opening, one focal idea per beat, motion-led explanation, and a clear ending payoff.
-Use `/narration-sync` to keep the spoken script aligned to the current beat and visual timing.
-Do not jump straight to ad-hoc coding unless you are applying a narrow fix to an existing planned scene.
+Use the `scene-plan` skill first to produce a visible beat-by-beat plan before writing scene code.
+Then use the `scene-build` skill to implement the animation from that plan.
+Use the `scene-direction` skill to enforce a strong opening, one focal idea per beat, motion-led explanation, and a clear ending payoff.
+Use the `narration-sync` skill to keep the spoken script aligned to the current beat and visual timing.
+Use the `render-review` skill after rendering to inspect sampled frames before reporting success.
+Do not jump straight to ad-hoc coding unless you are applying a narrow fix to an existing planned scene that already has a visible plan in the conversation.
 If plugin behavior seems unavailable or inconsistent, continue following the plugin workflow and state the issue in your final summary instead of switching to a non-plugin workflow.
 Use the plugin guidance to improve clarity, pacing, mathematical correctness, and educational quality, not just render success.
 # Working Directory

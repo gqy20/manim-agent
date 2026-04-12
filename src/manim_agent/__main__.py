@@ -39,9 +39,11 @@ from claude_agent_sdk import (
 )
 
 from . import prompts
+from . import render_review
 from . import tts_client
 from . import video_builder
 from .output_schema import PipelineOutput
+from .review_schema import RenderReviewOutput
 from .pipeline_events import (
     EventType,
     PipelineEvent,
@@ -247,6 +249,8 @@ def _build_options(
     prompt_file: str | None = None,
     quality: str = "high",
     log_callback: Callable[[str], None] | None = None,
+    output_format: dict[str, Any] | None = None,
+    allowed_tools: list[str] | None = None,
 ) -> ClaudeAgentOptions:
     """构建 ClaudeAgentOptions，含会话隔离和日志回调。
 
@@ -308,6 +312,15 @@ def _build_options(
 
     permission_mode = _select_permission_mode()
 
+    resolved_allowed_tools = allowed_tools or [
+        "Read",
+        "Write",
+        "Edit",
+        "Bash",
+        "Glob",
+        "Grep",
+    ]
+
     options = ClaudeAgentOptions(
         cwd=resolved_cwd,
         add_dirs=[resolved_cwd],
@@ -320,16 +333,9 @@ def _build_options(
         # ── 日志回调 ──
         stderr=bound_stderr,
         # ── 结构化输出 schema ──
-        output_format=PipelineOutput.output_format_schema(),
+        output_format=output_format or PipelineOutput.output_format_schema(),
         # ── 工具白名单：收敛攻击面，仅允许 pipeline 必需的工具（参照 Distill）──
-        allowed_tools=[
-            "Read",
-            "Write",
-            "Edit",
-            "Bash",
-            "Glob",
-            "Grep",
-        ],
+        allowed_tools=resolved_allowed_tools,
         # Claude Code's full startup path is brittle in Railway containers.
         # bare mode keeps the SDK query path lean while still supporting tool use.
         extra_args={"bare": None},
@@ -411,12 +417,15 @@ def _build_user_prompt(user_text: str) -> str:
         "- Treat `manim-production` as already available when the task begins.\n"
         "- Do not check plugin availability with `python -c`, `import`, `pip`, shell probes, or path inspection.\n"
         "- Do not switch to a non-plugin workflow because a manual plugin check failed.\n"
-        "- Start every task with `/scene-plan` before coding the scene.\n"
-        "- After the plan exists, use `/scene-build` to implement the animation while keeping the planned beat order unless debugging requires a very small fix.\n"
-        "- Use `/scene-direction` to enforce a strong opening, one focal idea per beat, motion-led explanation, and a clear ending payoff.\n"
-        "- Use `/narration-sync` to keep the spoken explanation aligned to the current beat and visual timing.\n"
+        "- Start every task by using the `scene-plan` skill and writing a visible planning pass before coding the scene.\n"
+        "- The planning pass must be shown in Markdown with these section headings: `Mode`, `Learning Goal`, `Audience`, `Beat List`, `Narration Outline`, `Visual Risks`, and `Build Handoff`.\n"
+        "- After the plan exists, use the `scene-build` skill to implement the animation while keeping the planned beat order unless debugging requires a very small fix.\n"
+        "- Use the `scene-direction` skill to enforce a strong opening, one focal idea per beat, motion-led explanation, and a clear ending payoff.\n"
+        "- Use the `narration-sync` skill to keep the spoken explanation aligned to the current beat and visual timing.\n"
+        "- Use the `render-review` skill after rendering to inspect sampled frames before reporting success.\n"
         "- Use the `manim-production` skill as the umbrella quality guide across planning, implementation, rendering, and final review.\n"
         "- If plugin behavior appears inconsistent, keep following the plugin workflow and report the issue later instead of bypassing it.\n"
+        "- Do not begin writing `scene.py` until the visible planning pass is complete.\n"
         "- Keep every file inside the task directory only.\n"
         "- Write the main script to scene.py unless multiple files are truly necessary.\n"
         "- Use GeneratedScene as the main Manim Scene class unless the user explicitly asks otherwise.\n"
@@ -457,6 +466,93 @@ def _build_fallback_narration(user_text: str) -> str:
     return "下面我们来看这个动画的主要内容。"
 
 
+_PLAN_SECTION_HEADINGS = (
+    "Mode",
+    "Learning Goal",
+    "Audience",
+    "Beat List",
+    "Narration Outline",
+    "Visual Risks",
+    "Build Handoff",
+)
+
+
+def _has_visible_scene_plan(collected_text: list[str]) -> bool:
+    """Check whether the assistant emitted the required planning scaffold."""
+    if not collected_text:
+        return False
+
+    text = "\n".join(collected_text)
+    matches = 0
+    for heading in _PLAN_SECTION_HEADINGS:
+        if re.search(
+            rf"(?im)^\s*(?:#+\s*|\d+\.\s*)?{re.escape(heading)}\s*:?\s*$",
+            text,
+        ):
+            matches += 1
+    return matches >= len(_PLAN_SECTION_HEADINGS)
+
+
+def _extract_visible_scene_plan_text(collected_text: list[str], max_chars: int = 6000) -> str:
+    """Return a bounded slice of assistant text for downstream review context."""
+    text = "\n".join(part.strip() for part in collected_text if part and part.strip()).strip()
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars]
+
+
+async def _run_render_review(
+    *,
+    user_text: str,
+    plan_text: str,
+    video_output: str,
+    frame_paths: list[str],
+    cwd: str,
+    system_prompt: str,
+    quality: str,
+    log_callback: Callable[[str], None] | None,
+) -> RenderReviewOutput:
+    """Ask Claude to review sampled render frames and return a structured verdict."""
+    frame_bullets = "\n".join(f"- {path}" for path in frame_paths)
+    review_prompt = (
+        "Use the `render-review` skill to inspect sampled frames from a rendered Manim video.\n"
+        "Do not write, edit, or render anything in this pass. Only review the output.\n"
+        "Inspect the frame image files with Read if needed.\n"
+        "Mark `approved` as false if there are blocking visual issues.\n"
+        "Blocking issues include: empty or title-only opening, overcrowded frame, unclear focal point, "
+        "key conclusion not shown through visible change, or weak ending payoff.\n\n"
+        f"Original user request:\n{user_text}\n\n"
+        "Visible plan / build context:\n"
+        f"{plan_text or '(no plan text available)'}\n\n"
+        f"Rendered video path:\n- {video_output}\n\n"
+        "Sampled review frames:\n"
+        f"{frame_bullets}\n"
+    )
+
+    review_options = _build_options(
+        cwd=cwd,
+        system_prompt=system_prompt,
+        max_turns=12,
+        quality=quality,
+        log_callback=log_callback,
+        output_format=RenderReviewOutput.output_format_schema(),
+        allowed_tools=["Read", "Glob", "Grep"],
+    )
+
+    result_message: ResultMessage | None = None
+    async for message in query(prompt=review_prompt, options=review_options):
+        if isinstance(message, ResultMessage):
+            result_message = message
+
+    if result_message is None or result_message.structured_output is None:
+        raise RuntimeError("Render review did not produce a structured verdict.")
+
+    raw = result_message.structured_output
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    return RenderReviewOutput.model_validate(raw)
+
+
 async def run_pipeline(
     user_text: str,
     output_path: str,
@@ -480,8 +576,7 @@ async def run_pipeline(
         quality=quality,
         cwd=resolved_cwd,
     )
-    marker = "\n\n# "
-    system_prompt = full_system_prompt.split(marker, 1)[0] if marker in full_system_prompt else full_system_prompt
+    system_prompt = full_system_prompt
 
     options = _build_options(
         cwd=resolved_cwd,
@@ -543,6 +638,23 @@ async def run_pipeline(
 
         if _dispatcher_ref is not None:
             _dispatcher_ref.append(dispatcher)
+
+        if not _has_visible_scene_plan(dispatcher.collected_text):
+            dispatcher._print("")
+            dispatcher._print(
+                f"{_EMOJI['cross']} Missing required scene plan before implementation."
+            )
+            dispatcher._print(
+                "  The assistant must emit a visible planning pass with Mode, Learning Goal,"
+            )
+            dispatcher._print(
+                "  Audience, Beat List, Narration Outline, Visual Risks, and Build Handoff"
+            )
+            dispatcher._print("  before writing scene.py or rendering.")
+            raise RuntimeError(
+                "Claude skipped the required scene-plan pass. "
+                "A visible planning scaffold is mandatory before implementation."
+            )
 
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2/4: resolve render output")
         logger.debug(
@@ -629,6 +741,40 @@ async def run_pipeline(
                 "Claude did not produce a valid pipeline output. "
                 f"Phase 2/4 outcome status={failure_phase}. "
                 "The agent may have failed to render the scene."
+            )
+
+        dispatcher._print("  [REVIEW] Sampling render frames for quality review")
+        _emit_status(
+            event_callback,
+            task_status="running",
+            phase="render",
+            message="Reviewing sampled frames before final success",
+        )
+        review_frames = await render_review.extract_review_frames(
+            video_output,
+            resolved_cwd,
+        )
+        review_result = await _run_render_review(
+            user_text=user_text,
+            plan_text=_extract_visible_scene_plan_text(dispatcher.collected_text),
+            video_output=video_output,
+            frame_paths=review_frames,
+            cwd=resolved_cwd,
+            system_prompt=system_prompt,
+            quality=quality,
+            log_callback=log_callback,
+        )
+        dispatcher._print(f"  [REVIEW] {review_result.summary}")
+        if review_result.blocking_issues:
+            for issue in review_result.blocking_issues:
+                dispatcher._print(f"  [REVIEW][BLOCK] {issue}")
+        if review_result.suggested_edits:
+            for edit in review_result.suggested_edits:
+                dispatcher._print(f"  [REVIEW][FIX] {edit}")
+        if not review_result.approved:
+            raise RuntimeError(
+                "Rendered video failed the render-review gate. "
+                + "; ".join(review_result.blocking_issues or [review_result.summary])
             )
 
         if no_tts:

@@ -364,16 +364,26 @@ class _MessageDispatcher:
             self._saw_completed_task_notification = True
         if msg.status == "completed" and msg.output_file:
             normalized_output = normalize_path_string(msg.output_file)
-            self.video_output = normalized_output
-            self.pipeline_output = PipelineOutput(
-                video_output=normalized_output,
-                scene_file=self._infer_scene_file(),
-                scene_class=self._infer_scene_class(),
-            )
-            self._sync_compat_attrs()
-            self._print(
-                f"  {_EMOJI['video']} Video output from task_notification: {normalized_output}"
-            )
+            if self._looks_like_rendered_video(normalized_output):
+                self.video_output = normalized_output
+                self.pipeline_output = PipelineOutput(
+                    video_output=normalized_output,
+                    scene_file=self._infer_scene_file(),
+                    scene_class=self._infer_scene_class(),
+                )
+                self._sync_compat_attrs()
+                self._print(
+                    f"  {_EMOJI['video']} Video output from task_notification: {normalized_output}"
+                )
+            else:
+                logger.debug(
+                    "_handle_task_notification: ignoring non-video output_file=%r",
+                    normalized_output,
+                )
+                self._print(
+                    "  [WARN] Task notification provided a non-video output artifact; "
+                    "falling back to structured output or filesystem scan."
+                )
         elif msg.status == "completed" and not msg.output_file:
             logger.debug("_handle_task_notification: completed but no output_file")
 
@@ -586,6 +596,11 @@ class _MessageDispatcher:
                     logger.debug("_extract_video_path_from_text: matched %r", normalized)
                     return normalized
         return None
+
+    def _looks_like_rendered_video(self, path_str: str) -> bool:
+        """Return True only for real local mp4 outputs, not Claude temp artifacts."""
+        path = Path(path_str)
+        return path.suffix.lower() == ".mp4" and path.exists()
 
     def _infer_scene_file(self) -> str | None:
         """Infer the scene file from hook-captured Python files under the task cwd."""

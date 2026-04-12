@@ -23,10 +23,11 @@
     "privacyPolicyURL": "https://example.com/privacy",
     "termsOfServiceURL": "https://example.com/terms",
     "defaultPrompt": [
-      "Use /scene-plan to storyboard this math animation before coding.",
-      "Use /scene-build to implement this Manim scene from the existing plan.",
-      "Use /scene-direction to strengthen opening beats, focal hierarchy, motion-led explanation, and ending payoff.",
-      "Use /narration-sync to keep the spoken explanation aligned to the visual beats.",
+      "Use the scene-plan skill first and show a visible beat-by-beat plan before coding.",
+      "Use the scene-build skill only after the plan exists.",
+      "Use the scene-direction skill to strengthen opening beats, focal hierarchy, motion-led explanation, and ending payoff.",
+      "Use the narration-sync skill to keep the spoken explanation aligned to the visual beats.",
+      "Use the render-review skill after rendering to inspect sampled frames before reporting success.",
       "Review this Manim scene for pacing, layout, narration quality, and beat structure."
     ],
     "brandColor": "#1F6FEB"

@@ -7,14 +7,15 @@ description: Produce, review, or refactor Manim scenes for educational videos wi
 
 Follow this workflow when working on a Manim task.
 
-## Recommended full flow
+## Required full flow
 
-- Use `/scene-plan` first for most educational, proof, concept, function, or geometry tasks.
-- Use `/scene-build` after a plan exists and implementation should follow that plan.
-- Use `/scene-direction` to enforce stronger opening beats, visual focus, motion-led explanation, and ending payoff.
-- Use `/narration-sync` to keep spoken narration aligned to the current beat and visual timing.
+- Use the `scene-plan` skill first for every task.
+- Emit a visible plan in the conversation before writing code.
+- Use the `scene-build` skill only after that plan exists.
+- Use the `scene-direction` skill to enforce stronger opening beats, visual focus, motion-led explanation, and ending payoff.
+- Use the `narration-sync` skill to keep spoken narration aligned to the current beat and visual timing.
+- Use the `render-review` skill after rendering and before reporting success.
 - Use this `manim-production` skill as the umbrella quality guide across all steps.
-- Skip `/scene-plan` only for genuinely tiny one-beat demos.
 
 ## Classify the task
 
@@ -40,12 +41,14 @@ Choose one primary mode before writing code:
 - `/scene-build`: plan-to-code execution, render/debug loop, and implementation refinement
 - `/scene-direction`: opening hook, per-beat visual focus, motion-first explanation, and ending payoff
 - `/narration-sync`: spoken pacing, beat-by-beat narration alignment, and narration density control
+- `/render-review`: sampled-frame quality review and blocking issue detection before final success
 
 ## Plan before coding
 
 - Keep one main learning objective per scene.
 - Prefer one scene file and one main `Scene` class unless the task truly needs more.
 - Decide the visual sequence first: setup, reveal, transform, takeaway.
+- Always show the plan explicitly before implementation. Do not keep the plan implicit in chain-of-thought.
 - Keep each beat focused on one new idea.
 - Ensure the opening beat introduces both the topic and a visible object, not a title card alone.
 - Ensure every important conclusion is shown through a visible change, not just stated as text.
