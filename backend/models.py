@@ -23,6 +23,9 @@ class TaskCreateRequest(BaseModel):
     quality: str = "high"  # high | medium | low
     preset: str = "default"  # default | educational | presentation | proof | concept
     no_tts: bool = False
+    bgm_enabled: bool = False
+    bgm_prompt: str | None = None
+    bgm_volume: float = Field(default=0.12, ge=0.0, le=1.0)
     target_duration_seconds: Literal[30, 60, 180, 300] = 60
 
 
@@ -43,6 +46,11 @@ class PipelineOutputData(BaseModel):
     estimated_narration_duration_seconds: float | None = None
     source_code: str | None = None
     audio_path: str | None = None
+    bgm_path: str | None = None
+    bgm_prompt: str | None = None
+    bgm_duration_ms: int | None = None
+    bgm_volume: float | None = None
+    audio_mix_mode: str | None = None
     subtitle_path: str | None = None
     extra_info_path: str | None = None
     tts_mode: str | None = None

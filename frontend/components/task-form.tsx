@@ -80,6 +80,9 @@ export function TaskForm() {
   const [preset, setPreset] = useState<"default" | "educational" | "presentation" | "proof" | "concept">("default");
   const [targetDurationSeconds, setTargetDurationSeconds] = useState<TaskDurationSeconds>(60);
   const [noTts, setNoTts] = useState(false);
+  const [bgmEnabled, setBgmEnabled] = useState(false);
+  const [bgmPrompt, setBgmPrompt] = useState("");
+  const [bgmVolume, setBgmVolume] = useState(0.12);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -115,6 +118,9 @@ export function TaskForm() {
           quality,
           preset,
           no_tts: noTts,
+          bgm_enabled: bgmEnabled && !noTts,
+          bgm_prompt: bgmEnabled && bgmPrompt.trim() ? bgmPrompt.trim() : null,
+          bgm_volume: bgmVolume,
           target_duration_seconds: targetDurationSeconds,
         })
           .then((task) => {
@@ -287,6 +293,93 @@ export function TaskForm() {
         </div>
         <span className="text-muted-foreground/80 group-hover:text-foreground/70 transition-colors text-[13px]">跳过语音合成（仅静音视频）</span>
       </label>
+
+      <div className="mb-4 rounded-xl border border-white/8 bg-white/[0.03] p-4">
+        <label className="flex items-start gap-3 cursor-pointer group select-none">
+          <div className={`relative mt-0.5 h-4 w-4 rounded border transition-colors duration-200 ${(bgmEnabled && !noTts) ? "bg-primary border-primary" : "border-border/60 group-hover:border-foreground/30 bg-background/30"}`}>
+            <input
+              type="checkbox"
+              checked={bgmEnabled}
+              onChange={(e) => setBgmEnabled(e.target.checked)}
+              disabled={submitting || noTts}
+              className="sr-only"
+            />
+            {bgmEnabled && !noTts && (
+              <svg className="absolute inset-0 m-auto h-3 w-3 text-primary-foreground pointer-events-none" viewBox="0 0 12 12" fill="none">
+                <path d="M2 6l3 3l5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-medium text-foreground/85">添加纯音乐背景配乐</span>
+              <span className="rounded-full border border-cyan-400/15 bg-cyan-400/8 px-2 py-0.5 text-[10px] uppercase tracking-wider text-cyan-300/70">
+                music-2.6
+              </span>
+            </div>
+            <p className="text-[12px] leading-relaxed text-muted-foreground/70">
+              在解说底部加入一层低干扰纯音乐。留空 prompt 时，系统会根据动画模式自动推导适合的配乐描述。
+            </p>
+            {noTts && (
+              <p className="text-[11px] text-amber-300/80">
+                当前已开启静音视频，背景音乐会一起禁用。
+              </p>
+            )}
+          </div>
+        </label>
+
+        {bgmEnabled && !noTts && (
+          <div className="mt-4 grid gap-4 md:grid-cols-[1.6fr_0.8fr]">
+            <div className="space-y-2">
+              <label htmlFor="bgm-prompt" className="text-[11px] font-medium uppercase tracking-wider text-white/45">
+                BGM Prompt
+              </label>
+              <Textarea
+                id="bgm-prompt"
+                value={bgmPrompt}
+                onChange={(e) => setBgmPrompt(e.target.value)}
+                rows={4}
+                disabled={submitting}
+                placeholder="例如：calm instrumental underscore, soft piano and light strings, no vocals"
+                className="min-h-[96px] resize-none bg-background/40 border-white/10 text-[13px] text-foreground/85 placeholder:text-muted-foreground/40"
+              />
+              <p className="text-[11px] text-muted-foreground/65">
+                可以不填。默认会生成适合教学解说的视频背景音乐，不会加入人声。
+              </p>
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-white/8 bg-black/15 p-3">
+              <div className="space-y-1">
+                <label htmlFor="bgm-volume" className="text-[11px] font-medium uppercase tracking-wider text-white/45">
+                  Volume
+                </label>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[12px] text-muted-foreground/70">混流音量</span>
+                  <span className="font-mono text-sm text-cyan-300">{bgmVolume.toFixed(2)}</span>
+                </div>
+              </div>
+              <input
+                id="bgm-volume"
+                type="range"
+                min="0.05"
+                max="0.30"
+                step="0.01"
+                value={bgmVolume}
+                onChange={(e) => setBgmVolume(Number(e.target.value))}
+                disabled={submitting}
+                className="w-full accent-cyan-400"
+              />
+              <div className="flex justify-between text-[10px] uppercase tracking-wider text-white/30">
+                <span>Subtle</span>
+                <span>Present</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground/65">
+                建议保持在 `0.10` 到 `0.16`，这样能垫底但不会压过解说。
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Error message */}
       {error && (

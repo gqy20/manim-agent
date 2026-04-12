@@ -334,3 +334,62 @@ class TestAsyncioImport:
 
     def test_main_callable_without_nameerror(self):
         assert callable(main_module.main)
+
+
+class TestBackgroundMusic:
+    @pytest.mark.asyncio
+    async def test_bgm_failure_falls_back_to_voice_only_mux(self):
+        mock_messages = [
+            _make_assistant_message(_make_text_block("render complete")),
+            _make_result_message(
+                num_turns=1,
+                **{
+                    "structured_output": {
+                        "video_output": "media/out.mp4",
+                        "narration": "Fallback-safe narration for the BGM error path.",
+                    }
+                },
+            ),
+        ]
+
+        with (
+            patch("manim_agent.__main__.query") as mock_query,
+            patch("manim_agent.__main__.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch(
+                "manim_agent.__main__.music_client.generate_instrumental",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("bgm unavailable"),
+            ) as mock_bgm,
+            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+        ):
+            async def mock_query_gen(*args, **kwargs):
+                for msg in mock_messages:
+                    yield msg
+
+            mock_query.side_effect = mock_query_gen
+            mock_tts.return_value = MagicMock(
+                audio_path="out/audio.mp3",
+                subtitle_path="out/sub.srt",
+                duration_ms=30000,
+                word_count=128,
+            )
+            mock_video.return_value = "output/final.mp4"
+
+            result = await main_module.run_pipeline(
+                user_text="test content",
+                output_path="output/final.mp4",
+                no_tts=False,
+                bgm_enabled=True,
+            )
+
+        assert result == "output/final.mp4"
+        mock_tts.assert_awaited_once()
+        mock_bgm.assert_awaited_once()
+        mock_video.assert_awaited_once_with(
+            video_path="media/out.mp4",
+            audio_path="out/audio.mp3",
+            subtitle_path="out/sub.srt",
+            output_path="output/final.mp4",
+            bgm_path=None,
+            bgm_volume=0.12,
+        )

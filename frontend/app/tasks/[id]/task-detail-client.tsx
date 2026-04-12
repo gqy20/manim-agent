@@ -549,6 +549,58 @@ export default function TaskDetailClient() {
         </div>
       )}
 
+      <div className="gsap-header grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-xl border border-white/6 bg-white/[0.03] p-4">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-white/35">Narration</div>
+          <div className="mt-2 text-sm text-white/85">
+            {task.options.no_tts ? "Disabled" : task.options.voice_id}
+          </div>
+          <div className="mt-1 text-[12px] text-muted-foreground/65">
+            {task.options.no_tts ? "Silent render only" : task.options.model}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/6 bg-white/[0.03] p-4">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-white/35">Background Music</div>
+          <div className="mt-2 text-sm text-white/85">
+            {task.options.bgm_enabled ? "Enabled" : "Off"}
+          </div>
+          <div className="mt-1 text-[12px] text-muted-foreground/65">
+            {task.pipeline_output?.audio_mix_mode === "voice_with_bgm"
+              ? `Mixed at ${task.pipeline_output.bgm_volume?.toFixed(2) ?? task.options.bgm_volume.toFixed(2)}`
+              : task.options.bgm_enabled
+                ? "Requested, waiting or fallback"
+                : "Narration-only mix"}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/6 bg-white/[0.03] p-4">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-white/35">Duration Target</div>
+          <div className="mt-2 text-sm text-white/85">{task.options.target_duration_seconds}s</div>
+          <div className="mt-1 text-[12px] text-muted-foreground/65">
+            {task.pipeline_output?.duration_seconds
+              ? `Rendered ${task.pipeline_output.duration_seconds.toFixed(1)}s`
+              : "Awaiting render probe"}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-white/6 bg-white/[0.03] p-4">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-white/35">Audio Result</div>
+          <div className="mt-2 text-sm text-white/85">
+            {task.pipeline_output?.audio_mix_mode === "voice_with_bgm"
+              ? "Narration + BGM"
+              : task.pipeline_output?.audio_path
+                ? "Narration only"
+                : "Pending"}
+          </div>
+          <div className="mt-1 line-clamp-2 text-[12px] text-muted-foreground/65">
+            {task.pipeline_output?.bgm_prompt
+              ? task.pipeline_output.bgm_prompt
+              : task.options.bgm_prompt || "Auto-generated when enabled"}
+          </div>
+        </div>
+      </div>
+
       <div className="relative mt-4 grid gap-6 lg:grid-cols-12">
         <div className="order-2 z-10 flex flex-col space-y-4 rounded-xl p-4 glass-card lg:order-1 lg:col-span-4 lg:sticky lg:top-8 lg:h-[calc(100dvh-10rem)] lg:self-start">
           <div className="flex shrink-0 flex-col gap-3 border-b border-white/5 pb-2 sm:flex-row sm:items-center sm:justify-between">

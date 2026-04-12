@@ -201,6 +201,11 @@ class _MessageDispatcher:
             ),
             "source_code": None,
             "audio_path": None,
+            "bgm_path": None,
+            "bgm_prompt": None,
+            "bgm_duration_ms": None,
+            "bgm_volume": None,
+            "audio_mix_mode": None,
             "subtitle_path": None,
             "extra_info_path": None,
             "tts_mode": None,
@@ -342,6 +347,21 @@ class _MessageDispatcher:
             except Exception as e:
                 logger.warning("result fallback parsing failed: %s", e)
                 logger.debug("_handle_result: result fallback validation failed: %s", e)
+        if self._result_output_candidate is None and self.collected_text:
+            try:
+                text_candidate = self._extract_pipeline_output_from_embedded_json(
+                    "\n".join(self.collected_text),
+                    source="assistant_text_embedded_json",
+                )
+                if text_candidate is not None:
+                    self._result_output_candidate = text_candidate
+                    logger.debug(
+                        "_handle_result: assistant text produced fallback video_output=%r",
+                        text_candidate.video_output,
+                    )
+            except Exception as e:
+                logger.warning("assistant-text fallback parsing failed: %s", e)
+                logger.debug("_handle_result: assistant-text validation failed: %s", e)
         self._log_result_summary()
 
     @property
@@ -517,6 +537,19 @@ class _MessageDispatcher:
         )
         current.source_code = incoming.source_code or current.source_code
         current.audio_path = incoming.audio_path or current.audio_path
+        current.bgm_path = incoming.bgm_path or current.bgm_path
+        current.bgm_prompt = incoming.bgm_prompt or current.bgm_prompt
+        current.bgm_duration_ms = (
+            incoming.bgm_duration_ms
+            if incoming.bgm_duration_ms is not None
+            else current.bgm_duration_ms
+        )
+        current.bgm_volume = (
+            incoming.bgm_volume
+            if incoming.bgm_volume is not None
+            else current.bgm_volume
+        )
+        current.audio_mix_mode = incoming.audio_mix_mode or current.audio_mix_mode
         current.subtitle_path = incoming.subtitle_path or current.subtitle_path
         current.extra_info_path = incoming.extra_info_path or current.extra_info_path
         current.tts_mode = incoming.tts_mode or current.tts_mode
@@ -676,6 +709,12 @@ class _MessageDispatcher:
             candidate = None
 
         if candidate is None:
+            candidate = self._extract_pipeline_output_from_embedded_json(
+                raw_result,
+                source="result_embedded_json",
+            )
+
+        if candidate is None:
             video_path = self._extract_video_path(raw_result)
             if not video_path:
                 return None
@@ -687,6 +726,62 @@ class _MessageDispatcher:
 
         self._attach_result_candidate_source_code(candidate)
         return candidate
+
+    def _extract_pipeline_output_from_embedded_json(
+        self,
+        text: str,
+        *,
+        source: str,
+    ) -> PipelineOutput | None:
+        """Try to recover PipelineOutput from fenced or embedded JSON in assistant text."""
+        if not text.strip():
+            return None
+
+        for raw_json in self._iter_embedded_json_candidates(text):
+            try:
+                candidate = self._build_pipeline_output_from_raw(raw_json, source=source)
+                logger.debug(
+                    "_extract_pipeline_output_from_embedded_json[%s]: recovered candidate "
+                    "video_output=%r",
+                    source,
+                    candidate.video_output,
+                )
+                self._attach_result_candidate_source_code(candidate)
+                return candidate
+            except Exception as exc:
+                logger.debug(
+                    "_extract_pipeline_output_from_embedded_json[%s]: candidate parse failed: %s",
+                    source,
+                    exc,
+                )
+        return None
+
+    def _iter_embedded_json_candidates(self, text: str) -> list[str]:
+        """Return possible JSON objects embedded in plain assistant/result text."""
+        candidates: list[str] = []
+
+        fenced_patterns = [
+            r"```json\s*(\{.*?\})\s*```",
+            r"```\s*(\{.*?\})\s*```",
+        ]
+        for pattern in fenced_patterns:
+            for match in re.findall(pattern, text, flags=re.DOTALL | re.IGNORECASE):
+                if isinstance(match, str):
+                    candidates.append(match.strip())
+
+        brace_start = text.find("{")
+        brace_end = text.rfind("}")
+        if brace_start != -1 and brace_end != -1 and brace_end > brace_start:
+            candidates.append(text[brace_start : brace_end + 1].strip())
+
+        # Preserve order while deduplicating.
+        seen: set[str] = set()
+        unique_candidates: list[str] = []
+        for candidate in candidates:
+            if candidate and candidate not in seen:
+                seen.add(candidate)
+                unique_candidates.append(candidate)
+        return unique_candidates
 
     def _attach_result_candidate_source_code(self, candidate: PipelineOutput) -> None:
         if not candidate.scene_file:

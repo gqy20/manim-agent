@@ -8,6 +8,9 @@ export interface TaskCreatePayload {
   quality: "high" | "medium" | "low";
   preset: "default" | "educational" | "presentation" | "proof" | "concept";
   no_tts: boolean;
+  bgm_enabled: boolean;
+  bgm_prompt: string | null;
+  bgm_volume: number;
   target_duration_seconds: TaskDurationSeconds;
 }
 
@@ -26,6 +29,11 @@ export interface PipelineOutputData {
   estimated_narration_duration_seconds: number | null;
   source_code: string | null;
   audio_path: string | null;
+  bgm_path: string | null;
+  bgm_prompt: string | null;
+  bgm_duration_ms: number | null;
+  bgm_volume: number | null;
+  audio_mix_mode: string | null;
   subtitle_path: string | null;
   extra_info_path: string | null;
   tts_mode: string | null;

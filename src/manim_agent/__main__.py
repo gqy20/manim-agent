@@ -40,6 +40,7 @@ from claude_agent_sdk import (
 
 from . import prompts
 from . import render_review
+from . import music_client
 from . import tts_client
 from . import video_builder
 from .output_schema import PipelineOutput
@@ -67,6 +68,7 @@ from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 from . import prompt_builder, runtime_options, pipeline_gates
 
 logger = logging.getLogger(__name__)
+MANIM_PLUGIN_DIR = runtime_options.resolve_repo_root() / "plugins" / "manim-production"
 
 
 def _resolve_repo_root(cwd: str | None = None) -> Path:
@@ -149,6 +151,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--no-tts",
         action="store_true",
         help="跳过语音合成，只生成静音视频",
+    )
+    parser.add_argument(
+        "--bgm-enabled",
+        action="store_true",
+        help="Generate instrumental background music and mix it under the narration.",
+    )
+    parser.add_argument(
+        "--bgm-prompt",
+        default=None,
+        help="Optional custom prompt for instrumental background music generation.",
+    )
+    parser.add_argument(
+        "--bgm-volume",
+        type=float,
+        default=0.12,
+        help="Background music mix volume from 0.0 to 1.0 (default: 0.12).",
     )
     parser.add_argument(
         "--cwd",
@@ -383,6 +401,23 @@ def _format_target_duration(seconds: int) -> str:
     return f"{minutes}m {remainder}s"
 
 
+def _build_default_bgm_prompt(user_text: str, preset: str, narration_text: str) -> str:
+    """Build a restrained instrumental BGM prompt for narrated teaching videos."""
+    preset_style = {
+        "educational": "calm educational underscore, soft piano and light strings",
+        "presentation": "clean modern underscore, light piano and gentle ambient textures",
+        "proof": "subtle thoughtful underscore, restrained piano and low strings",
+        "concept": "clear contemporary underscore, piano and marimba with light ambient texture",
+        "default": "calm instrumental underscore, soft piano and light strings",
+    }.get(preset, "calm instrumental underscore, soft piano and light strings")
+    topic_hint = user_text.strip() or narration_text.strip() or "a narrated math explainer"
+    return (
+        f"{preset_style}, background music for a narrated explainer video about {topic_hint}, "
+        "instrumental only, no vocals, non-distracting, low intensity, supportive, "
+        "steady pacing, suitable under spoken narration"
+    )
+
+
 def _build_user_prompt(user_text: str, target_duration_seconds: int) -> str:
     """Add execution-critical constraints to the user prompt."""
     normalized = user_text.strip()
@@ -392,8 +427,13 @@ def _build_user_prompt(user_text: str, target_duration_seconds: int) -> str:
         f"- Target final video duration: about {target_duration}.\n"
         "- Design the beat count, pacing, and narration density to land close to that target runtime.\n"
         "- Prefer shorter, more focused explanations for 30-second and 1-minute runs, and more developed walkthroughs for 3-minute and 5-minute runs.\n"
-        "- Use the `manim-production` skills for planning, build, direction, narration, and review.\n"
-        "- Start every task with a visible `scene-plan` pass before coding the scene.\n"
+        "- Use the `manim-production` plugin rooted at `plugins/manim-production`.\n"
+        "- Treat `plugins/manim-production/skills/manim-production/SKILL.md` as the umbrella workflow guide.\n"
+        "- Start every task with the `scene-plan` skill at `plugins/manim-production/skills/scene-plan/SKILL.md` before coding the scene.\n"
+        "- Then implement with `scene-build` at `plugins/manim-production/skills/scene-build/SKILL.md`.\n"
+        "- Follow direction, narration, and review rules from `plugins/manim-production/skills/scene-direction/SKILL.md`, `plugins/manim-production/skills/narration-sync/SKILL.md`, and `plugins/manim-production/skills/render-review/SKILL.md`.\n"
+        "- Those plugin-relative paths are reference locations under the repository root, not the writable task directory for this run.\n"
+        "- Read workflow guidance from the plugin paths, but write code and render outputs only inside the current task directory.\n"
         "- The planning pass must be shown in Markdown with these section headings: `Mode`, `Learning Goal`, `Audience`, `Beat List`, `Narration Outline`, `Visual Risks`, and `Build Handoff`.\n"
         "- After the plan exists, implement the animation while keeping the planned beat order unless debugging requires a very small fix.\n"
         "- Do not begin writing `scene.py` until the visible planning pass is complete.\n"
@@ -420,7 +460,9 @@ def _build_scene_plan_prompt(user_text: str, target_duration_seconds: int) -> st
     guidance = (
         "\n\nPlanning pass only:\n"
         f"- Target final video duration: about {target_duration}.\n"
-        "- Use the `scene-plan` skill and stop after producing the visible plan.\n"
+        "- Use the `scene-plan` skill at `plugins/manim-production/skills/scene-plan/SKILL.md` and stop after producing the visible plan.\n"
+        "- The plugin root for this workflow is `plugins/manim-production`.\n"
+        "- These plugin-relative paths are reference locations, not the writable task directory.\n"
         "- Do not write, edit, or render any code in this pass.\n"
         "- Use only lightweight reference reads if needed.\n"
         "- Return a Markdown plan with these exact section headings: `Mode`, `Learning Goal`, `Audience`, `Beat List`, `Narration Outline`, `Visual Risks`, and `Build Handoff`.\n"
@@ -442,7 +484,9 @@ def _build_implementation_prompt(
         "\n\nImplementation pass:\n"
         f"- Target final video duration: about {target_duration}.\n"
         "- The visible scene plan below is approved. Implement from it instead of creating a new plan.\n"
-        "- Use the `scene-build`, `scene-direction`, `narration-sync`, and `render-review` skills during their respective phases.\n"
+        "- Use `scene-build` at `plugins/manim-production/skills/scene-build/SKILL.md` during implementation.\n"
+        "- Use `scene-direction`, `narration-sync`, and `render-review` from `plugins/manim-production/skills/scene-direction/SKILL.md`, `plugins/manim-production/skills/narration-sync/SKILL.md`, and `plugins/manim-production/skills/render-review/SKILL.md`.\n"
+        "- These plugin-relative paths are reference locations under the repo, not the writable task directory.\n"
         "- Preserve the planned beat order unless debugging requires a very small fix.\n"
         "- Do not begin with a fresh planning pass; begin implementation from the approved plan.\n"
         "- In structured_output, include `implemented_beats` as the ordered beat titles that were actually built.\n"
@@ -694,6 +738,9 @@ async def run_pipeline(
     model: str = "speech-2.8-hd",
     quality: str = "high",
     no_tts: bool = False,
+    bgm_enabled: bool = False,
+    bgm_prompt: str | None = None,
+    bgm_volume: float = 0.12,
     target_duration_seconds: int = 60,
     cwd: str = ".",
     prompt_file: str | None = None,
@@ -705,6 +752,7 @@ async def run_pipeline(
 ) -> str:
     """Run the full Claude -> TTS -> mux pipeline."""
     resolved_cwd = str(Path(cwd).resolve())
+    bgm_volume = min(max(bgm_volume, 0.0), 1.0)
     full_system_prompt = prompts.get_prompt(
         user_text="",
         preset=preset,
@@ -1175,8 +1223,44 @@ async def run_pipeline(
         dispatcher._print(f"  [TTS] Output mode: {subtitle_label}")
         dispatcher._print(f"  TTS done: {tts_result.duration_ms}ms, {tts_result.word_count} chars")
 
+        resolved_bgm_prompt = None
+        bgm_result = None
+        if bgm_enabled:
+            resolved_bgm_prompt = (
+                bgm_prompt.strip()
+                if bgm_prompt and bgm_prompt.strip()
+                else _build_default_bgm_prompt(user_text, preset, narration_text)
+            )
+            dispatcher._print("  [BGM] Generating instrumental background music")
+            try:
+                bgm_result = await music_client.generate_instrumental(
+                    prompt=resolved_bgm_prompt,
+                    output_dir=str(Path(output_path).parent),
+                    model="music-2.6",
+                )
+                dispatcher._print(
+                    "  [BGM] Done: "
+                    f"path={bgm_result.audio_path} volume={bgm_volume:.2f}"
+                )
+            except Exception as exc:
+                warning = (
+                    "Background music generation failed. "
+                    "Falling back to narration-only final mux."
+                )
+                dispatcher._print(f"  [WARN] {warning}")
+                logger.warning("run_pipeline: %s error=%s", warning, exc)
+        if po is not None:
+            po.bgm_path = bgm_result.audio_path if bgm_result is not None else None
+            po.bgm_prompt = resolved_bgm_prompt
+            po.bgm_duration_ms = bgm_result.duration_ms if bgm_result is not None else None
+            po.bgm_volume = bgm_volume if bgm_result is not None else None
+            po.audio_mix_mode = "voice_with_bgm" if bgm_result is not None else "voice_only"
+
         dispatcher._print("[MUX] Phase 5/5: mux final video")
-        dispatcher._print("[MUX] FFmpeg in progress... (video + audio + subtitle)")
+        dispatcher._print(
+            "[MUX] FFmpeg in progress... "
+            f"({'video + narration + bgm + subtitle' if bgm_result is not None else 'video + audio + subtitle'})"
+        )
         _emit_status(
             event_callback,
             task_status="running",
@@ -1188,6 +1272,8 @@ async def run_pipeline(
             audio_path=tts_result.audio_path,
             subtitle_path=tts_result.subtitle_path,
             output_path=output_path,
+            bgm_path=bgm_result.audio_path if bgm_result is not None else None,
+            bgm_volume=bgm_volume,
         )
         if po is not None:
             po.final_video_output = final_video
@@ -1220,6 +1306,9 @@ async def main() -> None:
             model=args.model,
             quality=args.quality,
             no_tts=args.no_tts,
+            bgm_enabled=args.bgm_enabled,
+            bgm_prompt=args.bgm_prompt,
+            bgm_volume=args.bgm_volume,
             target_duration_seconds=args.target_duration,
             cwd=args.cwd,
             prompt_file=args.prompt_file,

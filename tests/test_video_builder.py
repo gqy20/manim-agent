@@ -120,6 +120,29 @@ class TestBuildFFmpegCmd:
         assert "subtitles=" in cmd_str
         assert "-c:v libx264" in cmd_str
 
+    def test_with_bgm_builds_mix_filter(self, sample_files):
+        bgm = str(Path(sample_files["video"]).with_name("bgm.mp3"))
+        Path(bgm).write_bytes(b"fake-bgm-data")
+
+        cmd = video_builder._build_ffmpeg_cmd(
+            sample_files["video"],
+            sample_files["audio"],
+            None,
+            sample_files["output"],
+            "shortest",
+            10.0,
+            10.0,
+            None,
+            bgm,
+            0.12,
+        )
+
+        cmd_str = " ".join(cmd)
+        assert "-filter_complex" in cmd
+        assert "amix=inputs=2" in cmd_str
+        assert "volume=0.120" in cmd_str
+        assert "[mix]" in cmd
+
     def test_without_subtitle_uses_stream_copy(self, sample_files):
         cmd = video_builder._build_ffmpeg_cmd(
             sample_files["video"],
@@ -207,6 +230,8 @@ class TestBuildFinalVideo:
                 15.0,
                 14.0,
                 None,
+                None,
+                0.12,
             )
 
     @pytest.mark.asyncio

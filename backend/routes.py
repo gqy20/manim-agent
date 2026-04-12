@@ -248,13 +248,15 @@ def _cleanup_output_dir(output_dir: Path, *, keep_mp4: bool = True) -> None:
 async def create_task(req: TaskCreateRequest) -> TaskResponse:
     """Create a task & start the pipeline in background."""
     logger.info(
-        "POST /api/tasks received: text_len=%d voice=%s model=%s quality=%s preset=%s no_tts=%s target_duration_seconds=%s",
+        "POST /api/tasks received: text_len=%d voice=%s model=%s quality=%s preset=%s no_tts=%s bgm_enabled=%s bgm_volume=%s target_duration_seconds=%s",
         len(req.user_text),
         req.voice_id,
         req.model,
         req.quality,
         req.preset,
         req.no_tts,
+        req.bgm_enabled,
+        req.bgm_volume,
         req.target_duration_seconds,
     )
     task = await _store.create(req)
@@ -327,6 +329,9 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     model=req.model,
                     quality=req.quality,
                     no_tts=req.no_tts,
+                    bgm_enabled=req.bgm_enabled,
+                    bgm_prompt=req.bgm_prompt,
+                    bgm_volume=req.bgm_volume,
                     target_duration_seconds=req.target_duration_seconds,
                     cwd=str(output_dir),
                     max_turns=80,
@@ -409,6 +414,9 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 model=req.model,
                 quality=req.quality,
                 no_tts=req.no_tts,
+                bgm_enabled=req.bgm_enabled,
+                bgm_prompt=req.bgm_prompt,
+                bgm_volume=req.bgm_volume,
                 target_duration_seconds=req.target_duration_seconds,
                 cwd=str(output_dir),
                 max_turns=80,
