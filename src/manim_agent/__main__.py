@@ -497,6 +497,13 @@ async def run_pipeline(
     dispatcher._print(_LOG_SEPARATOR)
     dispatcher._print(f"  {_EMOJI['gear']} Phase 1/4: start Claude Agent SDK")
     dispatcher._print(f"  quality={quality} preset={preset} max_turns={max_turns}")
+    if options.plugins:
+        plugin_labels = ", ".join(
+            Path(plugin["path"]).name for plugin in options.plugins if plugin.get("path")
+        )
+        dispatcher._print(f"  [SYS] Plugins loaded: {plugin_labels}")
+    if options.allowed_tools:
+        dispatcher._print(f"  [SYS] Allowed tools: {', '.join(options.allowed_tools)}")
     _emit_status(
         event_callback,
         task_status="running",
