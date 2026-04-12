@@ -14,6 +14,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { getTask, getVideoUrl } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import { connectTaskEvents } from "@/lib/sse-client";
+import { mergeTaskState } from "@/lib/task-state";
 import type { SSEEvent, Task, TaskStatus } from "@/types";
 import { isStatusPayload } from "@/types";
 
@@ -57,11 +58,7 @@ export default function TaskDetailPage() {
       const latest = await getTask(currentTaskId);
       setTask((prev) => {
         if (!prev || prev.id !== currentTaskId) return latest;
-        return {
-          ...prev,
-          ...latest,
-          pipeline_output: latest.pipeline_output ?? prev.pipeline_output,
-        };
+        return mergeTaskState(prev, latest);
       });
       setEventsError(null);
     } catch {
@@ -103,7 +100,9 @@ export default function TaskDetailPage() {
 
         if (event.type === "status" && typeof event.data === "string") {
           setTask((prev) =>
-            prev && prev.status !== event.data ? { ...prev, status: event.data as TaskStatus } : prev,
+            prev && prev.status !== event.data
+              ? mergeTaskState(prev, { status: event.data as TaskStatus })
+              : prev,
           );
           if (event.data === "completed" || event.data === "failed") {
             void refreshTaskSnapshot(task.id);
@@ -114,8 +113,7 @@ export default function TaskDetailPage() {
         if (isStatusPayload(event)) {
           setTask((prev) => {
             if (!prev) return prev;
-            return {
-              ...prev,
+            return mergeTaskState(prev, {
               status: event.data.task_status,
               error:
                 event.data.task_status === "failed"
@@ -129,7 +127,7 @@ export default function TaskDetailPage() {
                 event.data.pipeline_output !== undefined
                   ? event.data.pipeline_output
                   : prev.pipeline_output,
-            };
+            });
           });
           if (event.data.task_status === "completed" || event.data.task_status === "failed") {
             void refreshTaskSnapshot(task.id);

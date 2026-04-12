@@ -13,6 +13,7 @@ type PlayerState = "loading" | "playing" | "error";
 export function VideoPlayer({ src }: VideoPlayerProps) {
   const [state, setState] = useState<PlayerState>("loading");
   const [errorMsg, setErrorMsg] = useState("");
+  const [retryToken, setRetryToken] = useState(0);
 
   const handleError = useCallback((event: SyntheticEvent<HTMLVideoElement>) => {
     const video = event.currentTarget;
@@ -43,6 +44,7 @@ export function VideoPlayer({ src }: VideoPlayerProps) {
   const handleRetry = useCallback(() => {
     setState("loading");
     setErrorMsg("");
+    setRetryToken((value) => value + 1);
   }, []);
 
   return (
@@ -73,11 +75,15 @@ export function VideoPlayer({ src }: VideoPlayerProps) {
 
         {(state === "loading" || state === "playing") && (
           <video
-            key={state === "loading" ? src : undefined}
+            key={`${src}-${retryToken}`}
             src={src}
             controls
             className="relative z-10 block max-h-[480px] w-full bg-black"
             preload="metadata"
+            onLoadStart={() => {
+              setState("loading");
+              setErrorMsg("");
+            }}
             onLoadedData={() => setState("playing")}
             onError={handleError}
           />
