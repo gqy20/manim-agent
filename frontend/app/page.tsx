@@ -35,11 +35,7 @@ export default function HomePage() {
       {/* Hero section */}
       <div className="w-full max-w-3xl mx-auto relative z-10">
         {/* Header */}
-        <div className="text-center mb-8 animate-fade-in-up">
-          <div className="inline-flex items-center gap-2 mb-4 px-3 py-1.5 rounded-full bg-primary/[0.06] border border-primary/[0.12] text-xs text-primary/70 font-medium backdrop-blur-sm">
-            <Logo size={14} />
-            AI 数学动画生成器
-          </div>
+        <div className="text-center mb-8">
           <ScrambleTitle 
             text="用文字生成数学动画" 
             className="text-4xl sm:text-5xl font-bold tracking-tight leading-[1.1] glow-text mb-4" 
@@ -50,7 +46,7 @@ export default function HomePage() {
         </div>
 
         {/* Main content: form */}
-        <div className="w-full animate-fade-in-up animate-delay-100">
+        <div className="w-full">
           <TaskForm />
         </div>
 
@@ -58,9 +54,13 @@ export default function HomePage() {
         <FeaturePills />
       </div>
       
-      {/* Background decorations */}
+      {/* Background decorations & ambient glow */}
       <div className="absolute inset-0 pointer-events-none z-0 opacity-40">
         <AnimatedMathDecorations />
+      </div>
+      <div className="absolute inset-0 pointer-events-none flex items-center justify-center mix-blend-screen opacity-60">
+        <div className="w-[800px] h-[500px] bg-primary/20 rounded-full blur-[120px] animate-pulse-glow transition-all duration-[5s] ease-in-out" />
+        <div className="absolute top-1/4 right-1/4 w-[400px] h-[300px] bg-cyan-500/10 rounded-full blur-[100px] mix-blend-screen" />
       </div>
     </main>
   );

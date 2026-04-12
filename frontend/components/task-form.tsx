@@ -151,8 +151,9 @@ export function TaskForm() {
   return (
     <form ref={formRef} onSubmit={handleSubmit} className="glass-card rounded-2xl p-6 sm:p-8 glow-border transition-all duration-300">
       {/* Natural language input */}
-      <div className="space-y-2.5">
-        <label htmlFor="prompt" className="text-sm font-medium text-foreground/80 flex items-center gap-1.5">
+      <div className="space-y-2.5 relative group">
+        <div className="absolute -inset-0.5 bg-gradient-to-r from-primary/30 to-indigo-500/30 rounded-lg blur opacity-0 group-focus-within:opacity-100 transition duration-1000 group-hover:duration-200 pointer-events-none" />
+        <label htmlFor="prompt" className="relative text-sm font-medium text-foreground/80 flex items-center gap-1.5">
           <Sparkles className="h-3.5 w-3.5 text-primary/70" />
           描述你想生成的动画
         </label>
@@ -161,132 +162,80 @@ export function TaskForm() {
           placeholder='例如："用动画演示勾股定理的证明过程"'
           value={text}
           onChange={(e) => setText(e.target.value)}
-          rows={4}
+          rows={8}
           disabled={submitting}
-          className="resize-none bg-background/50 border-border/50 text-foreground placeholder:text-muted-foreground/50 focus:border-primary/40 focus:ring-primary/20 transition-all duration-200 text-[15px] leading-relaxed"
+          className="relative resize-none min-h-[160px] max-h-[300px] overflow-y-auto bg-background/60 border-white/5 text-foreground placeholder:text-muted-foreground/40 focus:border-primary/30 focus:ring-primary/20 transition-all duration-300 text-[15px] leading-relaxed shadow-inner"
         />
-      </div>
-
-      {/* Template chips */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <p className="text-[11px] text-muted-foreground/70 uppercase tracking-wider font-medium">快速开始</p>
-          {TEMPLATES.length > 3 && (
+        
+        {/* Templates short list */}
+        <div className="flex flex-wrap gap-2 mt-3">
+          {TEMPLATES.slice(0, 2).map((t) => (
             <button
-              type="button"
-              onClick={() => setShowAllTemplates(!showAllTemplates)}
-              className="text-[10px] text-muted-foreground hover:text-primary transition-colors cursor-pointer"
-            >
-              {showAllTemplates ? "收起" : "显示全部"}
-            </button>
-          )}
-        </div>
-        <motion.div
-          initial="hidden"
-          animate="visible"
-          variants={{
-            hidden: { opacity: 0 },
-            visible: {
-              opacity: 1,
-              transition: { staggerChildren: 0.05 }
-            }
-          }}
-          className="flex flex-wrap gap-1.5"
-        >
-          {(showAllTemplates ? TEMPLATES : TEMPLATES.slice(0, 3)).map((t) => (
-            <motion.button
               key={t.text}
-              variants={{
-                hidden: { opacity: 0, scale: 0.95 },
-                visible: { opacity: 1, scale: 1 }
-              }}
-              transition={{ type: "spring", stiffness: 400, damping: 25 }}
               type="button"
               onClick={() => handleTemplate(t.text)}
               disabled={submitting}
-              className="template-chip"
+              className="text-[11px] flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-white/10 bg-white/5 text-white/50 hover:text-white/80 hover:bg-white/10 hover:border-white/20 transition-all cursor-pointer"
             >
-              <span className="text-xs">{t.icon}</span>
-              <span className="truncate max-w-[160px]">{t.text.length > 18 ? t.text.slice(0, 18) + "…" : t.text}</span>
-            </motion.button>
+              <span>{t.icon}</span>
+              <span className="truncate max-w-[180px]">{t.text}</span>
+            </button>
           ))}
-        </motion.div>
+        </div>
       </div>
 
-      {/* Advanced options toggle */}
-      <div className="pt-1">
-        <button
-          type="button"
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground/80 transition-colors group cursor-pointer"
-        >
-          <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${showAdvanced ? "rotate-180" : ""}`} />
-          <span>高级选项</span>
-          <span className="text-muted-foreground/40 text-[10px]">({showAdvanced ? "收起" : "音色 · 画质 · 模式"})</span>
-        </button>
+      {/* Advanced options */}
+      <div className="pt-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-2">
+          {/* Voice */}
+          <div className="flex items-center gap-4">
+            <label className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">音色</label>
+            <Select value={voiceId} onValueChange={(v) => v && setVoiceId(v)} disabled={submitting}>
+              <SelectTrigger className="w-full bg-transparent border-white/10 hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 transition-colors h-8 text-[11px] text-white/80 shadow-none font-medium">
+                <SelectValue>{getLabel(VOICES, voiceId)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-black/80 backdrop-blur-xl border border-white/10">
+                {VOICES.map((v) => (
+                  <SelectItem key={v.id} value={v.id} className="text-[11px] text-white/70 focus:bg-white/10 focus:text-white">{v.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-        <AnimatePresence initial={false}>
-          {showAdvanced && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="overflow-hidden"
-            >
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-4 pb-2">
-                {/* Voice */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">音色</label>
-                  <Select value={voiceId} onValueChange={(v) => v && setVoiceId(v)} disabled={submitting}>
-                    <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors h-9">
-                      <SelectValue>{getLabel(VOICES, voiceId)}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {VOICES.map((v) => (
-                        <SelectItem key={v.id} value={v.id}>{v.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+          {/* Quality */}
+          <div className="flex items-center gap-4">
+            <label className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">画质</label>
+            <Select value={quality} onValueChange={(v) => v && setQuality(v as "high" | "medium" | "low")} disabled={submitting}>
+              <SelectTrigger className="w-full bg-transparent border-white/10 hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 transition-colors h-8 text-[11px] text-white/80 shadow-none font-medium">
+                <SelectValue>{getLabel(QUALITIES, quality)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-black/80 backdrop-blur-xl border border-white/10">
+                {QUALITIES.map((q) => (
+                  <SelectItem key={q.value} value={q.value} className="text-[11px] text-white/70 focus:bg-white/10 focus:text-white">{q.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-                {/* Quality */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">画质</label>
-                  <Select value={quality} onValueChange={(v) => v && setQuality(v as "high" | "medium" | "low")} disabled={submitting}>
-                    <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors h-9">
-                      <SelectValue>{getLabel(QUALITIES, quality)}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {QUALITIES.map((q) => (
-                        <SelectItem key={q.value} value={q.value}>{q.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Preset */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">模式</label>
-                  <Select value={preset} onValueChange={(v) => v && setPreset(v as "default" | "educational" | "presentation" | "proof" | "concept")} disabled={submitting}>
-                    <SelectTrigger className="bg-background/50 border-border/50 focus:border-primary/40 focus:ring-primary/20 transition-colors h-9">
-                      <SelectValue>{getLabel(PRESETS, preset)}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PRESETS.map((p) => (
-                        <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+          {/* Preset */}
+          <div className="flex items-center gap-4">
+            <label className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">模式</label>
+            <Select value={preset} onValueChange={(v) => v && setPreset(v as "default" | "educational" | "presentation" | "proof" | "concept")} disabled={submitting}>
+              <SelectTrigger className="w-full bg-transparent border-white/10 hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 transition-colors h-8 text-[11px] text-white/80 shadow-none font-medium">
+                <SelectValue>{getLabel(PRESETS, preset)}</SelectValue>
+              </SelectTrigger>
+              <SelectContent className="bg-black/80 backdrop-blur-xl border border-white/10">
+                {PRESETS.map((p) => (
+                  <SelectItem key={p.value} value={p.value} className="text-[11px] text-white/70 focus:bg-white/10 focus:text-white">{p.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
       </div>
 
       {/* Skip TTS toggle */}
-      <label className="flex items-center gap-2.5 text-sm cursor-pointer group select-none">
+      <label className="flex items-center gap-2.5 text-sm cursor-pointer group select-none mt-4 mb-4">
         <div className={`relative w-4 h-4 rounded border transition-colors duration-200 ${noTts ? "bg-primary border-primary" : "border-border/60 group-hover:border-foreground/30 bg-background/30"}`}>
           <input
             type="checkbox"
@@ -306,16 +255,20 @@ export function TaskForm() {
 
       {/* Error message */}
       {error && (
-        <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2.5 animate-fade-in-up">{error}</p>
+        <p className="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2.5 animate-fade-in-up mb-4">{error}</p>
       )}
 
       {/* Submit button */}
-      <div className="relative">
+      <motion.div 
+        className="relative"
+        whileHover={canSubmit ? { scale: 1.01 } : {}}
+        whileTap={canSubmit ? { scale: 0.98 } : {}}
+      >
         <Button
           type="submit"
           disabled={!canSubmit}
           size="lg"
-          className="w-full btn-glow font-medium h-11 text-[15px]"
+          className="w-full btn-glow font-medium h-12 text-[15px] relative overflow-hidden"
         >
           {submitting ? (
             <>
@@ -326,15 +279,11 @@ export function TaskForm() {
             <>
               <Wand2 className="mr-2 h-4 w-4" />
               开始生成
+              <div className="absolute inset-0 bg-white/20 blur opacity-0 hover:opacity-100 transition-opacity duration-300" />
             </>
           )}
         </Button>
-        {!canSubmit && !submitting && (
-          <p className="absolute -bottom-5 left-0 right-0 text-center text-[11px] text-muted-foreground/50 transition-opacity duration-300">
-            请先输入动画描述
-          </p>
-        )}
-      </div>
+      </motion.div>
     </form>
   );
 }

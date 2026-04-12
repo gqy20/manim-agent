@@ -17,24 +17,31 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     NEXT_PORT=3000 \
     NODE_ENV=production
 
-# ── System dependencies for Manim, Cairo, FFmpeg, LaTeX ──────
-# NOTE: texlive-full is ~5-7 GB but required by Manim's MathTex/Tex mobjects
+# ── System dependencies ────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Build tools
     build-essential gcc g++ \
+    # Cairo/Pango (Manim rendering backend)
     libcairo2-dev libpango1.0-dev \
+    # FFmpeg (video muxing)
     ffmpeg \
-    texlive-full \
+    # Node.js (for Next.js standalone)
+    curl git wget nodejs npm \
+    # TeX/LaTeX for Manim MathTex (~500MB vs texlive-full ~6GB)
+    texlive-latex-extra \
+    texlive-latex-recommended \
+    texlive-fonts-recommended \
+    texlive-science \
     latexmk \
-    curl git \
-    nodejs npm \
+    dvisvgm \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# ── Python dependencies (uv for fast, reproducible installs) ──
+# ── Python dependencies ─────────────────────────────────────────
 COPY pyproject.toml uv.lock ./
 RUN pip install uv && \
-    uv pip install --system --frozen .
+    uv pip install --system .
 
 # ── Application source code ───────────────────────────────────
 COPY src/ ./src/

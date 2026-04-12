@@ -27,37 +27,37 @@ const PHASE_ORDER = ["init", "scene", "render", "tts", "mux", "done"] as const;
 const PIPELINE_PHASES: PipelinePhase[] = [
   {
     id: "init",
-    label: "Initialize",
+    label: "INIT",
     icon: <Sparkles className="h-3.5 w-3.5" />,
     keywords: ["[progress]", "phase 1", "connect", "init"],
   },
   {
     id: "scene",
-    label: "Build Scene",
+    label: "SCENE",
     icon: <Film className="h-3.5 w-3.5" />,
     keywords: ["scene", "write", "edit", ".py", "generatedscene"],
   },
   {
     id: "render",
-    label: "Render Video",
+    label: "RENDER",
     icon: <Clapperboard className="h-3.5 w-3.5" />,
     keywords: ["phase 2", "render", "manim", "-qh", "-qm", "-ql"],
   },
   {
     id: "tts",
-    label: "Generate Voice",
+    label: "VOICE",
     icon: <Mic className="h-3.5 w-3.5" />,
     keywords: ["phase 3", "[tts]", "voice", "speech", "narration"],
   },
   {
     id: "mux",
-    label: "Mux Final",
+    label: "COMP",
     icon: <Combine className="h-3.5 w-3.5" />,
     keywords: ["phase 4", "[mux]", "ffmpeg", "final video"],
   },
   {
     id: "done",
-    label: "Complete",
+    label: "DONE",
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
     keywords: ["[summary]", "completed", "final.mp4"],
   },
@@ -165,11 +165,11 @@ function detectCurrentPhases(events: SSEEvent[], taskStatus: string): PhaseState
 
 function StepDot({ state }: { state: PhaseState }) {
   const baseClasses =
-    "relative z-10 flex h-8 w-8 items-center justify-center rounded-full border transition-all duration-500";
+    "relative z-10 flex h-7 w-7 items-center justify-center rounded-full border transition-all duration-500 bg-background/50 backdrop-blur-sm";
 
   if (state.status === "done") {
     return (
-      <div className={`${baseClasses} border-emerald-500/30 bg-emerald-500/15 text-emerald-400`}>
+      <div className={`${baseClasses} border-emerald-500/40 text-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.3)]`}>
         <CheckCircle2 className="h-4 w-4" />
       </div>
     );
@@ -178,24 +178,24 @@ function StepDot({ state }: { state: PhaseState }) {
   if (state.status === "active") {
     return (
       <div
-        className={`${baseClasses} border-cyan-500/40 bg-cyan-500/15 text-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.25)]`}
+        className={`${baseClasses} border-cyan-500/60 text-cyan-400 drop-shadow-[0_0_12px_rgba(6,182,212,0.8)] outline outline-1 outline-cyan-500/30 outline-offset-2`}
       >
-        <Loader2 className="h-4 w-4 animate-spin" />
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
       </div>
     );
   }
 
   if (state.status === "error") {
     return (
-      <div className={`${baseClasses} border-red-500/30 bg-red-500/15 text-red-400`}>
-        <AlertTriangle className="h-4 w-4" />
+      <div className={`${baseClasses} border-red-500/50 text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]`}>
+        <AlertTriangle className="h-3 w-3" />
       </div>
     );
   }
 
   return (
-    <div className={`${baseClasses} border-white/10 bg-white/[0.03] text-muted-foreground/30`}>
-      {state.phase.icon}
+    <div className={`${baseClasses} border-white/10 text-muted-foreground/30`}>
+      <span className="scale-[0.85]">{state.phase.icon}</span>
     </div>
   );
 }
@@ -209,18 +209,16 @@ function ConnectorLine({
   total: number;
   activeUntil: number;
 }) {
-  if (index >= total - 1) return null;
-
   const isActive = index < activeUntil;
   return (
-    <div className="relative mx-1 h-[2px] flex-1 overflow-hidden rounded-full">
+    <div className="relative mx-3 h-[2px] w-full flex-1 overflow-hidden rounded-full">
       <div className="absolute inset-0 bg-white/[0.06]" />
       <div
         className={`absolute inset-y-0 left-0 transition-all duration-700 ease-out ${
-          isActive ? "w-full bg-gradient-to-r from-cyan-500/50 to-cyan-400/30" : "w-0"
+          isActive ? "w-full bg-gradient-to-r from-cyan-500/50 to-cyan-400/80" : "w-0"
         }`}
       />
-      {isActive && <div className="absolute inset-0 animate-pulse bg-cyan-400/10" />}
+      {isActive && <div className="absolute inset-0 animate-pulse bg-cyan-400/20" />}
     </div>
   );
 }
@@ -259,84 +257,37 @@ export function PipelineProgress({ events, taskStatus }: PipelineProgressProps) 
   const phaseMessage = latestStatusPayload?.message ?? null;
 
   return (
-    <div className="space-y-2.5">
-      <div className="flex items-center gap-2">
-        <Loader2
-          className={`h-3.5 w-3.5 ${isIdle ? "text-muted-foreground/30" : "text-primary/60"}`}
-        />
-        <h2 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground/60">
-          Pipeline
-        </h2>
-        <span className={`text-[10px] font-mono ${headerTone}`}>{headerLabel}</span>
-      </div>
-
-      <div className="glass-card space-y-4 rounded-xl p-4 sm:p-5">
-        <div className="flex items-center gap-1 overflow-x-auto pb-1">
-          {phases.map((state, index) => (
-            <div key={state.phase.id} className="flex items-center gap-1">
-              <div className="flex flex-col items-center gap-1.5">
-                <StepDot state={state} />
-                <span
-                  className={`whitespace-nowrap text-[9px] font-mono transition-colors duration-300 ${
-                    state.status === "active"
-                      ? "font-medium text-cyan-400"
-                      : state.status === "done"
-                        ? "text-emerald-400/70"
-                        : state.status === "error"
-                          ? "text-red-400/70"
-                          : "text-muted-foreground/30"
-                  }`}
-                >
-                  {state.phase.label}
-                </span>
-              </div>
-              <ConnectorLine index={index} total={phases.length} activeUntil={activeUntil} />
+    <div className="w-full relative flex items-center justify-between pb-1 gap-1">
+      {phases.map((state, index) => {
+        const isLast = index === phases.length - 1;
+        return (
+          <div key={state.phase.id} className={`flex items-center ${isLast ? "flex-none" : "flex-1"}`}>
+            <div className="flex flex-col items-center relative shrink-0 group">
+              <StepDot state={state} />
+              <span
+                className={`absolute top-[26px] whitespace-nowrap text-[9px] uppercase tracking-widest font-mono transition-all duration-300 ${
+                  index === 0
+                    ? "left-0 text-left"
+                    : isLast
+                      ? "right-0 text-right"
+                      : "left-1/2 -translate-x-1/2 text-center"
+                } ${
+                  state.status === "active"
+                    ? "font-semibold text-cyan-400 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]"
+                    : state.status === "done"
+                      ? "text-emerald-400/90"
+                      : state.status === "error"
+                        ? "text-red-400/90 drop-shadow-[0_0_10px_rgba(248,113,113,0.8)]"
+                        : "text-muted-foreground/40"
+                }`}
+              >
+                {state.phase.label}
+              </span>
             </div>
-          ))}
-        </div>
-
-        <div className="rounded-xl border border-white/8 bg-white/[0.02] px-3.5 py-3">
-          <div className="flex items-start gap-3">
-            <div
-              className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-full border ${
-                isCompleted
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                  : isFailed
-                    ? "border-red-500/30 bg-red-500/10 text-red-400"
-                    : "border-cyan-500/30 bg-cyan-500/10 text-cyan-400"
-              }`}
-            >
-              {isCompleted ? (
-                <CheckCircle2 className="h-4 w-4" />
-              ) : isFailed ? (
-                <AlertTriangle className="h-4 w-4" />
-              ) : (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              )}
-            </div>
-            <div className="min-w-0 space-y-1">
-              <p className="text-[11px] font-mono uppercase tracking-[0.24em] text-white/45">
-                {isCompleted
-                  ? "Pipeline Complete"
-                  : isFailed
-                    ? "Pipeline Interrupted"
-                    : "Current Phase"}
-              </p>
-              <p className="text-sm text-white/85">
-                {phaseMessage ??
-                  (isCompleted
-                    ? "The backend has finished the task and the UI is syncing the final artifact."
-                    : isFailed
-                      ? "The pipeline reported a failure. Review the log stream to find the last successful step."
-                      : activePhase?.phase.label
-                        ? `${activePhase.phase.label} is currently in progress.`
-                        : "The pipeline is connected and waiting for the next backend update.")}
-              </p>
-              <p className="text-[11px] text-muted-foreground/60">{events.length} events received</p>
-            </div>
+            {!isLast && <ConnectorLine index={index} total={phases.length} activeUntil={activeUntil} />}
           </div>
-        </div>
-      </div>
+        );
+      })}
     </div>
   );
 }

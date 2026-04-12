@@ -46,7 +46,7 @@ export default function HistoryPage() {
   }, []);
 
   return (
-    <main className="container flex-1 max-w-6xl space-y-8 py-10 sm:py-14">
+    <main className="container mx-auto flex-1 max-w-[1400px] px-6 space-y-8 py-10 sm:py-14">
       <div className="animate-fade-in-up">
         <div className="mb-2 flex items-center gap-3">
           <div className="rounded-xl border border-primary/10 bg-primary/[0.08] p-2.5 text-primary">

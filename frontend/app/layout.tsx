@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Manim Agent - AI 数学动画生成器",
+  title: "Manim Agent",
   description: "用自然语言描述数学概念，自动生成带讲解的 Manim 动画视频。",
 };
 
@@ -29,8 +29,6 @@ function Footer() {
           <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
             <Logo size={18} className="text-primary/60" />
             <span>Manim Agent</span>
-            <span className="text-border">·</span>
-            <span className="text-xs text-muted-foreground/50">AI 数学动画生成器</span>
           </div>
 
           <div className="flex items-center gap-5 text-xs text-muted-foreground/60">
@@ -60,8 +58,18 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
       <body className="bg-mesh flex min-h-full flex-col">
-        <header className="sticky top-0 z-50 border-b border-border/40 bg-background/60 backdrop-blur-2xl supports-[backdrop-filter]:bg-background/30">
-          <nav className="flex h-14 w-full items-center justify-between px-6 md:px-10">
+        {/* SVG Noise Texture Overlay */}
+        <div className="pointer-events-none fixed inset-0 z-[1] h-full w-full opacity-[0.03] mix-blend-overlay">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100% 100%" width="100%" height="100%">
+            <filter id="noise">
+              <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch" />
+            </filter>
+            <rect width="100%" height="100%" filter="url(#noise)" />
+          </svg>
+        </div>
+        
+        <header className="fixed top-0 left-0 right-0 z-50 bg-background/60 backdrop-blur-2xl supports-[backdrop-filter]:bg-background/30">
+          <nav className="flex h-14 w-full items-center justify-between px-4 md:px-6">
             <Link href="/" className="group flex items-center gap-2.5">
               <Logo
                 size={24}
@@ -71,31 +79,24 @@ export default function RootLayout({
                 <span className="text-sm font-semibold tracking-tight transition-colors group-hover:text-foreground">
                   Manim Agent
                 </span>
-                <span className="hidden text-[10px] tracking-wide text-muted-foreground/50 sm:block">
-                  AI Math Animator
-                </span>
               </div>
             </Link>
 
-            <div className="flex items-center gap-1">
-              <Link
-                href="/history"
-                className="group flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-all duration-200 hover:bg-accent/50 hover:text-foreground"
-              >
-                <History className="h-3.5 w-3.5 transition-colors group-hover:text-primary/70" />
-                <span className="hidden sm:inline">历史记录</span>
-              </Link>
-              <div className="mx-1 hidden h-4 w-px bg-border/50 sm:block" />
-              <span className="inline-flex items-center gap-1 rounded-full border border-border/20 bg-surface/50 px-2 py-0.5 text-[10px] text-muted-foreground/35">
-                <Sparkles className="h-2.5 w-2.5" />
-                v0.1
-              </span>
-            </div>
+            <Link
+              href="/history"
+              className="group flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-all duration-200 hover:bg-accent/50 hover:text-foreground"
+            >
+              <History className="h-3.5 w-3.5 transition-colors group-hover:text-primary/70" />
+              <span className="hidden sm:inline">历史记录</span>
+            </Link>
           </nav>
         </header>
 
-        <ErrorBoundary>{children}</ErrorBoundary>
-        <Footer />
+        <ErrorBoundary>
+          <div className="pt-14 flex-1 flex flex-col">
+            {children}
+          </div>
+        </ErrorBoundary>
       </body>
     </html>
   );

@@ -8,7 +8,6 @@ import Link from "next/link";
 import { ArrowLeft, Check, Copy, FileCode2, Film, Loader2, Play, Terminal, XCircle } from "lucide-react";
 
 import { LogViewer } from "@/components/log-viewer";
-import { PipelineProgress } from "@/components/pipeline-progress";
 import { VideoPlayer } from "@/components/video-player";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -72,16 +71,11 @@ function ManimScriptPanel({
   }
 
   return (
-    <div className="glass-card rounded-xl border border-white/8 bg-white/[0.03] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2 text-cyan-500/70">
-            <FileCode2 className="h-3.5 w-3.5" />
-            <h3 className="text-[10px] font-mono uppercase tracking-widest">Manim Script</h3>
-          </div>
-          <p className="text-xs text-muted-foreground/70">
-            这是本次生成任务最终用于渲染的视频脚本快照。
-          </p>
+    <div className="rounded-xl border border-white/5 bg-white/[0.02] overflow-hidden flex flex-col h-full max-h-[500px]">
+      <div className="flex items-center justify-between p-3 border-b border-white/5 bg-black/20 shrink-0">
+        <div className="flex items-center gap-2 text-cyan-500/70">
+          <FileCode2 className="h-3.5 w-3.5" />
+          <h3 className="text-[10px] font-mono uppercase tracking-widest text-cyan-400">manim script</h3>
         </div>
         {hasScript && (
           <Button
@@ -89,42 +83,25 @@ function ManimScriptPanel({
             variant="outline"
             size="sm"
             onClick={handleCopy}
-            className="border-white/10 bg-white/[0.02] text-white/75 hover:bg-white/[0.05] hover:text-white"
+            className="border-white/10 bg-white/[0.02] text-white/75 hover:bg-white/[0.05] hover:text-white h-7 px-3 text-xs"
           >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
             {copied ? "Copied" : "Copy"}
           </Button>
         )}
       </div>
 
-      {hasMeta && (
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-white/6 bg-black/20 px-3 py-2">
-            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/55">Scene File</p>
-            <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-white/70">
-              {sceneFile ?? "Unavailable"}
-            </p>
-          </div>
-          <div className="rounded-lg border border-white/6 bg-black/20 px-3 py-2">
-            <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/55">Scene Class</p>
-            <p className="mt-1 break-all font-mono text-[11px] leading-relaxed text-white/70">
-              {sceneClass ?? "Unavailable"}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {hasScript ? (
-        <div className="mt-4 overflow-hidden rounded-xl border border-white/8 bg-black/50 shadow-inner">
-          <pre className="max-h-[420px] overflow-auto px-4 py-4 font-mono text-[12px] leading-6 text-white/78">
+      <div className="flex-1 overflow-auto bg-black/30 shadow-inner">
+        {hasScript ? (
+          <pre className="p-4 font-mono text-[12px] leading-6 text-white/80">
             <code>{sourceCode}</code>
           </pre>
-        </div>
-      ) : (
-        <div className="mt-4 rounded-lg border border-dashed border-white/10 bg-black/20 px-4 py-5 text-[11px] text-white/45">
-          脚本元数据已返回，但当前任务没有附带源码文本。
-        </div>
-      )}
+        ) : (
+          <div className="flex items-center justify-center h-full p-4">
+            <span className="text-[11px] font-mono text-white/30 tracking-widest uppercase">No source code available</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -139,6 +116,8 @@ export default function TaskDetailClient() {
   const [stableVideoSrc, setStableVideoSrc] = useState<string | null>(null);
   const containerRef = useRef<HTMLElement>(null);
   const refreshInFlightRef = useRef(false);
+
+  const [activeTab, setActiveTab] = useState<"logs" | "script">("logs");
 
   async function refreshTaskSnapshot(currentTaskId: string) {
     if (refreshInFlightRef.current) return;
@@ -263,27 +242,6 @@ export default function TaskDetailClient() {
     if (!task || loading || !containerRef.current) return;
 
     gsap.killTweensOf(".gsap-video-placeholder");
-    const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
-
-    timeline
-      .fromTo(
-        ".gsap-header",
-        { y: -20, opacity: 0, filter: "blur(5px)" },
-        { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.6, stagger: 0.1 },
-      )
-      .fromTo(
-        ".gsap-panel",
-        { y: 40, opacity: 0, scale: 0.98 },
-        {
-          y: 0,
-          opacity: 1,
-          scale: 1,
-          duration: 0.8,
-          stagger: 0.15,
-          ease: "power4.out",
-        },
-        "-=0.3",
-      );
 
     if (task.status === "running" || task.status === "pending") {
       gsap.to(".gsap-video-placeholder", {
@@ -295,8 +253,6 @@ export default function TaskDetailClient() {
         yoyo: true,
       });
     }
-
-    return () => timeline.kill();
   }, [task, loading]);
 
   const latestStatusPayload = useMemo(
@@ -310,7 +266,7 @@ export default function TaskDetailClient() {
 
   if (loading) {
     return (
-      <main className="container max-w-6xl flex-1 py-8">
+      <main className="container mx-auto max-w-6xl flex-1 px-6 py-8">
         <DetailSkeleton />
       </main>
     );
@@ -318,7 +274,7 @@ export default function TaskDetailClient() {
 
   if (!task) {
     return (
-      <main className="container max-w-6xl flex-1 py-8">
+      <main className="container mx-auto max-w-6xl flex-1 px-6 py-8">
         <div className="glass-card mx-auto max-w-md animate-fade-in-up space-y-4 rounded-2xl p-12 text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-destructive/[0.06]">
             <XCircle className="h-8 w-8 text-destructive/40" />
@@ -343,51 +299,22 @@ export default function TaskDetailClient() {
 
   const isRunning = task.status === "running" || task.status === "pending";
   const showVideo = !!stableVideoSrc;
-  const currentPhaseLabel =
-    task.status === "completed"
-      ? showVideo
-        ? "Final video ready"
-        : "Syncing final video"
-      : task.status === "failed"
-        ? "Pipeline failed"
-      : latestStatusPayload?.phase === "mux"
-        ? "Final mux in progress"
-      : latestStatusPayload?.phase
-        ? `${latestStatusPayload.phase} in progress`
-      : isRunning
-        ? "Waiting for first backend event"
-        : "Pipeline idle";
-  const currentPhaseMessage =
-    latestStatusPayload?.message ??
-    (task.status === "completed"
-      ? "The backend has completed the task. The page is syncing the final video metadata."
-      : task.status === "failed"
-        ? "The pipeline failed before the final artifact was ready."
-        : "The log stream is connected and waiting for the next update.");
+
   const liveBadge = isRunning ? "Live" : task.status === "completed" ? "Synced" : "Stopped";
 
   return (
-    <main ref={containerRef} className="mx-auto flex-1 w-full max-w-[1400px] space-y-6 px-6 py-8 md:px-10">
-      <div className="gsap-header flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1.5">
-          <Link
-            href="/"
-            className="gsap-header group mb-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-all duration-200 hover:text-foreground"
-          >
-            <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
-            Back to Home
-          </Link>
-          <div className="gsap-header flex items-center gap-3">
-            <div className="rounded-xl border border-primary/10 bg-primary/[0.08] p-2.5 text-primary">
-              <Film className="h-4.5 w-4.5" />
-            </div>
-            <div>
-              <h1 className="font-mono text-lg font-semibold tracking-tight">{task.id}</h1>
-              <p className="mt-0.5 line-clamp-1 max-w-md text-sm text-muted-foreground">{task.user_text}</p>
-            </div>
+    <main ref={containerRef} className="container mx-auto flex-1 w-full max-w-[1800px] flex flex-col space-y-4 px-6 md:px-10">
+      <div className="gsap-header flex flex-wrap items-center justify-between gap-4 pt-4 md:pt-6">
+        <div className="gsap-header flex items-center gap-3">
+          <div className="flex-shrink-0 rounded-xl border border-primary/10 bg-primary/[0.08] p-2.5 text-primary shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+            <Film className="h-4.5 w-4.5" />
+          </div>
+          <div>
+            <h1 className="font-mono text-lg font-semibold tracking-tight">{task.id}</h1>
+            <p className="mt-0.5 line-clamp-1 max-w-md text-sm text-muted-foreground">{task.user_text}</p>
           </div>
         </div>
-        <StatusBadge status={task.status} size="md" className="gsap-header" />
+        <StatusBadge status={task.status} size="md" className="gsap-header flex-shrink-0" />
       </div>
 
       {eventsError && (
@@ -401,52 +328,72 @@ export default function TaskDetailClient() {
         </div>
       )}
 
-      <PipelineProgress events={logs} taskStatus={task.status} />
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="gsap-panel gsap-log space-y-2.5 opacity-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-cyan-500/70">
-              <Terminal className="h-3.5 w-3.5" />
-              <h2 className="text-[10px] font-mono uppercase tracking-widest">Logs</h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-[10px] uppercase tracking-widest text-white/35">{liveBadge}</span>
-              {logs.length > 0 && (
-                <span className="rounded border border-cyan-500/10 bg-cyan-950/20 px-2 py-0.5 font-mono text-[10px] text-cyan-400/50 shadow-inner">
-                  {logs.length} EVTS
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-400/60">Current Stage</p>
-                <p className="text-sm text-white/85">{currentPhaseLabel}</p>
-                <p className="text-[11px] leading-relaxed text-muted-foreground/65">{currentPhaseMessage}</p>
-              </div>
-              <div
-                className={`mt-1 h-2.5 w-2.5 rounded-full ${
-                  isRunning ? "animate-pulse bg-cyan-400" : task.status === "completed" ? "bg-emerald-400" : "bg-red-400/80"
+      <div className="grid gap-6 lg:grid-cols-12 mt-4 relative">
+        <div className="flex flex-col space-y-4 lg:col-span-4 z-10 glass-card p-4 rounded-xl lg:sticky lg:top-8 h-[calc(100vh-10rem)]">
+          <div className="flex items-center justify-between pb-2 border-b border-white/5 shrink-0">
+            <div className="flex bg-black/40 p-1 rounded-lg">
+              <button 
+                onClick={() => setActiveTab("logs")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-mono uppercase tracking-widest transition-all ${
+                  activeTab === "logs" ? "bg-cyan-500/15 text-cyan-400 shadow-sm" : "text-white/40 hover:text-white/60 hover:bg-white/5"
                 }`}
-              />
+              >
+                <Terminal className="h-3.5 w-3.5" />
+                Logs
+              </button>
+              <button 
+                onClick={() => setActiveTab("script")}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-mono uppercase tracking-widest transition-all ${
+                  activeTab === "script" ? "bg-cyan-500/15 text-cyan-400 shadow-sm" : "text-white/40 hover:text-white/60 hover:bg-white/5"
+                }`}
+              >
+                <FileCode2 className="h-3.5 w-3.5" />
+                Source Code
+              </button>
             </div>
+            {activeTab === "logs" && (
+              <div className="flex items-center gap-2 pr-2">
+                <span className="font-mono text-[9px] uppercase tracking-widest text-white/35 flex items-center gap-1.5">
+                   <div className={`h-1.5 w-1.5 rounded-full ${isRunning ? 'bg-cyan-500 animate-pulse drop-shadow-[0_0_6px_rgba(6,182,212,0.8)]' : task.status === 'completed' ? 'bg-emerald-500 drop-shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-red-500'}`} />
+                   {liveBadge}
+                </span>
+                {logs.length > 0 && (
+                  <span className="rounded bg-cyan-950/30 px-2 py-[2px] font-mono text-[9px] text-cyan-400/50">
+                    {logs.length} EVTS
+                  </span>
+                )}
+              </div>
+            )}
           </div>
-          <LogViewer events={logs} isRunning={isRunning} />
+          
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            {activeTab === "logs" ? (
+              <div className="flex flex-col space-y-4 h-full mt-4 flex-1 min-h-0">
+                <LogViewer events={logs} isRunning={isRunning} taskStatus={task.status} />
+              </div>
+            ) : (
+              <div className="animate-fade-in-up mt-2 flex-1 min-h-0 h-full">
+                <ManimScriptPanel
+                  sceneFile={task.pipeline_output?.scene_file ?? null}
+                  sceneClass={task.pipeline_output?.scene_class ?? null}
+                  sourceCode={task.pipeline_output?.source_code ?? null}
+                />
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="gsap-panel gsap-video space-y-2.5 opacity-0">
-          <div className="flex items-center justify-between">
+        <div className="flex flex-col space-y-4 lg:col-span-8 lg:sticky lg:top-8 self-start w-full h-[calc(100vh-10rem)]">
+          <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2 text-cyan-500/70">
-              <Play className="h-3.5 w-3.5" />
-              <h2 className="text-[10px] font-mono uppercase tracking-widest">Output Video</h2>
+              <Play className="h-4 w-4" />
+              <h2 className="text-[11px] font-mono uppercase tracking-widest">Output Video</h2>
             </div>
           </div>
           {showVideo && stableVideoSrc ? (
             <VideoPlayer src={stableVideoSrc} />
           ) : (
-            <div className="gsap-video-placeholder group relative flex h-[480px] flex-col items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300">
+            <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300">
               <div className="absolute inset-0 bg-blue-500/5 blur-[100px] transition-colors duration-1000 group-hover:bg-cyan-500/10" />
               <svg className="absolute inset-0 h-full w-full opacity-[0.03]" xmlns="http://www.w3.org/2000/svg">
                 <defs>
@@ -466,9 +413,9 @@ export default function TaskDetailClient() {
                     </div>
                     <div className="flex flex-col items-center space-y-1 text-center">
                       <span className="text-[11px] font-mono uppercase tracking-widest text-cyan-400/80">
-                        {currentPhaseLabel}
+                        Pipeline In Progress
                       </span>
-                      <span className="max-w-[22rem] text-[10px] font-mono text-white/30">{currentPhaseMessage}</span>
+                      <span className="max-w-[22rem] text-[10px] font-mono text-white/30">Waiting for final video rendering</span>
                     </div>
                   </>
                 ) : task.status === "failed" ? (
@@ -489,7 +436,7 @@ export default function TaskDetailClient() {
                     <div className="flex flex-col items-center space-y-1 text-center">
                       <span className="text-[11px] font-mono uppercase tracking-widest text-white/30">RESULT SYNCING</span>
                       <span className="max-w-[22rem] text-[10px] font-mono text-white/20">
-                        {currentPhaseMessage}
+                        Waiting for final artifacts to be retrieved.
                       </span>
                     </div>
                   </>
@@ -497,11 +444,7 @@ export default function TaskDetailClient() {
               </div>
             </div>
           )}
-          <ManimScriptPanel
-            sceneFile={task.pipeline_output?.scene_file ?? null}
-            sceneClass={task.pipeline_output?.scene_class ?? null}
-            sourceCode={task.pipeline_output?.source_code ?? null}
-          />
+
         </div>
       </div>
     </main>

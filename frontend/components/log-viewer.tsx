@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { motion, AnimatePresence } from "framer-motion";
 import type {
   ProgressPayload,
   SSEEvent,
@@ -18,9 +18,12 @@ import {
   isToolStart,
 } from "@/types";
 
+import { PipelineProgress } from "./pipeline-progress";
+
 interface LogViewerProps {
   events: SSEEvent[];
   isRunning: boolean;
+  taskStatus: string;
 }
 
 interface PhaseMarker {
@@ -130,12 +133,13 @@ function detectPhase(event: SSEEvent, index: number): PhaseMarker | null {
     if (!phase) return null;
 
     const structuredMap: Record<string, PhaseMarker> = {
-      init: { id: `phase-${index}`, label: "Initialize", icon: "INIT", className: "phase-init" },
-      scene: { id: `phase-${index}`, label: "Build Scene", icon: "SCN", className: "phase-scene" },
-      render: { id: `phase-${index}`, label: "Render Video", icon: "RND", className: "phase-render" },
-      tts: { id: `phase-${index}`, label: "Generate Voice", icon: "TTS", className: "phase-tts" },
-      mux: { id: `phase-${index}`, label: "Mux Final", icon: "MUX", className: "phase-mux" },
-      done: { id: `phase-${index}`, label: "Complete", icon: "DONE", className: "phase-summary" },
+      init: { id: `phase-${index}`, label: "INIT", icon: "INIT", className: "phase-init" },
+      scene: { id: `phase-${index}`, label: "SCENE", icon: "SCEN", className: "phase-scene" },
+      render: { id: `phase-${index}`, label: "RENDER", icon: "RNDR", className: "phase-render" },
+      tts: { id: `phase-${index}`, label: "VOICE", icon: "VOIC", className: "phase-tts" },
+      mux: { id: `phase-${index}`, label: "COMP", icon: "COMP", className: "phase-mux" },
+      done: { id: `phase-${index}`, label: "DONE", icon: "DONE", className: "phase-done" },
+
     };
 
     return structuredMap[phase] ?? null;
@@ -146,7 +150,7 @@ function detectPhase(event: SSEEvent, index: number): PhaseMarker | null {
   const lower = line.toLowerCase();
 
   if (line.includes("[PROGRESS]") || line.includes("Phase 1")) {
-    return { id: `phase-${index}`, label: "Initialize", icon: "INIT", className: "phase-init" };
+    return { id: `phase-${index}`, label: "INIT", icon: "INIT", className: "phase-init" };
   }
   if (line.includes("Phase 2") || lower.includes("scene")) {
     return { id: `phase-${index}`, label: "Build Scene", icon: "SCN", className: "phase-scene" };
@@ -168,19 +172,24 @@ function detectPhase(event: SSEEvent, index: number): PhaseMarker | null {
 }
 
 function PhaseDivider({ marker }: { marker: PhaseMarker }) {
-  const colorMap: Record<string, string> = {
-    "phase-init": "border-cyan-500/30 bg-cyan-500/[0.04] text-cyan-400",
-    "phase-scene": "border-violet-500/30 bg-violet-500/[0.04] text-violet-400",
-    "phase-render": "border-green-500/30 bg-green-500/[0.04] text-green-400",
-    "phase-tts": "border-orange-500/30 bg-orange-500/[0.04] text-orange-400",
-    "phase-mux": "border-sky-500/30 bg-sky-500/[0.04] text-sky-400",
-    "phase-summary": "border-emerald-500/30 bg-emerald-500/[0.04] text-emerald-400",
+  const colorMap: Record<string, { line: string; text: string; bg: string; border: string }> = {
+    "phase-init": { line: "via-cyan-500/30", text: "text-cyan-400", bg: "bg-cyan-500/[0.04]", border: "border-cyan-500/20" },
+    "phase-scene": { line: "via-violet-500/30", text: "text-violet-400", bg: "bg-violet-500/[0.04]", border: "border-violet-500/20" },
+    "phase-render": { line: "via-green-500/30", text: "text-green-400", bg: "bg-green-500/[0.04]", border: "border-green-500/20" },
+    "phase-tts": { line: "via-orange-500/30", text: "text-orange-400", bg: "bg-orange-500/[0.04]", border: "border-orange-500/20" },
+    "phase-mux": { line: "via-sky-500/30", text: "text-sky-400", bg: "bg-sky-500/[0.04]", border: "border-sky-500/20" },
+    "phase-done": { line: "via-emerald-500/30", text: "text-emerald-400", bg: "bg-emerald-500/[0.04]", border: "border-emerald-500/20" },
   };
 
+  const style = colorMap[marker.className] || colorMap["phase-init"];
+
   return (
-    <div className={`my-2 flex items-center gap-2 rounded-md border px-3 py-1 ${colorMap[marker.className]}`}>
-      <span className="font-mono text-[10px] uppercase tracking-wider">{marker.icon}</span>
-      <span className="text-[11px] font-medium">{marker.label}</span>
+    <div className={`my-4 flex items-center justify-center gap-4`}>
+      <div className={`h-[1px] flex-1 bg-gradient-to-r from-transparent ${style.line} to-transparent`}></div>
+      <div className={`rounded-full border ${style.border} ${style.bg} px-3 py-0.5 text-[10px] font-mono tracking-[0.2em] font-bold ${style.text}`}>
+        {marker.label}
+      </div>
+      <div className={`h-[1px] flex-1 bg-gradient-to-r from-transparent ${style.line} to-transparent`}></div>
     </div>
   );
 }
@@ -216,27 +225,32 @@ function LogLine({ text, timestamp }: { text: string; timestamp: string }) {
 
 function ToolStartView({ payload, timestamp }: { payload: ToolStartPayload; timestamp: string }) {
   return (
-    <div className="my-0.5 flex items-start gap-3 rounded-md border border-blue-500/10 bg-blue-500/[0.05] px-2 py-1.5">
-      <span className="pt-[2px] text-[10px] font-mono text-white/20">{formatEventTime(timestamp)}</span>
-      <span className="mt-0.5 shrink-0 text-blue-400">
+    <div className="my-1 flex items-start gap-3 rounded-md border border-blue-500/15 bg-blue-500/[0.04] px-3 py-2">
+      <span className="pt-[2px] text-[10px] font-mono text-white/20 select-none">{formatEventTime(timestamp)}</span>
+      <span className="mt-[3px] shrink-0 text-blue-400/80">
         <ToolIcon name={payload.name} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
+          <span className="rounded-sm bg-blue-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-blue-400">
+            CALL
+          </span>
           <span className="text-[11px] font-medium text-blue-300">{payload.name}</span>
-          <span className="text-[10px] font-mono text-blue-500/40">{payload.tool_use_id.slice(-8)}</span>
+          <span className="text-[10px] font-mono text-blue-500/40 ml-auto">{payload.tool_use_id.slice(-8)}</span>
         </div>
         {Object.keys(payload.input_summary).length > 0 && (
-          <div className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5">
+          <div className="mt-1.5 flex flex-wrap gap-2 text-[10px] font-mono text-blue-200/50">
             {Object.entries(payload.input_summary)
               .slice(0, 4)
               .map(([key, value]) => (
-                <span key={key} className="max-w-[180px] truncate text-[10px] font-mono text-blue-200/50">
-                  {key}=
-                  {typeof value === "string"
-                    ? `${value.slice(0, 40)}${value.length > 40 ? "..." : ""}`
-                    : JSON.stringify(value).slice(0, 30)}
-                </span>
+                <div key={key} className="flex items-center bg-black/20 rounded-md px-2 py-0.5 max-w-full">
+                  <span className="text-blue-300/40 mr-1">{key}:</span>
+                  <span className="truncate max-w-[200px] text-blue-200/80">
+                    {typeof value === "string"
+                      ? value
+                      : JSON.stringify(value)}
+                  </span>
+                </div>
               ))}
           </div>
         )}
@@ -251,16 +265,18 @@ function ToolResultView({ payload, timestamp }: { payload: ToolResultPayload; ti
     : "border-green-500/10 bg-green-500/[0.04] text-green-300";
 
   return (
-    <div className={`my-0.5 ml-6 flex items-center gap-3 rounded-md border px-2 py-1 ${tone}`}>
-      <span className="text-[10px] font-mono text-white/20">{formatEventTime(timestamp)}</span>
-      <span>{payload.is_error ? "ERR" : "OK"}</span>
+    <div className={`my-0.5 ml-6 flex items-center gap-3 rounded-md border px-3 py-1.5 ${tone}`}>
+      <span className="text-[10px] font-mono text-white/20 select-none">{formatEventTime(timestamp)}</span>
+      <span className={`rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider ${payload.is_error ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}`}>
+        {payload.is_error ? "ERR" : "OK"}
+      </span>
       {payload.content && (
         <span className="max-w-[280px] truncate text-[11px] text-current/75">
           {payload.content.length > 120 ? `${payload.content.slice(0, 120)}...` : payload.content}
         </span>
       )}
       {payload.duration_ms != null && (
-        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/40">{payload.duration_ms}ms</span>
+        <span className="ml-auto shrink-0 text-[10px] font-mono text-muted-foreground/40 opacity-70">{payload.duration_ms}ms</span>
       )}
     </div>
   );
@@ -277,19 +293,28 @@ function ThinkingView({ payload, timestamp }: { payload: ThinkingPayload; timest
         <button
           type="button"
           onClick={() => setExpanded((current) => !current)}
-          className="flex w-full items-center gap-1.5 text-left text-[11px] text-purple-300/80 hover:text-purple-300"
+          className="flex w-full items-center gap-2 text-left text-[11px] text-purple-300/80 hover:text-purple-300"
         >
-          <span className="inline-block transition-transform" style={{ transform: expanded ? "rotate(90deg)" : "none" }}>
-            &gt;
+          <span className="inline-block transition-transform text-[10px]" style={{ transform: expanded ? "rotate(90deg)" : "none" }}>
+            ▶
           </span>
-          <span>THINK</span>
-          <span className="flex-1 truncate">{preview}</span>
+          <span className="rounded-sm bg-purple-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-purple-400">
+            THINK
+          </span>
+          <span className="flex-1 truncate opacity-75">{preview}</span>
         </button>
-        {expanded && (
-          <pre className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-purple-200/50">
-            {payload.thinking}
-          </pre>
-        )}
+        <AnimatePresence>
+          {expanded && (
+            <motion.pre
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="mt-2 overflow-hidden whitespace-pre-wrap break-words text-[11px] leading-relaxed text-purple-200/60 font-sans"
+            >
+              {payload.thinking}
+            </motion.pre>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -297,13 +322,23 @@ function ThinkingView({ payload, timestamp }: { payload: ThinkingPayload; timest
 
 function ProgressView({ payload, timestamp }: { payload: ProgressPayload; timestamp: string }) {
   return (
-    <div className="my-0.5 flex items-center gap-3 rounded-sm bg-surface/30 px-2 py-1 text-[11px] text-muted-foreground/60">
-      <span className="text-[10px] font-mono text-white/20">{formatEventTime(timestamp)}</span>
-      <span>STEP</span>
-      <span>Turn {payload.turn}</span>
-      <span className="font-mono font-medium text-cyan-400/70">{payload.total_tokens.toLocaleString()} tokens</span>
-      <span>{payload.tool_uses} tools</span>
-      <span className="ml-auto text-[10px]">{(payload.elapsed_ms / 1000).toFixed(1)}s</span>
+    <div className="my-1 flex items-center justify-between rounded-md border border-white/5 bg-white/[0.02] px-3 py-1.5 text-[11px] text-muted-foreground/60 w-full max-w-[70%]">
+      <div className="flex items-center gap-3">
+        <span className="text-[10px] font-mono text-white/20 select-none">{formatEventTime(timestamp)}</span>
+        <span className="rounded-sm bg-white/5 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-white/40">
+          STEP
+        </span>
+        <span className="font-medium text-white/50">Turn {payload.turn}</span>
+        <span className="flex items-center gap-1">
+          <span className="font-mono font-medium text-cyan-400/80">{payload.total_tokens.toLocaleString()}</span>
+          <span className="text-[10px] text-white/30">tokens</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="font-mono font-medium text-blue-400/80">{payload.tool_uses}</span>
+          <span className="text-[10px] text-white/30">tools</span>
+        </span>
+      </div>
+      <span className="text-[10px] font-mono text-white/40 opacity-70">{(payload.elapsed_ms / 1000).toFixed(1)}s</span>
     </div>
   );
 }
@@ -325,17 +360,19 @@ function StatusView({
 
   return (
     <div className={`my-1 rounded-md border px-3 py-2 ${tone}`}>
-      <div className="flex items-center gap-2 text-[11px] font-medium">
-        <span>{isDone ? "OK" : isError ? "ERR" : "RUN"}</span>
-        <span className="uppercase tracking-wide">{payload.task_status}</span>
+      <div className="flex items-center gap-2.5 text-[11px] font-medium">
+        <span className="flex items-center justify-center w-[18px] h-[18px] rounded-sm bg-current/10 text-[10px] tracking-tighter">
+          {isDone ? "✓" : isError ? "✕" : "⟳"}
+        </span>
+        <span className="uppercase tracking-widest text-[10px] font-bold opacity-80">{payload.task_status}</span>
         {payload.phase && (
-          <span className="rounded-full border border-current/15 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-current/80">
+          <span className="rounded-full border border-current/15 px-2 py-0.5 text-[9px] font-mono uppercase tracking-widest text-current/80">
             {payload.phase}
           </span>
         )}
-        <span className="ml-auto text-[10px] font-mono text-current/55">{formatEventTime(timestamp)}</span>
+        <span className="ml-auto text-[10px] font-mono text-current/40">{formatEventTime(timestamp)}</span>
       </div>
-      {payload.message && <p className="mt-1 text-[11px] leading-relaxed text-current/75">{payload.message}</p>}
+      {payload.message && <p className="mt-2 text-[11px] leading-relaxed text-current/75 break-words">{payload.message}</p>}
     </div>
   );
 }
@@ -362,7 +399,7 @@ function EventRenderer({ event }: { event: SSEEvent }) {
   return <LogLine text={JSON.stringify(event.data)} timestamp={event.timestamp} />;
 }
 
-export function LogViewer({ events, isRunning }: LogViewerProps) {
+export function LogViewer({ events, isRunning, taskStatus }: LogViewerProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -384,28 +421,35 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
   const phaseMap = useMemo(() => new Map(phaseMarkers.map((item) => [item.index, item.marker])), [phaseMarkers]);
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300">
+    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300 flex-1 flex flex-col h-full min-h-0">
       <div className="pointer-events-none absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E')] opacity-[0.04] mix-blend-screen" />
 
-      <div className="relative z-10 flex items-center gap-2 border-b border-white/[0.05] bg-white/[0.02] px-4 py-3">
-        <div className="flex items-center gap-1">
-          <span className="h-3.5 w-1.5 rounded-[1px] bg-cyan-500/80" />
-          <span className="h-3.5 w-1.5 animate-pulse rounded-[1px] bg-blue-500/40" />
-        </div>
-        <span className="ml-1 mt-0.5 font-mono text-[10px] uppercase tracking-widest text-cyan-400/80">
-          SYS.LOGS
-        </span>
-        {isRunning && (
-          <span className="ml-auto flex items-center gap-2">
-            <span className="h-3 w-1 animate-pulse bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
-            <span className="font-mono text-[10px] uppercase tracking-wider text-green-400">Active</span>
+      <div className="relative z-10 flex items-center justify-between border-b border-white/[0.05] bg-white/[0.02] px-4 pt-3 pb-3 shrink-0">
+        <div className="flex items-center gap-1 w-32">
+          <div className="flex items-center gap-1.5 opacity-80">
+            <span className="h-3.5 w-1.5 flex-[0_0_auto] rounded-[1px] bg-cyan-500" />
+            <span className="h-3.5 w-1.5 flex-[0_0_auto] animate-pulse rounded-[1px] bg-blue-500/50" />
+          </div>
+          <span className="ml-2 font-mono text-[10px] uppercase tracking-widest text-cyan-400">
+            SYS.LOGS
           </span>
-        )}
+        </div>
+        <div className="flex-1 px-6 opacity-90 max-w-[600px] mx-auto min-w-0">
+          <PipelineProgress events={events} taskStatus={taskStatus} />
+        </div>
+        <div className="flex items-center justify-end w-32">
+          {isRunning && (
+            <span className="flex items-center justify-end gap-2 pl-4 border-l border-white/10 shrink-0">
+              <span className="h-3 w-1 animate-pulse bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
+              <span className="font-mono text-[10px] uppercase tracking-wider text-green-400">Active</span>
+            </span>
+          )}
+        </div>
       </div>
 
-      {events.length > 0 && <StatsBar events={events} />}
+      {events.length > 0 && <span className="shrink-0"><StatsBar events={events} /></span>}
 
-      <ScrollArea className="relative z-10 h-[480px] w-full bg-transparent p-4 font-mono text-xs leading-5">
+      <div className="relative z-10 flex-1 w-full bg-transparent p-4 font-mono text-xs leading-5 overflow-y-auto min-h-0 custom-scrollbar">
         <div className="space-y-0">
           {events.length === 0 && (
             <div className="flex flex-col gap-2 px-1 pt-2 font-mono text-[11px] uppercase tracking-widest text-white/30">
@@ -422,15 +466,34 @@ export function LogViewer({ events, isRunning }: LogViewerProps) {
           {events.map((event, index) => {
             const nodes: ReactNode[] = [];
             if (phaseIndexSet.has(index)) {
-              nodes.push(<PhaseDivider key={`phase-${index}`} marker={phaseMap.get(index)!} />);
+              nodes.push(
+                <motion.div
+                  key={`phase-${index}`}
+                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <PhaseDivider marker={phaseMap.get(index)!} />
+                </motion.div>
+              );
             }
-            nodes.push(<EventRenderer key={`event-${index}`} event={event} />);
+            nodes.push(
+              <motion.div
+                key={`event-${index}`}
+                initial={{ opacity: 0, x: -10, filter: "blur(4px)" }}
+                animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+                className="will-change-transform"
+              >
+                <EventRenderer event={event} />
+              </motion.div>
+            );
             return nodes;
           })}
           {isRunning && <pre className="inline-block animate-pulse text-green-400">_</pre>}
           <div ref={bottomRef} />
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
