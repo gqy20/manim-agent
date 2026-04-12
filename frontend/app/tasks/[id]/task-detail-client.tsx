@@ -21,6 +21,42 @@ import { isStatusPayload } from "@/types";
 type VideoPlaceholderPhase = "init" | "scene" | "render" | "tts" | "mux" | "done";
 type TtsTransportMode = "sync" | "async" | null;
 
+const VIDEO_PHASE_META: Record<
+  VideoPlaceholderPhase,
+  { label: string; detail: string; accent: string }
+> = {
+  init: {
+    label: "SYSTEM LINK",
+    detail: "Bootstrapping the agent runtime",
+    accent: "from-cyan-500/25 via-sky-500/10 to-transparent",
+  },
+  scene: {
+    label: "SCENE DRAFT",
+    detail: "Sketching animation structure and beats",
+    accent: "from-violet-500/25 via-cyan-500/10 to-transparent",
+  },
+  render: {
+    label: "FRAME RENDER",
+    detail: "Compiling frames into motion",
+    accent: "from-emerald-500/20 via-cyan-500/10 to-transparent",
+  },
+  tts: {
+    label: "VOICE SYNTH",
+    detail: "Generating narration and timing cues",
+    accent: "from-orange-500/20 via-cyan-500/10 to-transparent",
+  },
+  mux: {
+    label: "FINAL PASS",
+    detail: "Merging assets into the delivery file",
+    accent: "from-sky-500/25 via-cyan-500/10 to-transparent",
+  },
+  done: {
+    label: "DELIVERY READY",
+    detail: "Final output has been assembled",
+    accent: "from-emerald-500/25 via-cyan-500/10 to-transparent",
+  },
+};
+
 function formatElapsedRuntime(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const hours = Math.floor(totalSeconds / 3600);
@@ -127,8 +163,6 @@ function VideoPipelinePlaceholder({
   const [runtimeNow, setRuntimeNow] = useState(() => Date.now());
 
   useEffect(() => {
-    setRuntimeNow(Date.now());
-
     if (!isRunning) return;
 
     const timer = window.setInterval(() => {
@@ -143,52 +177,19 @@ function VideoPipelinePlaceholder({
     [completedAt, createdAt, runtimeNow],
   );
 
-  const phaseMeta: Record<VideoPlaceholderPhase, { label: string; detail: string; accent: string }> = {
-    init: {
-      label: "SYSTEM LINK",
-      detail: "Bootstrapping the agent runtime",
-      accent: "from-cyan-500/25 via-sky-500/10 to-transparent",
-    },
-    scene: {
-      label: "SCENE DRAFT",
-      detail: "Sketching animation structure and beats",
-      accent: "from-violet-500/25 via-cyan-500/10 to-transparent",
-    },
-    render: {
-      label: "FRAME RENDER",
-      detail: "Compiling frames into motion",
-      accent: "from-emerald-500/20 via-cyan-500/10 to-transparent",
-    },
-    tts: {
-      label: "VOICE SYNTH",
-      detail: "Generating narration and timing cues",
-      accent: "from-orange-500/20 via-cyan-500/10 to-transparent",
-    },
-    mux: {
-      label: "FINAL PASS",
-      detail: "Merging assets into the delivery file",
-      accent: "from-sky-500/25 via-cyan-500/10 to-transparent",
-    },
-    done: {
-      label: "DELIVERY READY",
-      detail: "Final output has been assembled",
-      accent: "from-emerald-500/25 via-cyan-500/10 to-transparent",
-    },
-  };
-
   const currentPhase = useMemo(() => {
-    if (phase !== "tts") return phaseMeta[phase];
+    if (phase !== "tts") return VIDEO_PHASE_META[phase];
 
     return {
-      ...phaseMeta.tts,
+      ...VIDEO_PHASE_META.tts,
       detail:
         ttsTransportMode === "sync"
           ? "Streaming back a direct HTTP voice render"
           : ttsTransportMode === "async"
             ? "Falling back to the long-text voice pipeline"
-            : phaseMeta.tts.detail,
+            : VIDEO_PHASE_META.tts.detail,
     };
-  }, [phase, phaseMeta, ttsTransportMode]);
+  }, [phase, ttsTransportMode]);
 
   if (taskStatus === "failed") {
     return (
@@ -521,15 +522,6 @@ export default function TaskDetailClient() {
     }
   }, [task, loading]);
 
-  const latestStatusPayload = useMemo(
-    () =>
-      [...logs]
-        .reverse()
-        .find((event) => isStatusPayload(event))
-        ?.data ?? null,
-    [logs],
-  );
-
   if (loading) {
     return (
       <main className="container mx-auto max-w-6xl flex-1 px-6 py-8">
@@ -569,15 +561,20 @@ export default function TaskDetailClient() {
   const liveBadge = isRunning ? "Live" : task.status === "completed" ? "Synced" : "Stopped";
 
   return (
-    <main ref={containerRef} className="container mx-auto flex-1 w-full max-w-[1800px] flex flex-col space-y-4 px-6 md:px-10">
-      <div className="gsap-header flex flex-wrap items-center justify-between gap-4 pt-4 md:pt-6">
-        <div className="gsap-header flex items-center gap-3">
+    <main
+      ref={containerRef}
+      className="container mx-auto flex w-full max-w-[1800px] flex-1 flex-col space-y-4 px-4 pb-6 sm:px-6 md:px-10 md:pb-8"
+    >
+      <div className="gsap-header flex flex-col gap-3 pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between md:pt-6">
+        <div className="gsap-header flex min-w-0 items-start gap-3 sm:items-center">
           <div className="flex-shrink-0 rounded-xl border border-primary/10 bg-primary/[0.08] p-2.5 text-primary shadow-[0_0_15px_rgba(6,182,212,0.15)]">
             <Film className="h-4.5 w-4.5" />
           </div>
-          <div>
-            <h1 className="font-mono text-lg font-semibold tracking-tight">{task.id}</h1>
-            <p className="mt-0.5 line-clamp-1 max-w-md text-sm text-muted-foreground">{task.user_text}</p>
+          <div className="min-w-0">
+            <h1 className="truncate font-mono text-lg font-semibold tracking-tight">{task.id}</h1>
+            <p className="mt-0.5 line-clamp-2 max-w-2xl text-sm text-muted-foreground sm:line-clamp-1">
+              {task.user_text}
+            </p>
           </div>
         </div>
         <StatusBadge status={task.status} size="md" className="gsap-header flex-shrink-0" />
@@ -594,13 +591,13 @@ export default function TaskDetailClient() {
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-12 mt-4 relative">
-        <div className="flex flex-col space-y-4 lg:col-span-4 z-10 glass-card p-4 rounded-xl lg:sticky lg:top-8 h-[calc(100vh-10rem)]">
-          <div className="flex items-center justify-between pb-2 border-b border-white/5 shrink-0">
-            <div className="flex bg-black/40 p-1 rounded-lg">
+      <div className="relative mt-4 grid gap-6 lg:grid-cols-12">
+        <div className="order-2 z-10 flex flex-col space-y-4 rounded-xl p-4 glass-card lg:order-1 lg:col-span-4 lg:sticky lg:top-8 lg:h-[calc(100dvh-10rem)] lg:self-start">
+          <div className="flex shrink-0 flex-col gap-3 border-b border-white/5 pb-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex w-full overflow-x-auto rounded-lg bg-black/40 p-1 sm:w-auto">
               <button 
                 onClick={() => setActiveTab("logs")}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-mono uppercase tracking-widest transition-all ${
+                className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-[10px] font-mono uppercase tracking-widest transition-all sm:min-h-0 sm:flex-none sm:justify-start sm:py-1.5 ${
                   activeTab === "logs" ? "bg-cyan-500/15 text-cyan-400 shadow-sm" : "text-white/40 hover:text-white/60 hover:bg-white/5"
                 }`}
               >
@@ -609,7 +606,7 @@ export default function TaskDetailClient() {
               </button>
               <button 
                 onClick={() => setActiveTab("script")}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-[10px] font-mono uppercase tracking-widest transition-all ${
+                className={`flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-[10px] font-mono uppercase tracking-widest transition-all sm:min-h-0 sm:flex-none sm:justify-start sm:py-1.5 ${
                   activeTab === "script" ? "bg-cyan-500/15 text-cyan-400 shadow-sm" : "text-white/40 hover:text-white/60 hover:bg-white/5"
                 }`}
               >
@@ -618,9 +615,9 @@ export default function TaskDetailClient() {
               </button>
             </div>
             {activeTab === "logs" && (
-              <div className="flex items-center gap-2 pr-2">
-                <span className="font-mono text-[9px] uppercase tracking-widest text-white/35 flex items-center gap-1.5">
-                   <div className={`h-1.5 w-1.5 rounded-full ${isRunning ? 'bg-cyan-500 animate-pulse drop-shadow-[0_0_6px_rgba(6,182,212,0.8)]' : task.status === 'completed' ? 'bg-emerald-500 drop-shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-red-500'}`} />
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:pr-2">
+                <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest text-white/35">
+                   <span className={`h-1.5 w-1.5 rounded-full ${isRunning ? 'bg-cyan-500 animate-pulse drop-shadow-[0_0_6px_rgba(6,182,212,0.8)]' : task.status === 'completed' ? 'bg-emerald-500 drop-shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-red-500'}`} />
                    {liveBadge}
                 </span>
                 {logs.length > 0 && (
@@ -649,7 +646,7 @@ export default function TaskDetailClient() {
           </div>
         </div>
 
-        <div className="flex flex-col space-y-4 lg:col-span-8 lg:sticky lg:top-8 self-start w-full h-[calc(100vh-10rem)]">
+        <div className="order-1 flex w-full flex-col space-y-4 lg:order-2 lg:col-span-8 lg:sticky lg:top-8 lg:h-[calc(100dvh-10rem)] lg:self-start">
           <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2 text-cyan-500/70">
               <Play className="h-4 w-4" />

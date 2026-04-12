@@ -31,7 +31,7 @@ function FeaturePills() {
 
 export default function HomePage() {
   return (
-    <main className="flex-1 flex flex-col items-center justify-center px-4 py-8 sm:py-12 relative overflow-hidden">
+    <main className="relative flex flex-1 flex-col items-center justify-start overflow-hidden px-4 py-8 sm:justify-center sm:py-12">
       {/* Hero section */}
       <div className="w-full max-w-3xl mx-auto relative z-10">
         {/* Header */}

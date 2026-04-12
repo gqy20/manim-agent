@@ -57,10 +57,10 @@ export default function RootLayout({
       lang="zh-CN"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
-      <body className="bg-mesh flex min-h-full flex-col">
+      <body className="bg-mesh flex min-h-full flex-col [padding-bottom:var(--safe-bottom)]">
         {/* SVG Noise Texture Overlay */}
         <div className="pointer-events-none fixed inset-0 z-[1] h-full w-full opacity-[0.03] mix-blend-overlay">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100% 100%" width="100%" height="100%">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
             <filter id="noise">
               <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch" />
             </filter>
@@ -68,7 +68,7 @@ export default function RootLayout({
           </svg>
         </div>
         
-        <header className="fixed top-0 left-0 right-0 z-50 bg-background/60 backdrop-blur-2xl supports-[backdrop-filter]:bg-background/30">
+        <header className="fixed left-0 right-0 top-0 z-50 bg-background/60 pt-[var(--safe-top)] backdrop-blur-2xl supports-[backdrop-filter]:bg-background/30">
           <nav className="flex h-14 w-full items-center justify-between px-4 md:px-6">
             <Link href="/" className="group flex items-center gap-2.5">
               <Logo
@@ -93,7 +93,7 @@ export default function RootLayout({
         </header>
 
         <ErrorBoundary>
-          <div className="pt-14 flex-1 flex flex-col">
+          <div className="flex flex-1 flex-col pt-[calc(var(--app-header-height)+var(--safe-top))]">
             {children}
           </div>
         </ErrorBoundary>

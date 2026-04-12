@@ -205,16 +205,14 @@ function StepDot({ state }: { state: PhaseState }) {
 
 function ConnectorLine({
   index,
-  total,
   activeUntil,
 }: {
   index: number;
-  total: number;
   activeUntil: number;
 }) {
   const isActive = index < activeUntil;
   return (
-    <div className="relative mx-3 h-[2px] w-full flex-1 overflow-hidden rounded-full">
+    <div className="relative mx-1.5 h-[2px] w-full flex-1 overflow-hidden rounded-full sm:mx-3">
       <div className="absolute inset-0 bg-white/[0.06]" />
       <div
         className={`absolute inset-y-0 left-0 transition-all duration-700 ease-out ${
@@ -228,14 +226,6 @@ function ConnectorLine({
 
 export function PipelineProgress({ events, taskStatus }: PipelineProgressProps) {
   const phases = useMemo(() => detectCurrentPhases(events, taskStatus), [events, taskStatus]);
-  const latestStatusPayload = useMemo(
-    () =>
-      [...events]
-        .reverse()
-        .find((event): event is SSEEvent & { data: StatusPayload } => isStatusPayload(event))
-        ?.data,
-    [events],
-  );
 
   const activeIndex = phases.findIndex((phase) => phase.status === "active");
   const doneCount = phases.filter((phase) => phase.status === "done").length;
@@ -250,7 +240,7 @@ export function PipelineProgress({ events, taskStatus }: PipelineProgressProps) 
             <div className="flex flex-col items-center relative shrink-0 group">
               <StepDot state={state} />
               <span
-                className={`absolute top-[26px] whitespace-nowrap text-[9px] uppercase tracking-widest font-mono transition-all duration-300 ${
+                className={`absolute top-[26px] whitespace-nowrap text-[8px] uppercase tracking-[0.18em] font-mono transition-all duration-300 max-[420px]:hidden sm:text-[9px] sm:tracking-widest ${
                   index === 0
                     ? "left-0 text-left"
                     : isLast
@@ -269,7 +259,7 @@ export function PipelineProgress({ events, taskStatus }: PipelineProgressProps) 
                 {state.phase.label}
               </span>
             </div>
-            {!isLast && <ConnectorLine index={index} total={phases.length} activeUntil={activeUntil} />}
+            {!isLast && <ConnectorLine index={index} activeUntil={activeUntil} />}
           </div>
         );
       })}

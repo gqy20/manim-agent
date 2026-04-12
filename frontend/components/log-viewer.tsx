@@ -322,8 +322,8 @@ function ThinkingView({ payload, timestamp }: { payload: ThinkingPayload; timest
 
 function ProgressView({ payload, timestamp }: { payload: ProgressPayload; timestamp: string }) {
   return (
-    <div className="my-1 flex items-center justify-between rounded-md border border-white/5 bg-white/[0.02] px-3 py-1.5 text-[11px] text-muted-foreground/60 w-full max-w-[70%]">
-      <div className="flex items-center gap-3">
+    <div className="my-1 flex w-full max-w-full flex-col gap-2 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] text-muted-foreground/60 sm:max-w-[70%] sm:flex-row sm:items-center sm:justify-between sm:py-1.5">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <span className="text-[10px] font-mono text-white/20 select-none">{formatEventTime(timestamp)}</span>
         <span className="rounded-sm bg-white/5 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-white/40">
           STEP
@@ -424,8 +424,8 @@ export function LogViewer({ events, isRunning, taskStatus }: LogViewerProps) {
     <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300 flex-1 flex flex-col h-full min-h-0">
       <div className="pointer-events-none absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E')] opacity-[0.04] mix-blend-screen" />
 
-      <div className="relative z-10 flex items-center justify-between border-b border-white/[0.05] bg-white/[0.02] px-4 pt-3 pb-3 shrink-0">
-        <div className="flex items-center gap-1 w-32">
+      <div className="relative z-10 flex shrink-0 flex-col gap-3 border-b border-white/[0.05] bg-white/[0.02] px-4 pb-3 pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="flex items-center gap-1 sm:w-24 lg:w-32">
           <div className="flex items-center gap-1.5 opacity-80">
             <span className="h-3.5 w-1.5 flex-[0_0_auto] rounded-[1px] bg-cyan-500" />
             <span className="h-3.5 w-1.5 flex-[0_0_auto] animate-pulse rounded-[1px] bg-blue-500/50" />
@@ -434,10 +434,10 @@ export function LogViewer({ events, isRunning, taskStatus }: LogViewerProps) {
             SYS.LOGS
           </span>
         </div>
-        <div className="flex-1 px-6 opacity-90 max-w-[600px] mx-auto min-w-0">
+        <div className="min-w-0 flex-1 opacity-90 sm:px-2 lg:mx-auto lg:max-w-[600px] lg:px-6">
           <PipelineProgress events={events} taskStatus={taskStatus} />
         </div>
-        <div className="w-32 shrink-0" />
+        <div className="hidden shrink-0 lg:block lg:w-32" />
       </div>
 
       {events.length > 0 && <span className="shrink-0"><StatsBar events={events} /></span>}

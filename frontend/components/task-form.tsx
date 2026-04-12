@@ -198,12 +198,12 @@ export function TaskForm() {
 
       {/* Advanced options */}
       <div className="pt-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 pb-2">
+        <div className="grid grid-cols-1 gap-4 pb-2 md:grid-cols-2 xl:grid-cols-4">
           {/* Voice */}
-          <div className="flex items-center gap-4">
-            <label className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">音色</label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <label id="voice-label" className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">音色</label>
             <Select value={voiceId} onValueChange={(v) => v && setVoiceId(v)} disabled={submitting}>
-              <SelectTrigger className="w-full bg-transparent border-white/10 hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 transition-colors h-8 text-[11px] text-white/80 shadow-none font-medium">
+              <SelectTrigger id="voice-select" aria-label="音色" aria-labelledby="voice-label voice-select" className="min-h-10 w-full bg-transparent border-white/10 text-[12px] font-medium text-white/80 shadow-none transition-colors hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 sm:min-h-8 sm:text-[11px]">
                 <SelectValue>{getLabel(VOICES, voiceId)}</SelectValue>
               </SelectTrigger>
               <SelectContent className="bg-black/80 backdrop-blur-xl border border-white/10">
@@ -215,10 +215,10 @@ export function TaskForm() {
           </div>
 
           {/* Quality */}
-          <div className="flex items-center gap-4">
-            <label className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">画质</label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <label id="quality-label" className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">画质</label>
             <Select value={quality} onValueChange={(v) => v && setQuality(v as "high" | "medium" | "low")} disabled={submitting}>
-              <SelectTrigger className="w-full bg-transparent border-white/10 hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 transition-colors h-8 text-[11px] text-white/80 shadow-none font-medium">
+              <SelectTrigger id="quality-select" aria-label="画质" aria-labelledby="quality-label quality-select" className="min-h-10 w-full bg-transparent border-white/10 text-[12px] font-medium text-white/80 shadow-none transition-colors hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 sm:min-h-8 sm:text-[11px]">
                 <SelectValue>{getLabel(QUALITIES, quality)}</SelectValue>
               </SelectTrigger>
               <SelectContent className="bg-black/80 backdrop-blur-xl border border-white/10">
@@ -230,10 +230,10 @@ export function TaskForm() {
           </div>
 
           {/* Preset */}
-          <div className="flex items-center gap-4">
-            <label className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">模式</label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <label id="preset-label" className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">模式</label>
             <Select value={preset} onValueChange={(v) => v && setPreset(v as "default" | "educational" | "presentation" | "proof" | "concept")} disabled={submitting}>
-              <SelectTrigger className="w-full bg-transparent border-white/10 hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 transition-colors h-8 text-[11px] text-white/80 shadow-none font-medium">
+              <SelectTrigger id="preset-select" aria-label="模式" aria-labelledby="preset-label preset-select" className="min-h-10 w-full bg-transparent border-white/10 text-[12px] font-medium text-white/80 shadow-none transition-colors hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 sm:min-h-8 sm:text-[11px]">
                 <SelectValue>{getLabel(PRESETS, preset)}</SelectValue>
               </SelectTrigger>
               <SelectContent className="bg-black/80 backdrop-blur-xl border border-white/10">
@@ -245,8 +245,8 @@ export function TaskForm() {
           </div>
 
           {/* Duration */}
-          <div className="flex items-center gap-4">
-            <label className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">时长</label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            <label id="duration-label" className="text-[11px] font-medium text-white/30 uppercase tracking-wider shrink-0 w-6">时长</label>
             <Select
               value={String(targetDurationSeconds)}
               onValueChange={(v) =>
@@ -254,7 +254,7 @@ export function TaskForm() {
               }
               disabled={submitting}
             >
-              <SelectTrigger className="w-full bg-transparent border-white/10 hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 transition-colors h-8 text-[11px] text-white/80 shadow-none font-medium">
+              <SelectTrigger id="duration-select" aria-label="时长" aria-labelledby="duration-label duration-select" className="min-h-10 w-full bg-transparent border-white/10 text-[12px] font-medium text-white/80 shadow-none transition-colors hover:border-white/20 focus:border-primary/40 focus:ring-primary/20 sm:min-h-8 sm:text-[11px]">
                 <SelectValue>{getLabel(DURATIONS, String(targetDurationSeconds))}</SelectValue>
               </SelectTrigger>
               <SelectContent className="bg-black/80 backdrop-blur-xl border border-white/10">

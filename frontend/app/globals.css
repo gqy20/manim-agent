@@ -56,6 +56,12 @@
 
 /* ── Dark Theme (default) ─────────────────────────── */
 :root {
+  color-scheme: dark;
+  --app-header-height: 3.5rem;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
   --background: oklch(0.07 0.008 260);
   --foreground: oklch(0.93 0.005 260);
   --card: oklch(0.11 0.013 260);
@@ -128,10 +134,20 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground overflow-x-hidden;
   }
   html {
     @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    background: var(--background);
+  }
+  button,
+  [role="button"],
+  a[href],
+  summary {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: oklch(0.7 0.18 250 / 18%);
   }
 }
 
@@ -209,7 +225,11 @@
   background: linear-gradient(135deg, oklch(0.65 0.18 250), oklch(0.6 0.2 280));
   color: oklch(0.985 0 0);
   box-shadow: 0 0 24px -4px oklch(0.7 0.18 250 / 35%);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    background 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
 }
@@ -599,4 +619,37 @@ animate-fade-scale { animation: fadeScale 0.8s cubic-bezier(0.16, 1, 0.3, 1) for
 
 .video-orb-mux .video-orb-ring-secondary {
   border-color: rgba(125, 211, 252, 0.22);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .bg-mesh,
+  .glow-text,
+  .video-grid-sweep,
+  .video-grid-radar,
+  .video-orb-core,
+  .video-orb-ring-primary,
+  .video-orb-ring-secondary,
+  .video-orb-ring-orbit::before,
+  .video-orb-pulse,
+  .animate-pulse-glow,
+  .animate-fade-in-up,
+  .animate-float-slow,
+  .animate-float-medium,
+  .animate-float-reverse,
+  .animate-draw-in {
+    animation: none !important;
+  }
 }
