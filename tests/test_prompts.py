@@ -84,3 +84,11 @@ class TestGetPrompt:
         """无效的 quality 抛出 ValueError。"""
         with pytest.raises(ValueError, match="quality"):
             prompts.get_prompt("测试", quality="ultra")
+
+    def test_get_prompt_task_directory_instructions_include_chinese_narration(self):
+        """任务目录模式会额外约束中文解说和固定文件名。"""
+        result = prompts.get_prompt("测试", cwd="/tmp/task")
+        assert "scene.py" in result
+        assert "GeneratedScene" in result
+        assert "Run Manim directly" in result
+        assert "Simplified Chinese" in result

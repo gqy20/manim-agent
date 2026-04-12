@@ -24,6 +24,7 @@ QUERY_TASK_PATHS = (
     "/v1/t2a_async/query",
 )
 FILE_INFO_PATH = "/v1/files/query"
+FILE_RETRIEVE_PATH = "/v1/files/retrieve"
 
 POLL_INTERVAL = 3  # 秒
 POLL_TIMEOUT = 300  # 秒
@@ -328,22 +329,45 @@ async def _download_file(
 
     for attempt in range(1, DOWNLOAD_MAX_RETRIES + 1):
         try:
-            # 先查询文件下载 URL
             async with httpx.AsyncClient(timeout=30) as client:
-                file_resp = await client.post(
-                    f"{base_url}{FILE_INFO_PATH}",
-                    json={"file_id": file_id},
+                download_url = ""
+
+                file_resp = await client.get(
+                    f"{base_url}{FILE_RETRIEVE_PATH}",
+                    params={"file_id": file_id},
                     headers=headers,
                 )
-                file_data = file_resp.json().get("data", {})
-                download_url = file_data.get("file_url", "")
+                if file_resp.status_code == 404:
+                    legacy_resp = await client.post(
+                        f"{base_url}{FILE_INFO_PATH}",
+                        json={"file_id": file_id},
+                        headers=headers,
+                    )
+                    legacy_data = _safe_parse_json_response(
+                        legacy_resp,
+                        "TTS file query",
+                    )
+                    legacy_payload = _extract_task_payload(legacy_data)
+                    if isinstance(legacy_payload, dict):
+                        download_url = str(
+                            legacy_payload.get("file_url", ""),
+                        ).strip()
+                else:
+                    file_data = _safe_parse_json_response(
+                        file_resp,
+                        "TTS file retrieve",
+                    )
+                    file_info = file_data.get("file")
+                    if isinstance(file_info, dict):
+                        download_url = str(
+                            file_info.get("download_url", ""),
+                        ).strip()
 
                 if not download_url:
                     raise RuntimeError(
                         f"No download URL for file_id={file_id}"
                     )
 
-                # 下载文件内容
                 dl_resp = await client.get(download_url)
                 dl_resp.raise_for_status()
 

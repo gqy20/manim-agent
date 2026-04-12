@@ -112,3 +112,9 @@ class TestOutputFormatSchema:
         # 可选字段应为 ["string", "null"] 或类似
         for field in ("scene_file", "scene_class", "duration_seconds", "narration", "source_code"):
             assert field in props, f"Missing field: {field}"
+
+    def test_narration_schema_mentions_simplified_chinese_default(self):
+        """narration 字段描述要明确默认中文口播要求。"""
+        schema = PipelineOutput.output_format_schema()
+        narration = schema["json_schema"]["schema"]["properties"]["narration"]
+        assert "Simplified Chinese" in narration["description"]

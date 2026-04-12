@@ -306,6 +306,76 @@ class TestPollTask:
 
 class TestDownloadFiles:
     @pytest.mark.asyncio
+    async def test_download_file_prefers_retrieve_endpoint(self, mock_env, tmp_path):
+        file_resp = MagicMock()
+        file_resp.status_code = 200
+        file_resp.headers = {"content-type": "application/json"}
+        file_resp.text = json.dumps({
+            "file": {"download_url": "https://cdn.example/audio.mp3"},
+        })
+        file_resp.json.return_value = json.loads(file_resp.text)
+
+        dl_resp = MagicMock()
+        dl_resp.raise_for_status.return_value = None
+        dl_resp.content = b"audio-data"
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [file_resp, dl_resp]
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        target = tmp_path / "audio.mp3"
+        with patch("manim_agent.tts_client.httpx.AsyncClient", return_value=mock_client):
+            await tts_client._download_file(
+                "12345",
+                target,
+                "test-api-key-12345",
+                "https://api.minimaxi.com",
+            )
+
+        assert target.read_bytes() == b"audio-data"
+        assert mock_client.get.call_args_list[0].kwargs["params"] == {
+            "file_id": "12345",
+        }
+
+    @pytest.mark.asyncio
+    async def test_download_file_falls_back_to_legacy_query(self, mock_env, tmp_path):
+        retrieve_404 = MagicMock()
+        retrieve_404.status_code = 404
+        retrieve_404.headers = {"content-type": "text/plain"}
+        retrieve_404.text = "404 Page not found"
+
+        legacy_resp = MagicMock()
+        legacy_resp.status_code = 200
+        legacy_resp.headers = {"content-type": "application/json"}
+        legacy_resp.text = json.dumps({
+            "data": {"file_url": "https://cdn.example/audio.mp3"},
+        })
+        legacy_resp.json.return_value = json.loads(legacy_resp.text)
+
+        dl_resp = MagicMock()
+        dl_resp.raise_for_status.return_value = None
+        dl_resp.content = b"audio-data"
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [retrieve_404, dl_resp]
+        mock_client.post.return_value = legacy_resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        target = tmp_path / "audio.mp3"
+        with patch("manim_agent.tts_client.httpx.AsyncClient", return_value=mock_client):
+            await tts_client._download_file(
+                "12345",
+                target,
+                "test-api-key-12345",
+                "https://api.minimaxi.com",
+            )
+
+        assert target.read_bytes() == b"audio-data"
+        mock_client.post.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_download_success(self, mock_env, tmp_path):
         """成功下载所有文件。"""
         file_ids = {"audio": "f-audio", "subtitle": "f-sub", "extra": "f-extra"}

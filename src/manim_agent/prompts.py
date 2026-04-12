@@ -122,6 +122,15 @@ def get_prompt(
             "Do not write files to the repository root or any sibling directory.\n"
             "Do not use absolute paths outside the task directory.\n"
             "If you use Bash, change into this directory first and keep all paths relative to it.\n"
+            "Run Manim directly from this directory with a command like: manim -qh scene.py GeneratedScene.\n"
+            "Do not use absolute repository paths, do not invoke .venv/Scripts/python directly, and do not cd to the repo root.\n"
+            "Always write the main Manim script to scene.py unless the user explicitly asks for multiple files.\n"
+            "Use GeneratedScene as the main Scene class name unless the user explicitly requests another class name.\n"
+            "Use a simple relative filename like scene.py when calling Write/Edit.\n"
+            "Do not use /root, D:\\root, /tmp, or any absolute output path.\n"
+            "\n# Narration Requirements\n"
+            "Return structured_output.narration in natural Simplified Chinese unless the user explicitly requests another language.\n"
+            "The narration should sound like spoken explanation, stay tightly aligned with the animation beats, and avoid bullet-list phrasing.\n"
         )
 
     # 追加预设特定指令

@@ -44,7 +44,7 @@ class PipelineOutput(BaseModel):
     )
     narration: str | None = Field(
         default=None,
-        description="Claude 生成的专业解说词，用于 TTS 语音合成",
+        description="Claude 生成的专业解说词，用于 TTS 语音合成；默认应为自然的简体中文口播稿，除非用户明确要求其他语言",
     )
     source_code: str | None = Field(
         default=None,
@@ -84,7 +84,7 @@ class PipelineOutput(BaseModel):
                         },
                         "narration": {
                             "type": ["string", "null"],
-                            "description": "Professional narration script for TTS",
+                            "description": "Professional narration script for TTS. Default to natural Simplified Chinese unless the user explicitly requests another language.",
                         },
                         "source_code": {
                             "type": ["string", "null"],

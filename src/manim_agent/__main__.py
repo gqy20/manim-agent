@@ -200,6 +200,8 @@ def _build_options(
     Returns:
         配置好的 options 对象。
     """
+    resolved_cwd = str(Path(cwd).resolve())
+
     # 加载系统提示词
     if prompt_file and Path(prompt_file).exists():
         final_system_prompt = Path(prompt_file).read_text(encoding="utf-8")
@@ -242,8 +244,8 @@ def _build_options(
     }
 
     options = ClaudeAgentOptions(
-        cwd=cwd,
-        add_dirs=[cwd],
+        cwd=resolved_cwd,
+        add_dirs=[resolved_cwd],
         system_prompt=final_system_prompt,
         permission_mode="bypassPermissions",
         max_turns=max_turns,
@@ -289,7 +291,7 @@ def _build_options(
     logger.debug(
         "_build_options: cwd=%s, max_turns=%s, permission_mode=bypassPermissions, "
         "allowed_tools=%s, output_format=%s, system_prompt_len=%d",
-        cwd, max_turns, options.allowed_tools,
+        resolved_cwd, max_turns, options.allowed_tools,
         "set" if options.output_format else "None",
         len(final_system_prompt) if final_system_prompt else 0,
     )
@@ -330,6 +332,22 @@ def _report_stream_statistics(
                 logger.debug("CLI STDERR(all): %s", sline[:200])
 
 
+def _build_user_prompt(user_text: str) -> str:
+    """Add execution-critical constraints to the user prompt."""
+    normalized = user_text.strip()
+    guidance = (
+        "\n\nExecution requirements:\n"
+        "- Keep every file inside the task directory only.\n"
+        "- Write the main script to scene.py unless multiple files are truly necessary.\n"
+        "- Use GeneratedScene as the main Manim Scene class unless the user explicitly asks otherwise.\n"
+        "- Run Manim directly from the task directory with `manim ... scene.py GeneratedScene`.\n"
+        "- Do not use absolute repository paths, do not cd to the repo root, and do not invoke `.venv/Scripts/python` directly.\n"
+        "- Return structured_output.narration as natural Simplified Chinese unless the user explicitly requests another language.\n"
+        "- Make the narration concise, spoken, and synchronized with the animation.\n"
+    )
+    return f"{normalized}{guidance}" if normalized else guidance.strip()
+
+
 async def run_pipeline(
     user_text: str,
     output_path: str,
@@ -346,31 +364,32 @@ async def run_pipeline(
     event_callback: Callable[[PipelineEvent], None] | None = None,
 ) -> str:
     """Run the full Claude -> TTS -> mux pipeline."""
+    resolved_cwd = str(Path(cwd).resolve())
     full_system_prompt = prompts.get_prompt(
         user_text="",
         preset=preset,
         quality=quality,
-        cwd=cwd,
+        cwd=resolved_cwd,
     )
     marker = "\n\n# "
     system_prompt = full_system_prompt.split(marker, 1)[0] if marker in full_system_prompt else full_system_prompt
 
     options = _build_options(
-        cwd=cwd,
+        cwd=resolved_cwd,
         system_prompt=system_prompt,
         max_turns=max_turns,
         prompt_file=prompt_file,
         quality=quality,
         log_callback=log_callback,
     )
-    user_prompt = user_text
+    user_prompt = _build_user_prompt(user_text)
 
     hook_state = create_hook_state(event_callback=event_callback)
     hook_state_token = activate_hook_state(hook_state)
     dispatcher = _MessageDispatcher(
         verbose=True,
         log_callback=log_callback,
-        output_cwd=cwd,
+        output_cwd=resolved_cwd,
         hook_state=hook_state,
     )
     if event_callback is not None:
