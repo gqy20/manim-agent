@@ -48,6 +48,7 @@ export default function TaskDetailPage() {
   const [logs, setLogs] = useState<SSEEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
+  const [stableVideoSrc, setStableVideoSrc] = useState<string | null>(null);
   const containerRef = useRef<HTMLElement>(null);
   const refreshInFlightRef = useRef(false);
 
@@ -72,6 +73,7 @@ export default function TaskDetailPage() {
     setTask(null);
     setLogs([]);
     setEventsError(null);
+    setStableVideoSrc(null);
 
     if (!taskId) {
       setEventsError("Missing taskId in route params.");
@@ -88,6 +90,13 @@ export default function TaskDetailPage() {
       })
       .finally(() => setLoading(false));
   }, [taskId]);
+
+  useEffect(() => {
+    if (!task?.video_path) return;
+
+    const nextVideoSrc = getVideoUrl(task.id, task.video_path);
+    setStableVideoSrc((prev) => (prev === nextVideoSrc ? prev : nextVideoSrc));
+  }, [task?.id, task?.video_path]);
 
   useEffect(() => {
     if (!task?.id) return;
@@ -150,13 +159,17 @@ export default function TaskDetailPage() {
     const taskStatus = task?.status;
     if (!taskId || !taskStatus) return;
     if (taskStatus !== "running" && taskStatus !== "pending") return;
+    if (!eventsError) return;
 
     const timer = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.fullscreenElement) {
+        return;
+      }
       void refreshTaskSnapshot(taskId);
     }, 4000);
 
     return () => window.clearInterval(timer);
-  }, [task?.status, taskId]);
+  }, [eventsError, task?.status, taskId]);
 
   useGSAP(() => {
     if (!task || loading || !containerRef.current) return;
@@ -241,7 +254,7 @@ export default function TaskDetailPage() {
   }
 
   const isRunning = task.status === "running" || task.status === "pending";
-  const showVideo = task.status === "completed" && !!task.video_path;
+  const showVideo = !!stableVideoSrc;
   const currentPhaseLabel =
     task.status === "completed"
       ? showVideo
@@ -342,8 +355,8 @@ export default function TaskDetailPage() {
               <h2 className="text-[10px] font-mono uppercase tracking-widest">Output Video</h2>
             </div>
           </div>
-          {showVideo ? (
-            <VideoPlayer src={getVideoUrl(task.id, task.video_path)} />
+          {showVideo && stableVideoSrc ? (
+            <VideoPlayer src={stableVideoSrc} />
           ) : (
             <div className="gsap-video-placeholder group relative flex h-[480px] flex-col items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300">
               <div className="absolute inset-0 bg-blue-500/5 blur-[100px] transition-colors duration-1000 group-hover:bg-cyan-500/10" />
