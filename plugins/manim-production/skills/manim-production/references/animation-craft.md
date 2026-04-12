@@ -387,3 +387,198 @@ def construct(self):
 | Nested `AnimationGroup(AnimationGroup(...))` | Unreadable; timing bugs | Flatten to single level or use separate play() calls |
 | `ease_in_*` on reveal animations | Object appears to accelerate into existence (unnatural) | Use `ease_out_*` for all appearance animations |
 | Animating background color changes | Jarring; distracts from content | Keep background static unless intentional effect |
+
+## 6. Pro Techniques — Top 8 High-Impact Patterns
+
+These techniques separate "working Manim code" from "professional-looking output".
+Each is a few lines of code with outsized visual impact.
+
+### 6.1 ValueTracker — Live Number Animation
+
+Show a value changing in real time as something moves or transforms.
+This is the single highest-ROI technique for math education videos.
+
+```python
+from manim.mobject.value_tracker import ValueTracker
+
+# A number that updates automatically when the tracked mobject changes
+tracker = ValueTracker(0)  # Start at 0
+number = always_redraw(MathTex(r"x = "), Integer(0))
+# Or: number = DecimalNumber(font_size=40)
+
+self.add(tracker, number)
+self.play(
+    tracker.animate.set_value(5),     # Animates 0 → 5
+    run_time=2.0,
+    rate_func=ease_in_out_sine,
+)
+# number displays: x = 0, then x = 1, then x = 2, ... up to x = 5
+```
+
+**Use for**: parameter sweeps, counting, showing variable values change over time.
+
+### 6.2 TracedPath — Motion Trail
+
+Leave a visible trail behind a moving object. Excellent for showing paths of integration,
+particle motion, or function traversal.
+
+```python
+from manim.mobject.types.vectorized_mobject import TracedPath
+
+dot = Dot()
+path = Line(ORIGIN, 3 * RIGHT + 2 * UP)
+trace = TracedPath(path, stroke_color=YELLOW, stroke_width=2)
+
+self.add(dot, trace)
+self.play(MoveAlongPath(dot, path), run_time=3.0)
+# dot moves along path; trace draws a yellow line behind it
+```
+
+**Use for**: integral visualization, trajectory demonstration, showing "where we've been".
+
+### 6.3 Brace + BraceText — Mathematical Annotation
+
+The standard way to annotate groups of terms in equations. Looks professional and
+is universally understood in math notation.
+
+```python
+from manim.mobject.svg.brace import Brace, BraceText
+
+formula = MathTex(r"x^2 + y^2 = r^2")
+brace = Brace(formula, direction=DOWN, buff=0.2)
+label = BraceText(brace, "Pythagorean equation")
+
+self.play(Write(formula), run_time=1.5)
+self.play(GrowFromCenter(brace), Write(label), run_time=1.0)
+```
+
+**Use for**: labeling equation groups, indicating domain/range, grouping givens vs conclusions.
+
+### 6.4 SurroundingRectangle / BackgroundRectangle — Professional Highlight
+
+Two ways to draw attention boxes around content. Choose based on visual need:
+
+```python
+from manim.mobject.geometry.shape_matchers import SurroundingRectangle, BackgroundRectangle
+
+target = MathTex(r"E = mc^2")
+
+# Option A: Outline box (visible border, transparent inside)
+box = SurroundingRectangle(target, color=YELLOW, buff=MED_LARGE_BUFF)
+
+# Option B: Filled background (solid highlight, covers content area)
+bg = BackgroundRectangle(target, fill_opacity=0.15, color=BLUE)
+
+self.play(Write(target), run_time=1.0)
+self.play(Create(box), run_time=0.8)        # Draw border
+# or:
+self.play(FadeIn(bg), run_time=0.5)           # Fade in background
+```
+
+**When to use which**: `SurroundingRectangle` for emphasis/selection;
+`BackgroundRectangle` for temporary highlighting that shouldn't distract from content.
+
+### 6.5 VGroup.arrange — Automatic Alignment Grid
+
+When you have 4+ labels or elements to arrange neatly, don't manually chain
+`next_to()` calls. Use `arrange()` instead.
+
+```python
+labels = VGroup(
+    Text("Given"),
+    Text("Step 1"),
+    Text("Step 2"),
+    Text("Conclusion"),
+).arrange(DOWN, aligned_edge=LEFT, buff=MED_SMALL_BUFF)
+# Automatically stacks vertically, all left-aligned, evenly spaced
+
+# Horizontal arrangement:
+items = VGroup(a, b, c).arrange(RIGHT, buff=0.3)
+
+# Grid arrangement (2D):
+grid = VGroup(*[Square() for _ in range(6)]).arrange_in_grid(rows=2, cols=3)
+```
+
+**Use for**: 3+ items that need consistent spacing and alignment. Saves 10+ lines of manual positioning code.
+
+### 6.6 MovingCamera — Cinematic Focus
+
+Guide the viewer's attention by zooming/panning to specific regions.
+Dramatic effect that makes simple scenes feel cinematic.
+
+```python
+from manim.camera.moving_camera import MovingCamera
+
+camera = MovingCamera()
+# Or in Scene subclass: self.camera = MovingCamera()
+
+# Zoom into a detail
+self.play(
+    camera.frame.animate.scale(0.4).move_to(3 * RIGHT + UP),
+    run_time=2.0,
+    rate_func=ease_in_out_sine,
+)
+# Viewer feels like they're "diving into" the formula
+
+# Pan across a wide figure
+self.play(camera.frame.animate.move_to(2 * LEFT), run_time=3.0)
+
+# Reset view
+self.play(Restore(self.camera), run_time=1.5)
+```
+
+**Use for**: focusing on complex formula details, revealing parts of a large diagram,
+creating dramatic reveal effects. **Caution**: can cause motion sickness if overused;
+max 1–2 camera movements per scene.
+
+### 6.7 get_center / get_boundary_point — Precise Positioning
+
+For non-trivial layouts, use geometric queries instead of guessing coordinates:
+
+```python
+obj = MathTex(r"\int_0^\infty e^{-x^2} dx")
+
+# Where exactly are the edges?
+left = obj.get_left()
+right = obj.get_right()
+top = obj.get_top()
+bottom = obj.get_bottom()
+center = obj.get_center()
+
+# Place label precisely at the bottom-right corner of the bounding box
+label = Text("Gaussian").scale(0.45)
+label.move_to(right + DOWN * 0.3)  # Offset from corner
+
+# Get a point on the object's edge in a specific direction
+edge_point = obj.get_boundary_point(UR)  # Upper-rightmost point
+```
+
+**Use for**: placing labels relative to irregularly-shaped objects, calculating
+spacing dynamically, positioning annotations at exact geometric locations.
+
+### 8.8 TexTemplate — Custom LaTeX Preamble
+
+When you need special LaTeX packages or configurations (e.g., custom symbols,
+Chinese support in LaTeX mode):
+
+```python
+from manim.utils.tex import TexTemplate
+
+template = TexTemplate(
+    tex_environment={
+        "preamble": r"""
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{CJKutf8}  % If you absolutely need CJK in LaTeX
+""",
+    }
+)
+
+# Then pass to Tex/MathTex:
+math_tex = MathTex(r"\begin{pmatrix} a & b \\ c & d \end{pmatrix}",
+                   tex_template=template)
+text_tex = Tex("Some text with \\LaTeX", tex_template=template)
+```
+
+**Note**: For Chinese text, prefer `Text()` (Pango-native) over LaTeX-based approaches
+unless you specifically need LaTeX's mathematical typesetting within text blocks.

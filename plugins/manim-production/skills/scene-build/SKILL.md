@@ -143,7 +143,8 @@ self.play(Indicate(term), rate_func=ease_out_back)
 - For math layout and emphasis, read `../manim-production/references/math-visualization-guidelines.md`.
 - For spatial composition, screen zones, element sizing, color palette, and per-mode layout templates, read `../manim-production/references/spatial-composition.md`.
 - For animation selection, rate functions, timing, composition patterns, and motion craft, read `../manim-production/references/animation-craft.md`.
-- For common implementation mistakes, read `references/build-anti-patterns.md`.
+- For render quality presets, caching behavior, file size budgeting, performance bottlenecks, and renderer selection, read `../manim-production/references/render-quality.md`.
+- For common implementation mistakes and error-fix patterns, read `references/build-anti-patterns.md`.
 
 ## Final response
 

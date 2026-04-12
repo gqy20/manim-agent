@@ -54,4 +54,5 @@ Choose one primary mode before building:
 - For narration quality, read `references/narration-guidelines.md`.
 - For spatial composition (screen zones, sizing, color, per-mode layouts), read `references/spatial-composition.md`.
 - For animation craft (motion selection, rate functions, timing, composition), read `references/animation-craft.md`.
+- For render quality (presets, caching, performance, file size), read `references/render-quality.md`.
 - For layout or failure patterns, read only the specific reference you need.
