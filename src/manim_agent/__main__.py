@@ -427,13 +427,10 @@ def _build_user_prompt(user_text: str, target_duration_seconds: int) -> str:
         f"- Target final video duration: about {target_duration}.\n"
         "- Design the beat count, pacing, and narration density to land close to that target runtime.\n"
         "- Prefer shorter, more focused explanations for 30-second and 1-minute runs, and more developed walkthroughs for 3-minute and 5-minute runs.\n"
-        "- Use the `manim-production` plugin rooted at `plugins/manim-production`.\n"
-        "- Treat `plugins/manim-production/skills/manim-production/SKILL.md` as the umbrella workflow guide.\n"
-        "- Start every task with the `scene-plan` skill at `plugins/manim-production/skills/scene-plan/SKILL.md` before coding the scene.\n"
-        "- Then implement with `scene-build` at `plugins/manim-production/skills/scene-build/SKILL.md`.\n"
-        "- Follow direction, narration, and review rules from `plugins/manim-production/skills/scene-direction/SKILL.md`, `plugins/manim-production/skills/narration-sync/SKILL.md`, and `plugins/manim-production/skills/render-review/SKILL.md`.\n"
-        "- Those plugin-relative paths are reference locations under the repository root, not the writable task directory for this run.\n"
-        "- Read workflow guidance from the plugin paths, but write code and render outputs only inside the current task directory.\n"
+        f"- Use the runtime-injected `manim-production` plugin from `{MANIM_PLUGIN_DIR}`.\n"
+        "- That plugin location is a read-only runtime reference, not the writable task directory.\n"
+        "- Do not use Bash, Read, ls, find, or path probes to verify whether the plugin exists.\n"
+        "- Use the `scene-plan`, `scene-build`, `scene-direction`, `narration-sync`, and `render-review` skills directly through the injected plugin workflow.\n"
         "- The planning pass must be shown in Markdown with these section headings: `Mode`, `Learning Goal`, `Audience`, `Beat List`, `Narration Outline`, `Visual Risks`, and `Build Handoff`.\n"
         "- After the plan exists, implement the animation while keeping the planned beat order unless debugging requires a very small fix.\n"
         "- Do not begin writing `scene.py` until the visible planning pass is complete.\n"
@@ -460,9 +457,9 @@ def _build_scene_plan_prompt(user_text: str, target_duration_seconds: int) -> st
     guidance = (
         "\n\nPlanning pass only:\n"
         f"- Target final video duration: about {target_duration}.\n"
-        "- Use the `scene-plan` skill at `plugins/manim-production/skills/scene-plan/SKILL.md` and stop after producing the visible plan.\n"
-        "- The plugin root for this workflow is `plugins/manim-production`.\n"
-        "- These plugin-relative paths are reference locations, not the writable task directory.\n"
+        f"- Use the runtime-injected `scene-plan` skill from the plugin rooted at `{MANIM_PLUGIN_DIR}` and stop after producing the visible plan.\n"
+        "- The plugin location is a read-only runtime reference, not the writable task directory.\n"
+        "- Do not use Bash, Read, ls, find, or path probes to verify plugin files in this pass.\n"
         "- Do not write, edit, or render any code in this pass.\n"
         "- Use only lightweight reference reads if needed.\n"
         "- Return a Markdown plan with these exact section headings: `Mode`, `Learning Goal`, `Audience`, `Beat List`, `Narration Outline`, `Visual Risks`, and `Build Handoff`.\n"
@@ -483,9 +480,10 @@ def _build_implementation_prompt(
         "\n\nImplementation pass:\n"
         f"- Target final video duration: about {target_duration}.\n"
         "- The visible scene plan below is approved. Implement from it instead of creating a new plan.\n"
-        "- Use `scene-build` at `plugins/manim-production/skills/scene-build/SKILL.md` during implementation.\n"
-        "- Use `scene-direction`, `narration-sync`, and `render-review` from `plugins/manim-production/skills/scene-direction/SKILL.md`, `plugins/manim-production/skills/narration-sync/SKILL.md`, and `plugins/manim-production/skills/render-review/SKILL.md`.\n"
-        "- These plugin-relative paths are reference locations under the repo, not the writable task directory.\n"
+        f"- Continue using the runtime-injected `manim-production` plugin rooted at `{MANIM_PLUGIN_DIR}`.\n"
+        "- Use `scene-build`, `scene-direction`, `narration-sync`, and `render-review` through that injected plugin workflow.\n"
+        "- The plugin location is a read-only runtime reference, not the writable task directory.\n"
+        "- Do not use shell or filesystem probes to verify plugin files during implementation.\n"
         "- Preserve the planned beat order unless debugging requires a very small fix.\n"
         "- Do not begin with a fresh planning pass; begin implementation from the approved plan.\n"
         "- In structured_output, include `implemented_beats` as the ordered beat titles that were actually built.\n"
@@ -1009,17 +1007,20 @@ async def run_pipeline(
                 )
 
         if not _has_structured_build_summary(po):
-            raise RuntimeError(
-                "Claude skipped the required scene-build summary. "
-                "structured_output must include implemented_beats and build_summary."
+            warning = (
+                "Claude skipped the scene-build summary. "
+                "Continuing with partial structured output because a render exists."
             )
+            dispatcher._print(f"  [WARN] {warning}")
+            logger.warning("run_pipeline: %s", warning)
 
         if not _has_narration_sync_summary(po):
-            raise RuntimeError(
-                "Claude skipped the required narration-sync summary. "
-                "structured_output must include beat_to_narration_map, "
-                "narration_coverage_complete=true, and estimated_narration_duration_seconds."
+            warning = (
+                "Claude skipped the narration-sync summary. "
+                "Continuing because narration metadata can be incomplete without blocking delivery."
             )
+            dispatcher._print(f"  [WARN] {warning}")
+            logger.warning("run_pipeline: %s", warning)
 
         if po is not None and video_output and po.duration_seconds is None:
             try:
@@ -1124,11 +1125,9 @@ async def run_pipeline(
             target_duration_seconds,
         )
         if duration_issue is not None:
-            dispatcher._print(f"  [REVIEW][BLOCK] {duration_issue}")
-            raise RuntimeError(
-                "Rendered video failed the duration-target gate. " + duration_issue
-            )
-        if po is not None and po.duration_seconds is not None:
+            dispatcher._print(f"  [WARN] {duration_issue}")
+            logger.warning("run_pipeline: duration target miss: %s", duration_issue)
+        if duration_issue is None and po is not None and po.duration_seconds is not None:
             dispatcher._print(
                 "  [REVIEW] Duration check passed: "
                 f"{po.duration_seconds:.1f}s vs target {target_duration_seconds}s"

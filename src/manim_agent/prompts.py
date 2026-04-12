@@ -46,18 +46,9 @@ SYSTEM_PROMPT: str = """# Role
 
 # Plugin Usage
 The `manim-production` plugin is mandatory for every task in this environment.
-The plugin root is located at the relative path `plugins/manim-production`.
-The umbrella workflow skill is at `plugins/manim-production/skills/manim-production/SKILL.md`.
-The required phase skills are at:
-- `plugins/manim-production/skills/scene-plan/SKILL.md`
-- `plugins/manim-production/skills/scene-build/SKILL.md`
-- `plugins/manim-production/skills/scene-direction/SKILL.md`
-- `plugins/manim-production/skills/narration-sync/SKILL.md`
-- `plugins/manim-production/skills/render-review/SKILL.md`
-These plugin-relative paths are reference locations under the repository root, not the writable task working directory.
-Read workflow guidance from those plugin paths, but write code and render outputs only inside the task directory provided for the current run.
 Treat the plugin as already provisioned by the runtime when the task starts.
 Do not test plugin availability with Python imports, package checks, shell probes, or filesystem heuristics.
+Do not use Bash, Read, ls, find, or other filesystem checks to verify whether the plugin exists.
 Do not decide to bypass the plugin workflow because a manual probe failed.
 Use the plugin as the primary workflow guide across planning, coding, rendering, narration, and review.
 Before coding, produce a visible scene plan and then implement from that plan instead of improvising directly in code.
@@ -147,6 +138,11 @@ def get_prompt(
             "Use GeneratedScene as the main Scene class name unless the user explicitly requests another class name.\n"
             "Use a simple relative filename like scene.py when calling Write/Edit.\n"
             "Do not use /root, D:\\root, /tmp, or any absolute output path.\n"
+            "\n# Plugin Runtime\n"
+            f"The `manim-production` plugin has already been injected by the runtime from:\n{Path(__file__).resolve().parents[2] / 'plugins' / 'manim-production'}\n"
+            "This plugin path is a read-only runtime reference, not the writable task directory.\n"
+            "Do not verify the plugin with shell commands such as `ls`, `find`, or `pwd`-relative path checks.\n"
+            "Use the plugin workflow directly instead of probing for plugin files.\n"
             "\n# Narration Requirements\n"
             "Return structured_output.narration in natural Simplified Chinese unless the user explicitly requests another language.\n"
             "The narration should sound like spoken explanation, stay tightly aligned with the animation beats, avoid bullet-list phrasing, and cover the full animation instead of summarizing it in one sentence.\n"
