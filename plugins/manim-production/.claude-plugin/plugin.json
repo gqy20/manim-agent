@@ -25,11 +25,7 @@
     "defaultPrompt": [
       "Use the scene-plan skill first and show a visible beat-by-beat plan before coding.",
       "Use the scene-build skill only after the plan exists.",
-      "Include implemented_beats, build_summary, and deviations_from_plan in the final structured output.",
-      "Use the scene-direction skill to strengthen opening beats, focal hierarchy, motion-led explanation, and ending payoff.",
-      "Use the narration-sync skill to keep the spoken explanation aligned to the visual beats.",
-      "Include beat_to_narration_map, narration_coverage_complete, and estimated_narration_duration_seconds in the final structured output.",
-      "Use the render-review skill after rendering to inspect sampled frames before reporting success.",
+      "Use the scene-direction, narration-sync, and render-review skills at their respective phases.",
       "Review this Manim scene for pacing, layout, narration quality, and beat structure."
     ],
     "brandColor": "#1F6FEB"

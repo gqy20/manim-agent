@@ -5,66 +5,49 @@ description: Produce, review, or refactor Manim scenes for educational videos wi
 
 # Manim Production
 
-Follow this workflow when working on a Manim task.
+Use this as the umbrella workflow router for Manim tasks.
 
-## Required full flow
+## Primary job
 
-- Use the `scene-plan` skill first for every task.
-- Emit a visible plan in the conversation before writing code.
-- Use the `scene-build` skill only after that plan exists.
-- Use the `scene-direction` skill to enforce stronger opening beats, visual focus, motion-led explanation, and ending payoff.
-- Use the `narration-sync` skill to keep spoken narration aligned to the current beat and visual timing.
-- Use the `render-review` skill after rendering and before reporting success.
-- Use this `manim-production` skill as the umbrella quality guide across all steps.
+- Route the task through the correct Manim production stages.
+- Keep the stages in order: visible plan, build, narration alignment, render review.
+- Use the specialized skills for the detailed rules instead of repeating them here.
 
-## Classify the task
+## Required stage order
 
-Choose one primary mode before writing code:
+1. Use `scene-plan` first and emit a visible plan before coding.
+2. Use `scene-build` only after that plan exists.
+3. Apply `scene-direction` during planning and implementation to keep each beat visually strong.
+4. Apply `narration-sync` before finalizing narration.
+5. Use `render-review` after rendering and before reporting success.
 
-- `quick-demo`: very small visual proof-of-life or simple transition
-- `concept-explainer`: introduce an idea step by step
-- `proof-walkthrough`: show assumptions, transformations, then conclusion
-- `function-visualization`: graph behavior, parameters, or geometric meaning
-- `geometry-construction`: build shapes, marks, and relationships in order
+## Skill routing
 
-## Read only the references you need
+- `scene-plan`: beat structure, learning sequence, narration outline, build handoff
+- `scene-build`: plan-to-code execution, render/debug loop, implementation refinement
+- `scene-direction`: opening hook, focal hierarchy, motion-led explanation, ending payoff
+- `narration-sync`: spoken pacing, beat-by-beat narration alignment, narration density control
+- `render-review`: sampled-frame quality review and blocking issue detection
 
-- For overall scene flow, read `references/scene-patterns.md`.
-- For spoken script quality, read `references/narration-guidelines.md`.
-- For layout, formulas, axes, and emphasis, read `references/math-visualization-guidelines.md`.
-- For implementation style, read `references/code-style.md`.
-- For common failure cases, read `references/anti-patterns.md`.
+## Task classification
 
-## Skill responsibilities
+Choose one primary mode before building:
 
-- `/scene-plan`: beat structure, learning sequence, narration outline, and build handoff
-- `/scene-build`: plan-to-code execution, render/debug loop, and implementation refinement
-- `/scene-direction`: opening hook, per-beat visual focus, motion-first explanation, and ending payoff
-- `/narration-sync`: spoken pacing, beat-by-beat narration alignment, and narration density control
-- `/render-review`: sampled-frame quality review and blocking issue detection before final success
+- `quick-demo`
+- `concept-explainer`
+- `proof-walkthrough`
+- `function-visualization`
+- `geometry-construction`
 
-## Plan before coding
+## Minimal checks
 
-- Keep one main learning objective per scene.
-- Prefer one scene file and one main `Scene` class unless the task truly needs more.
-- Decide the visual sequence first: setup, reveal, transform, takeaway.
-- Always show the plan explicitly before implementation. Do not keep the plan implicit in chain-of-thought.
-- Keep each beat focused on one new idea.
-- Ensure the opening beat introduces both the topic and a visible object, not a title card alone.
-- Ensure every important conclusion is shown through a visible change, not just stated as text.
+- Do not start `scene.py` before the visible plan exists.
+- Do not skip the specialized skills when their phase is active.
+- Prefer one `scene.py` file and one main `Scene` class unless the task truly needs more.
+- If the first render fails, fix implementation problems before redesigning the lesson.
 
-## Check before rendering
+## References
 
-- Confirm the file path and class name match the task requirements.
-- Confirm the screen is not overloaded with text.
-- Confirm narration describes what the viewer is seeing now, not future steps.
-- Confirm colors, labels, and emphasis are consistent.
-- Confirm there is a clear ending state or takeaway frame.
-- Confirm each beat has one primary focal object or formula.
-- Confirm the ending frame clearly resolves the question introduced at the start.
-
-## If the first render fails
-
-- Fix path, class name, or command issues before redesigning the animation.
-- Fix syntax, import, or object-construction issues before changing pedagogy.
-- If the render succeeds but the result is crowded or confusing, simplify the scene instead of adding more text.
+- For scene flow, read `references/scene-patterns.md`.
+- For narration quality, read `references/narration-guidelines.md`.
+- For layout or failure patterns, read only the specific reference you need.

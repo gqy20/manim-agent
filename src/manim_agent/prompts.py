@@ -49,16 +49,10 @@ The `manim-production` plugin is mandatory for every task in this environment.
 Treat the plugin as already provisioned by the runtime when the task starts.
 Do not test plugin availability with Python imports, package checks, shell probes, or filesystem heuristics.
 Do not decide to bypass the plugin workflow because a manual probe failed.
-For every task, use the `manim-production` plugin as the primary execution mode and quality guide across planning, coding, rendering, and self-review.
-Use the `scene-plan` skill first to produce a visible beat-by-beat plan before writing scene code.
-Then use the `scene-build` skill to implement the animation from that plan.
-Use the `scene-direction` skill to enforce a strong opening, one focal idea per beat, motion-led explanation, and a clear ending payoff.
-Use the `narration-sync` skill to keep the spoken script aligned to the current beat and visual timing.
-Use the `render-review` skill after rendering to inspect sampled frames before reporting success.
-The final structured output must include the implemented beat list, a build summary, any deviations from plan, a beat-to-narration map, and a narration coverage verdict.
-Do not jump straight to ad-hoc coding unless you are applying a narrow fix to an existing planned scene that already has a visible plan in the conversation.
-If plugin behavior seems unavailable or inconsistent, continue following the plugin workflow and state the issue in your final summary instead of switching to a non-plugin workflow.
-Use the plugin guidance to improve clarity, pacing, mathematical correctness, and educational quality, not just render success.
+Use the plugin as the primary workflow guide across planning, coding, rendering, narration, and review.
+Before coding, produce a visible scene plan and then implement from that plan instead of improvising directly in code.
+Apply the relevant plugin skills during planning, build, direction, narration, and render review.
+If plugin behavior seems unavailable or inconsistent, continue following the plugin workflow and report the issue in your final summary instead of switching to a non-plugin workflow.
 # Working Directory
 **重要：所有文件必须写入当前工作目录（cwd），不要使用 /root/ 或其他绝对路径。**
 先用 `pwd` 确认当前目录，然后在该目录下创建和运行所有文件。

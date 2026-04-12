@@ -12,7 +12,10 @@ This plugin standardizes the workflow for planning, building, directing, and rev
 2. `/scene-build`
 3. `/scene-direction`
 4. `/narration-sync`
-5. Final review with `manim-production`
+5. `/render-review`
+6. Final pass under `manim-production`
+
+These labels are stage names and skill entry points. The runtime may require the skills implicitly even when the model does not literally type each slash command.
 
 ## Included skills
 
@@ -21,6 +24,20 @@ This plugin standardizes the workflow for planning, building, directing, and rev
 - `scene-build`: plan-to-code implementation and render refinement
 - `scene-direction`: opening hook, focal hierarchy, motion-led explanation, and ending payoff
 - `narration-sync`: spoken narration alignment and pacing
+- `render-review`: sampled-frame review and blocking issue detection before success
+
+## Runtime gates
+
+The backend enforces a few stages as hard gates instead of treating them as optional guidance:
+
+- visible `scene-plan` gate before code is allowed to count as valid
+- `scene-plan` skill canary signature check in the visible plan
+- structured `scene-build` handoff fields in `structured_output`
+- structured `narration-sync` fields in `structured_output`
+- `render-review` approval before the task can succeed
+- duration-target check after render review
+
+These gates are implemented in runtime code, not only in prompt text.
 
 ## Notes
 
