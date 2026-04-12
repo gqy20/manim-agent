@@ -4,7 +4,7 @@
 支持多种预设模式以适配不同场景。
 """
 
-from pathlib import Path
+from .repo_paths import resolve_plugin_dir
 
 # ── 预设模式后缀 ──────────────────────────────────────────────
 PRESET_SUFFIXES: dict[str, str] = {
@@ -126,6 +126,8 @@ def get_prompt(
     # 构建基础 prompt
     quality_flag = QUALITY_FLAGS[quality]
     base = SYSTEM_PROMPT.replace("-qh", quality_flag)
+    plugin_dir = resolve_plugin_dir(cwd)
+
     if cwd:
         base += (
             "\n# Task Directory\n"
@@ -141,7 +143,7 @@ def get_prompt(
             "Use a simple relative filename like scene.py when calling Write/Edit.\n"
             "Do not use /root, D:\\root, /tmp, or any absolute output path.\n"
             "\n# Plugin Runtime\n"
-            f"The `manim-production` plugin has already been injected by the runtime from:\n{Path(__file__).resolve().parents[2] / 'plugins' / 'manim-production'}\n"
+            f"The `manim-production` plugin has already been injected by the runtime from:\n{plugin_dir}\n"
             "This plugin path is a read-only runtime reference, not the writable task directory.\n"
             "Do not verify the plugin with shell commands such as `ls`, `find`, or `pwd`-relative path checks.\n"
             "Use the plugin workflow directly instead of probing for plugin files.\n"

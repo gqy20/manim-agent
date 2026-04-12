@@ -15,41 +15,14 @@ from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
 from . import prompts
 from .hooks import _on_post_tool_use, _on_pre_tool_use
 from .output_schema import PipelineOutput
+from .repo_paths import resolve_plugin_dir, resolve_repo_root
 
 logger = logging.getLogger(__name__)
 
 
-def resolve_repo_root(cwd: str | None = None) -> Path:
-    """Best-effort repo root discovery for both editable and installed package layouts."""
-    marker_options = (
-        ("plugins", "manim-production", ".claude-plugin", "plugin.json"),
-        ("plugins", "manim-production", ".codex-plugin", "plugin.json"),
-    )
-    candidates: list[Path] = []
-
-    env_root = os.environ.get("MANIM_AGENT_REPO_ROOT")
-    if env_root:
-        candidates.append(Path(env_root).resolve())
-
-    if cwd:
-        resolved_cwd = Path(cwd).resolve()
-        candidates.extend([resolved_cwd, *resolved_cwd.parents])
-
-    module_path = Path(__file__).resolve()
-    candidates.extend(module_path.parents)
-
-    for candidate in candidates:
-        for marker_parts in marker_options:
-            if (candidate / Path(*marker_parts)).exists():
-                return candidate
-
-    return module_path.parents[2]
-
-
 def get_local_plugins(cwd: str | None = None) -> list[dict[str, str]]:
     """Return repo-local Claude plugins that should be injected into every task."""
-    repo_root = resolve_repo_root(cwd)
-    plugin_dir = repo_root / "plugins" / "manim-production"
+    plugin_dir = resolve_plugin_dir(cwd)
     manifest_paths = [
         plugin_dir / ".claude-plugin" / "plugin.json",
         plugin_dir / ".codex-plugin" / "plugin.json",

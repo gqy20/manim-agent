@@ -68,11 +68,14 @@ from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 from . import prompt_builder, runtime_options, pipeline_gates
 
 logger = logging.getLogger(__name__)
-MANIM_PLUGIN_DIR = runtime_options.resolve_repo_root() / "plugins" / "manim-production"
 
 
 def _resolve_repo_root(cwd: str | None = None) -> Path:
     return runtime_options.resolve_repo_root(cwd)
+
+
+def _resolve_plugin_dir(cwd: str | None = None) -> Path:
+    return _resolve_repo_root(cwd) / "plugins" / "manim-production"
 
 
 def _emit_status(
@@ -418,16 +421,21 @@ def _build_default_bgm_prompt(user_text: str, preset: str, narration_text: str) 
     )
 
 
-def _build_user_prompt(user_text: str, target_duration_seconds: int) -> str:
+def _build_user_prompt(
+    user_text: str,
+    target_duration_seconds: int,
+    cwd: str | None = None,
+) -> str:
     """Add execution-critical constraints to the user prompt."""
     normalized = user_text.strip()
     target_duration = _format_target_duration(target_duration_seconds)
+    plugin_dir = _resolve_plugin_dir(cwd)
     guidance = (
         "\n\nExecution requirements:\n"
         f"- Target final video duration: about {target_duration}.\n"
         "- Design the beat count, pacing, and narration density to land close to that target runtime.\n"
         "- Prefer shorter, more focused explanations for 30-second and 1-minute runs, and more developed walkthroughs for 3-minute and 5-minute runs.\n"
-        f"- Use the runtime-injected `manim-production` plugin from `{MANIM_PLUGIN_DIR}`.\n"
+        f"- Use the runtime-injected `manim-production` plugin from `{plugin_dir}`.\n"
         "- That plugin location is a read-only runtime reference, not the writable task directory.\n"
         "- Do not use Bash, Read, ls, find, or path probes to verify whether the plugin exists.\n"
         "- Use the `scene-plan`, `scene-build`, `scene-direction`, `narration-sync`, and `render-review` skills directly through the injected plugin workflow.\n"
@@ -450,14 +458,19 @@ def _build_user_prompt(user_text: str, target_duration_seconds: int) -> str:
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
 
-def _build_scene_plan_prompt(user_text: str, target_duration_seconds: int) -> str:
+def _build_scene_plan_prompt(
+    user_text: str,
+    target_duration_seconds: int,
+    cwd: str | None = None,
+) -> str:
     """Build a planning-only prompt that must stop after the visible plan."""
     normalized = user_text.strip()
     target_duration = _format_target_duration(target_duration_seconds)
+    plugin_dir = _resolve_plugin_dir(cwd)
     guidance = (
         "\n\nPlanning pass only:\n"
         f"- Target final video duration: about {target_duration}.\n"
-        f"- Use the runtime-injected `scene-plan` skill from the plugin rooted at `{MANIM_PLUGIN_DIR}` and stop after producing the visible plan.\n"
+        f"- Use the runtime-injected `scene-plan` skill from the plugin rooted at `{plugin_dir}` and stop after producing the visible plan.\n"
         "- The plugin location is a read-only runtime reference, not the writable task directory.\n"
         "- Do not use Bash, Read, ls, find, or path probes to verify plugin files in this pass.\n"
         "- Do not write, edit, or render any code in this pass.\n"
@@ -472,15 +485,17 @@ def _build_implementation_prompt(
     user_text: str,
     target_duration_seconds: int,
     plan_text: str,
+    cwd: str | None = None,
 ) -> str:
     """Build the implementation prompt after a planning pass has been accepted."""
     normalized = user_text.strip()
     target_duration = _format_target_duration(target_duration_seconds)
+    plugin_dir = _resolve_plugin_dir(cwd)
     guidance = (
         "\n\nImplementation pass:\n"
         f"- Target final video duration: about {target_duration}.\n"
         "- The visible scene plan below is approved. Implement from it instead of creating a new plan.\n"
-        f"- Continue using the runtime-injected `manim-production` plugin rooted at `{MANIM_PLUGIN_DIR}`.\n"
+        f"- Continue using the runtime-injected `manim-production` plugin rooted at `{plugin_dir}`.\n"
         "- Use `scene-build`, `scene-direction`, `narration-sync`, and `render-review` through that injected plugin workflow.\n"
         "- The plugin location is a read-only runtime reference, not the writable task directory.\n"
         "- Do not use shell or filesystem probes to verify plugin files during implementation.\n"
@@ -825,7 +840,11 @@ async def run_pipeline(
 
     try:
         planning_result_summary: dict[str, Any] | None = None
-        planning_prompt = _build_scene_plan_prompt(user_text, target_duration_seconds)
+        planning_prompt = _build_scene_plan_prompt(
+            user_text,
+            target_duration_seconds,
+            resolved_cwd,
+        )
         async for message in query(prompt=planning_prompt, options=planning_options):
             dispatcher.dispatch(message)
         planning_result_summary = dispatcher.result_summary
@@ -873,6 +892,7 @@ async def run_pipeline(
             user_text,
             target_duration_seconds,
             plan_text,
+            resolved_cwd,
         )
         async for message in query(prompt=user_prompt, options=build_options):
             dispatcher.dispatch(message)

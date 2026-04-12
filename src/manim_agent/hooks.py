@@ -15,11 +15,13 @@ from claude_agent_sdk.types import (
     SyncHookJSONOutput,
 )
 
+from .repo_paths import resolve_repo_root
+
 logger = logging.getLogger(__name__)
-REPO_ROOT = Path(__file__).resolve().parents[2]
-PLUGIN_READONLY_DIRS = (
-    REPO_ROOT / "plugins",
-)
+
+
+def _plugin_readonly_dirs(cwd: str | None = None) -> tuple[Path, ...]:
+    return (resolve_repo_root(cwd) / "plugins",)
 
 
 def normalize_path_string(path_str: str) -> str:
@@ -193,7 +195,7 @@ async def _on_pre_tool_use(
         if (
             file_path
             and not _is_within_directory(file_path, cwd)
-            and not _is_within_any_directory(file_path, PLUGIN_READONLY_DIRS)
+            and not _is_within_any_directory(file_path, _plugin_readonly_dirs(cwd))
         ):
             deny_reason = _read_scope_denial(file_path)
     elif tool_name in ("Write", "Edit") and isinstance(tool_input, dict):
