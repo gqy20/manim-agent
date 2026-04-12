@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import type { SyntheticEvent } from "react";
-import { AlertTriangle, Download, RefreshCw } from "lucide-react";
+import { AlertTriangle, RefreshCw } from "lucide-react";
 
 interface VideoPlayerProps {
   src: string;
