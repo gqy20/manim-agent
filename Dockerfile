@@ -14,6 +14,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HOME=/home/appuser \
     NEXT_PORT=3000 \
     NODE_ENV=production
 
@@ -54,12 +55,18 @@ COPY --from=frontend-builder /app/frontend/.next/standalone/ ./
 COPY --from=frontend-builder /app/frontend/.next/static ./.next/static
 COPY --from=frontend-builder /app/frontend/public ./public
 
+RUN groupadd --system --gid 10001 appuser && \
+    useradd --system --uid 10001 --gid 10001 --create-home --home-dir /home/appuser appuser
+
 # ── Create required directories ────────────────────────────────
-RUN mkdir -p /app/backend/output /app/backend/logs
+RUN mkdir -p /app/backend/output /app/backend/logs && \
+    chown -R appuser:appuser /app /home/appuser
 
 # ── Start script: run both Next.js and FastAPI ─────────────────
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
+
+USER appuser
 
 EXPOSE 8000
 
