@@ -45,7 +45,7 @@ def _canonicalize_pipeline_artifacts(
         )
 
     if po_data is not None:
-        po_data["video_output"] = str(canonical_video)
+        po_data["final_video_output"] = str(canonical_video)
         scene_file = po_data.get("scene_file")
         if scene_file:
             scene_path = Path(scene_file).resolve()

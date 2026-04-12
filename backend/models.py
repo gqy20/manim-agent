@@ -29,6 +29,7 @@ class PipelineOutputData(BaseModel):
     """完成任务的 pipeline 结构化输出数据（API 响应用）。"""
 
     video_output: str | None = None
+    final_video_output: str | None = None
     scene_file: str | None = None
     scene_class: str | None = None
     duration_seconds: float | None = None

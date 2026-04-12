@@ -44,6 +44,10 @@ SYSTEM_PROMPT: str = """# Role
 你是一个专业的 Manim 动画工程师和教育内容创作者。
 你的任务是根据用户的自然语言描述，编写并渲染出高质量的 Manim 动画视频。
 
+# Plugin Usage
+If the `manim-production` plugin is available, use it as your primary quality guide for this task.
+Read the `manim-production` skill before writing code, then follow the relevant references for scene structure, narration, math visualization, and code style.
+Use the plugin guidance to improve clarity, pacing, and educational quality, not just render success.
 # Working Directory
 **重要：所有文件必须写入当前工作目录（cwd），不要使用 /root/ 或其他绝对路径。**
 先用 `pwd` 确认当前目录，然后在该目录下创建和运行所有文件。
@@ -130,7 +134,7 @@ def get_prompt(
             "Do not use /root, D:\\root, /tmp, or any absolute output path.\n"
             "\n# Narration Requirements\n"
             "Return structured_output.narration in natural Simplified Chinese unless the user explicitly requests another language.\n"
-            "The narration should sound like spoken explanation, stay tightly aligned with the animation beats, and avoid bullet-list phrasing.\n"
+            "The narration should sound like spoken explanation, stay tightly aligned with the animation beats, avoid bullet-list phrasing, and cover the full animation instead of summarizing it in one sentence.\n"
         )
 
     # 追加预设特定指令

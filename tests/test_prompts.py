@@ -26,6 +26,10 @@ class TestSystemPrompt:
         assert "manim" in prompts.SYSTEM_PROMPT.lower() or "render" in prompts.SYSTEM_PROMPT.lower()
 
 
+    def test_system_prompt_mentions_manim_production_plugin(self):
+        assert "manim-production" in prompts.SYSTEM_PROMPT
+
+
 class TestGetPrompt:
     def test_get_prompt_default(self):
         """默认模式返回包含用户文本的完整 prompt。"""
@@ -92,3 +96,6 @@ class TestGetPrompt:
         assert "GeneratedScene" in result
         assert "Run Manim directly" in result
         assert "Simplified Chinese" in result
+    def test_get_prompt_mentions_manim_production_plugin_when_task_directory_is_set(self):
+        result = prompts.get_prompt("娴嬭瘯", cwd="/tmp/task")
+        assert "manim-production" in result

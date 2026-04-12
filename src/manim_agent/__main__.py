@@ -352,13 +352,15 @@ def _build_user_prompt(user_text: str) -> str:
     normalized = user_text.strip()
     guidance = (
         "\n\nExecution requirements:\n"
+        "- If the `manim-production` plugin is available, use it as the primary guide for scene planning, narration, math visualization, and final self-review.\n"
+        "- Read the `manim-production` skill before writing code, then use only the relevant references for this task.\n"
         "- Keep every file inside the task directory only.\n"
         "- Write the main script to scene.py unless multiple files are truly necessary.\n"
         "- Use GeneratedScene as the main Manim Scene class unless the user explicitly asks otherwise.\n"
         "- Run Manim directly from the task directory with `manim ... scene.py GeneratedScene`.\n"
         "- Do not use absolute repository paths, do not cd to the repo root, and do not invoke `.venv/Scripts/python` directly.\n"
         "- Return structured_output.narration as natural Simplified Chinese unless the user explicitly requests another language.\n"
-        "- Make the narration concise, spoken, and synchronized with the animation.\n"
+        "- Make the narration spoken and synchronized with the animation, and cover the full flow rather than collapsing into a one-sentence summary.\n"
     )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
@@ -399,6 +401,27 @@ def _build_fallback_narration(user_text: str) -> str:
         return text
 
     return text if re.search(r"[.!?]$", text) else f"{text}."
+
+
+def _estimate_spoken_duration_seconds(text: str) -> float:
+    """Roughly estimate spoken duration for mixed Chinese/Latin narration."""
+    normalized = text.strip()
+    if not normalized:
+        return 0.0
+
+    cjk_chars = len(re.findall(r"[\u4e00-\u9fff]", normalized))
+    latin_words = len(re.findall(r"[A-Za-z0-9]+", normalized))
+    punctuation = len(re.findall(r"[，。！？,.!?；;：:、]", normalized))
+
+    return (cjk_chars / 3.8) + (latin_words / 2.5) + (punctuation * 0.12)
+
+
+def _narration_is_too_short_for_video(narration: str, video_duration: float | None) -> bool:
+    """Heuristic used to warn when narration is likely much shorter than the render."""
+    if not narration.strip() or video_duration is None or video_duration <= 0:
+        return False
+    estimated = _estimate_spoken_duration_seconds(narration)
+    return estimated < max(4.0, video_duration * 0.45)
 
 
 async def run_pipeline(
@@ -517,6 +540,12 @@ async def run_pipeline(
         )
         logger.debug("run_pipeline: video_output = %r", video_output)
 
+        if po is not None and video_output and po.duration_seconds is None:
+            try:
+                po.duration_seconds = await video_builder._get_duration(video_output)
+            except Exception as exc:
+                logger.debug("run_pipeline: unable to probe render duration for %r: %s", video_output, exc)
+
         if not video_output:
             dispatcher._print("")
             dispatcher._print(f"{_EMOJI['cross']} Claude did not produce a valid pipeline output.")
@@ -588,6 +617,16 @@ async def run_pipeline(
         )
         if po is not None and (not po.narration or not po.narration.strip()):
             po.narration = narration_text
+        if _narration_is_too_short_for_video(
+            narration_text,
+            po.duration_seconds if po is not None else None,
+        ):
+            warning = (
+                "Narration is much shorter than the rendered video. "
+                "Muxing will preserve the full animation and leave trailing silence instead of truncating it."
+            )
+            dispatcher._print(f"  [WARN] {warning}")
+            logger.warning("run_pipeline: %s video=%r narration=%r", warning, video_output, narration_text)
         dispatcher._print(f"\n{_EMOJI['tts']} TTS in progress... (voice={voice_id}, model={model})")
         tts_result = await tts_client.synthesize(
             text=narration_text,
