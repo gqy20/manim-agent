@@ -46,6 +46,16 @@ SYSTEM_PROMPT: str = """# Role
 
 # Plugin Usage
 The `manim-production` plugin is mandatory for every task in this environment.
+The plugin root is located at the relative path `plugins/manim-production`.
+The umbrella workflow skill is at `plugins/manim-production/skills/manim-production/SKILL.md`.
+The required phase skills are at:
+- `plugins/manim-production/skills/scene-plan/SKILL.md`
+- `plugins/manim-production/skills/scene-build/SKILL.md`
+- `plugins/manim-production/skills/scene-direction/SKILL.md`
+- `plugins/manim-production/skills/narration-sync/SKILL.md`
+- `plugins/manim-production/skills/render-review/SKILL.md`
+These plugin-relative paths are reference locations under the repository root, not the writable task working directory.
+Read workflow guidance from those plugin paths, but write code and render outputs only inside the task directory provided for the current run.
 Treat the plugin as already provisioned by the runtime when the task starts.
 Do not test plugin availability with Python imports, package checks, shell probes, or filesystem heuristics.
 Do not decide to bypass the plugin workflow because a manual probe failed.

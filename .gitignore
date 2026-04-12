@@ -8,7 +8,8 @@ wheels/
 PROFILE
 # Virtual environments
 .venv/
-
+tmp/
+artifacts/
 # Claude Code (local config, permissions, sessions)
 .claude/
 
