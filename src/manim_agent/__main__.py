@@ -123,6 +123,24 @@ def _get_local_plugins(cwd: str | None = None) -> list[dict[str, str]]:
     return []
 
 
+def _select_permission_mode() -> str:
+    """Choose a Claude Code permission mode that works in the current runtime.
+
+    Railway containers run as root, where Claude Code rejects bypass mode.
+    Fall back to a non-root-safe mode there while preserving the more hands-off
+    local developer experience elsewhere.
+    """
+    geteuid = getattr(os, "geteuid", None)
+    try:
+        is_root = callable(geteuid) and geteuid() == 0
+    except OSError:
+        is_root = False
+
+    if is_root:
+        return "auto"
+    return "bypassPermissions"
+
+
 # ── CLI 参数解析 ──────────────────────────────────────────────
 
 
@@ -280,11 +298,13 @@ def _build_options(
         ],
     }
 
+    permission_mode = _select_permission_mode()
+
     options = ClaudeAgentOptions(
         cwd=resolved_cwd,
         add_dirs=[resolved_cwd],
         system_prompt=final_system_prompt,
-        permission_mode="bypassPermissions",
+        permission_mode=permission_mode,
         max_turns=max_turns,
         # ── 会话隔离：每次运行使用唯一 session ID，不污染用户本地 Claude Code ──
         session_id=str(uuid.uuid4()),
@@ -330,9 +350,9 @@ def _build_options(
         len(final_system_prompt) if final_system_prompt else 0,
     )
     logger.debug(
-        "_build_options: cwd=%s, max_turns=%s, permission_mode=bypassPermissions, "
+        "_build_options: cwd=%s, max_turns=%s, permission_mode=%s, "
         "allowed_tools=%s, plugins=%s, output_format=%s, system_prompt_len=%d",
-        resolved_cwd, max_turns, options.allowed_tools,
+        resolved_cwd, max_turns, permission_mode, options.allowed_tools,
         [plugin["path"] for plugin in options.plugins],
         "set" if options.output_format else "None",
         len(final_system_prompt) if final_system_prompt else 0,
