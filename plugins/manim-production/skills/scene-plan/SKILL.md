@@ -62,3 +62,4 @@ End with a short `Build Handoff` section that tells the implementation step:
 - the recommended main scene class name
 - the intended scene flow in one line
 - any constraints such as "avoid MathTex" or "keep all labels on screen"
+- `Skill Signature: mp-scene-plan-v1`

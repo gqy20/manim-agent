@@ -529,6 +529,7 @@ _PLAN_SECTION_HEADINGS = (
     "Visual Risks",
     "Build Handoff",
 )
+_PLAN_SKILL_SIGNATURE = "mp-scene-plan-v1"
 
 
 def _has_visible_scene_plan(collected_text: list[str]) -> bool:
@@ -545,6 +546,20 @@ def _has_visible_scene_plan(collected_text: list[str]) -> bool:
         ):
             matches += 1
     return matches >= len(_PLAN_SECTION_HEADINGS)
+
+
+def _has_scene_plan_skill_signature(collected_text: list[str]) -> bool:
+    """Check whether the visible plan includes the scene-plan skill canary."""
+    if not collected_text:
+        return False
+
+    text = "\n".join(collected_text)
+    return bool(
+        re.search(
+            rf"(?im)^\s*Skill Signature\s*:\s*{re.escape(_PLAN_SKILL_SIGNATURE)}\s*$",
+            text,
+        )
+    )
 
 
 def _extract_visible_scene_plan_text(collected_text: list[str], max_chars: int = 6000) -> str:
@@ -727,6 +742,14 @@ async def run_pipeline(
         if _dispatcher_ref is not None:
             _dispatcher_ref.append(dispatcher)
 
+        result_summary = dispatcher.result_summary
+        if result_summary is not None:
+            dispatcher.partial_run_turns = result_summary.get("turns")
+            dispatcher.partial_run_duration_ms = result_summary.get("duration_ms")
+            dispatcher.partial_run_cost_usd = result_summary.get("cost_usd")
+        dispatcher.partial_run_tool_use_count = dispatcher.tool_use_count
+        dispatcher.partial_run_tool_stats = dict(dispatcher.tool_stats)
+
         if not _has_visible_scene_plan(dispatcher.collected_text):
             dispatcher._print("")
             dispatcher._print(
@@ -742,6 +765,24 @@ async def run_pipeline(
             raise RuntimeError(
                 "Claude skipped the required scene-plan pass. "
                 "A visible planning scaffold is mandatory before implementation."
+            )
+
+        if not _has_scene_plan_skill_signature(dispatcher.collected_text):
+            dispatcher._print("")
+            dispatcher._print(
+                f"{_EMOJI['cross']} Missing scene-plan skill signature in the visible plan."
+            )
+            dispatcher._print(
+                "  Expected line: "
+                f"Skill Signature: {_PLAN_SKILL_SIGNATURE}"
+            )
+            dispatcher._print(
+                "  This usually means the runtime prompt was followed, but the "
+                "scene-plan skill contents were not actually consumed."
+            )
+            raise RuntimeError(
+                "Visible scene plan is missing the scene-plan skill signature. "
+                "The plugin may have been injected but not consumed by Claude."
             )
 
         plan_text = _extract_visible_scene_plan_text(dispatcher.collected_text)
@@ -785,6 +826,12 @@ async def run_pipeline(
         logger.debug("run_pipeline: video_output = %r", video_output)
 
         if po is not None:
+            if result_summary is not None:
+                po.run_turns = result_summary.get("turns")
+                po.run_duration_ms = result_summary.get("duration_ms")
+                po.run_cost_usd = result_summary.get("cost_usd")
+            po.run_tool_use_count = dispatcher.tool_use_count
+            po.run_tool_stats = dict(dispatcher.tool_stats)
             po.target_duration_seconds = target_duration_seconds
             po.plan_text = plan_text
             dispatcher.partial_build_summary = po.build_summary
