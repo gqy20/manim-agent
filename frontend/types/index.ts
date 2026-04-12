@@ -32,6 +32,11 @@ export interface PipelineOutputData {
   tts_duration_ms: number | null;
   tts_word_count: number | null;
   tts_usage_characters: number | null;
+  run_turns: number | null;
+  run_tool_use_count: number | null;
+  run_tool_stats: Record<string, number>;
+  run_duration_ms: number | null;
+  run_cost_usd: number | null;
   target_duration_seconds: number | null;
   plan_text: string | null;
   review_summary: string | null;

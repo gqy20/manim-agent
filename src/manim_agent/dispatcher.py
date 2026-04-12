@@ -205,6 +205,11 @@ class _MessageDispatcher:
             "tts_duration_ms": None,
             "tts_word_count": None,
             "tts_usage_characters": None,
+            "run_turns": getattr(self, "partial_run_turns", None),
+            "run_tool_use_count": getattr(self, "partial_run_tool_use_count", None),
+            "run_tool_stats": dict(getattr(self, "partial_run_tool_stats", {})),
+            "run_duration_ms": getattr(self, "partial_run_duration_ms", None),
+            "run_cost_usd": getattr(self, "partial_run_cost_usd", None),
             "target_duration_seconds": getattr(self, "partial_target_duration_seconds", None),
             "plan_text": getattr(self, "partial_plan_text", None),
             "review_summary": getattr(self, "partial_review_summary", None),
@@ -527,6 +532,28 @@ class _MessageDispatcher:
             incoming.tts_usage_characters
             if incoming.tts_usage_characters is not None
             else current.tts_usage_characters
+        )
+        current.run_turns = (
+            incoming.run_turns
+            if incoming.run_turns is not None
+            else current.run_turns
+        )
+        current.run_tool_use_count = (
+            incoming.run_tool_use_count
+            if incoming.run_tool_use_count is not None
+            else current.run_tool_use_count
+        )
+        if incoming.run_tool_stats:
+            current.run_tool_stats = incoming.run_tool_stats
+        current.run_duration_ms = (
+            incoming.run_duration_ms
+            if incoming.run_duration_ms is not None
+            else current.run_duration_ms
+        )
+        current.run_cost_usd = (
+            incoming.run_cost_usd
+            if incoming.run_cost_usd is not None
+            else current.run_cost_usd
         )
         current.target_duration_seconds = (
             incoming.target_duration_seconds

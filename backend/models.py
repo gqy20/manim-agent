@@ -49,6 +49,11 @@ class PipelineOutputData(BaseModel):
     tts_duration_ms: int | None = None
     tts_word_count: int | None = None
     tts_usage_characters: int | None = None
+    run_turns: int | None = None
+    run_tool_use_count: int | None = None
+    run_tool_stats: dict[str, int] = Field(default_factory=dict)
+    run_duration_ms: int | None = None
+    run_cost_usd: float | None = None
     target_duration_seconds: int | None = None
     plan_text: str | None = None
     review_summary: str | None = None

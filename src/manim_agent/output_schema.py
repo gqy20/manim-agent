@@ -96,6 +96,30 @@ class PipelineOutput(BaseModel):
         description="Provider-reported billable character count.",
         ge=0,
     )
+    run_turns: int | None = Field(
+        default=None,
+        description="Number of Claude turns used for this run.",
+        ge=0,
+    )
+    run_tool_use_count: int | None = Field(
+        default=None,
+        description="Total number of tool calls used during the run.",
+        ge=0,
+    )
+    run_tool_stats: dict[str, int] = Field(
+        default_factory=dict,
+        description="Per-tool usage counts for the run.",
+    )
+    run_duration_ms: int | None = Field(
+        default=None,
+        description="Total SDK-reported runtime in milliseconds for the run.",
+        ge=0,
+    )
+    run_cost_usd: float | None = Field(
+        default=None,
+        description="Total SDK-reported run cost in USD.",
+        ge=0,
+    )
     target_duration_seconds: int | None = Field(
         default=None,
         description="Requested target runtime for the final video in seconds.",
@@ -226,6 +250,31 @@ class PipelineOutput(BaseModel):
                             "description": "Provider-reported billable character count.",
                             "minimum": 0,
                         },
+                        "run_turns": {
+                            "type": ["integer", "null"],
+                            "description": "Number of Claude turns used for this run.",
+                            "minimum": 0,
+                        },
+                        "run_tool_use_count": {
+                            "type": ["integer", "null"],
+                            "description": "Total number of tool calls used during the run.",
+                            "minimum": 0,
+                        },
+                        "run_tool_stats": {
+                            "type": "object",
+                            "description": "Per-tool usage counts for the run.",
+                            "additionalProperties": {"type": "integer", "minimum": 0},
+                        },
+                        "run_duration_ms": {
+                            "type": ["integer", "null"],
+                            "description": "Total SDK-reported runtime in milliseconds for the run.",
+                            "minimum": 0,
+                        },
+                        "run_cost_usd": {
+                            "type": ["number", "null"],
+                            "description": "Total SDK-reported run cost in USD.",
+                            "minimum": 0,
+                        },
                         "target_duration_seconds": {
                             "type": ["integer", "null"],
                             "description": "Requested target runtime for the final video in seconds.",
@@ -264,6 +313,7 @@ class PipelineOutput(BaseModel):
                         "implemented_beats",
                         "deviations_from_plan",
                         "beat_to_narration_map",
+                        "run_tool_stats",
                         "review_blocking_issues",
                         "review_suggested_edits",
                         "review_frame_paths",
