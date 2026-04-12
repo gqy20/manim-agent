@@ -529,6 +529,8 @@ async def run_pipeline(
             message="Synthesizing narration",
         )
         narration_text = po.narration if po and po.narration else user_text
+        if po is not None and not po.narration:
+            po.narration = narration_text
         dispatcher._print(f"\n{_EMOJI['tts']} TTS in progress... (voice={voice_id}, model={model})")
         tts_result = await tts_client.synthesize(
             text=narration_text,

@@ -88,6 +88,44 @@ class TestTTSNarrationFlow:
         assert captured_tts_text == ["原始用户文本"]
 
     @pytest.mark.asyncio
+    async def test_fallback_user_text_is_written_back_to_pipeline_output(self):
+        mock_messages = [
+            _make_assistant_message(_make_text_block("render complete")),
+            _make_result_message(
+                num_turns=1,
+                **{"structured_output": {"video_output": "/out.mp4"}},
+            ),
+        ]
+        dispatcher_refs: list[object] = []
+
+        async def capture_tts(**_kw):
+            return MagicMock(audio_path="a.mp3", subtitle_path="sub.srt", duration_ms=1000)
+
+        with (
+            patch("manim_agent.__main__.query") as mock_query,
+            patch("manim_agent.__main__.tts_client.synthesize", side_effect=capture_tts),
+            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
+        ):
+            async def gen(*_a, **_k):
+                for m in mock_messages:
+                    yield m
+
+            mock_query.side_effect = gen
+            mock_vid.return_value = "final.mp4"
+
+            await main_module.run_pipeline(
+                user_text="原始用户文本",
+                output_path="/out.mp4",
+                no_tts=False,
+                _dispatcher_ref=dispatcher_refs,
+            )
+
+        dispatcher = dispatcher_refs[0]
+        po = dispatcher.get_pipeline_output()
+        assert po is not None
+        assert po.narration == "原始用户文本"
+
+    @pytest.mark.asyncio
     async def test_tts_uses_merged_narration_after_task_notification(self):
         mock_messages = [
             TaskNotificationMessage(

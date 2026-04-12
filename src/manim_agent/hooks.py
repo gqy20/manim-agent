@@ -67,6 +67,27 @@ def _bash_contains_out_of_scope_path(command: str, cwd: str) -> str | None:
     return None
 
 
+def _write_scope_denial(file_path: str) -> str:
+    normalized = normalize_path_string(file_path)
+    basename = Path(normalized).name or "scene.py"
+    suggested_name = "scene.py" if normalized.endswith(".py") else basename
+    return (
+        "Only files inside the task directory are allowed. "
+        f"Rejected path: {normalized}. "
+        f"Retry with a relative path inside the task directory, for example `{suggested_name}`."
+    )
+
+
+def _bash_scope_denial(escaped_path: str) -> str:
+    return (
+        "Bash commands must stay inside the task directory. "
+        f"Rejected path: {escaped_path}. "
+        "Retry from the current task directory and run Manim directly, for example "
+        "`manim -qh scene.py GeneratedScene`. "
+        "Do not cd to the repository root and do not invoke `.venv/Scripts/python`."
+    )
+
+
 @dataclass
 class _HookState:
     """Hook state scoped to a single pipeline execution."""
@@ -137,18 +158,12 @@ async def _on_pre_tool_use(
     if tool_name in ("Read", "Write", "Edit") and isinstance(tool_input, dict):
         file_path = tool_input.get("file_path", "")
         if file_path and not _is_within_directory(file_path, cwd):
-            deny_reason = (
-                "Only files inside the task directory are allowed. "
-                f"Rejected path: {normalize_path_string(file_path)}"
-            )
+            deny_reason = _write_scope_denial(file_path)
     elif tool_name == "Bash" and isinstance(tool_input, dict):
         command = tool_input.get("command", "")
         escaped_path = _bash_contains_out_of_scope_path(command, cwd)
         if escaped_path:
-            deny_reason = (
-                "Bash commands must stay inside the task directory. "
-                f"Rejected path: {escaped_path}"
-            )
+            deny_reason = _bash_scope_denial(escaped_path)
 
     if deny_reason is None:
         return SyncHookJSONOutput(
