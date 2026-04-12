@@ -92,6 +92,7 @@ class _MessageDispatcher:
         # ── 向后兼容的旧属性 ──
         self.scene_file: str | None = None
         self.scene_class: str | None = None
+        self._bash_commands: list[str] = []
         # ── 直接使用 ResultMessage 原生字段，不再手动构建 ──
 
     @property
@@ -126,6 +127,10 @@ class _MessageDispatcher:
     def get_pipeline_output(self) -> PipelineOutput | None:
         """返回验证后的 PipelineOutput（可能为 None）。"""
         if self.pipeline_output is not None:
+            self._attach_captured_source_code("get_pipeline_output[cached]")
+            if not self.pipeline_output.scene_class:
+                self.pipeline_output.scene_class = self._infer_scene_class()
+            self._sync_compat_attrs()
             logger.debug(
                 "get_pipeline_output: returning cached PipelineOutput, video_output=%r",
                 self.pipeline_output.video_output,
@@ -153,6 +158,7 @@ class _MessageDispatcher:
         self.pipeline_output = PipelineOutput(
             video_output=discovered_video,
             scene_file=self._infer_scene_file(),
+            scene_class=self._infer_scene_class(),
         )
         logger.debug(
             "get_pipeline_output: built PipelineOutput from filesystem scan, "
@@ -362,6 +368,7 @@ class _MessageDispatcher:
             self.pipeline_output = PipelineOutput(
                 video_output=normalized_output,
                 scene_file=self._infer_scene_file(),
+                scene_class=self._infer_scene_class(),
             )
             self._sync_compat_attrs()
             self._print(
@@ -533,6 +540,7 @@ class _MessageDispatcher:
             candidate = PipelineOutput(
                 video_output=video_path,
                 scene_file=self._infer_scene_file(),
+                scene_class=self._infer_scene_class(),
             )
 
         self._attach_result_candidate_source_code(candidate)
@@ -548,6 +556,8 @@ class _MessageDispatcher:
             and candidate.scene_file in self._hook_state.captured_source_code
         ):
             candidate.source_code = self._hook_state.captured_source_code[candidate.scene_file]
+        if not candidate.scene_class:
+            candidate.scene_class = self._infer_scene_class()
 
     def _extract_video_path_from_text(self) -> str | None:
         """Parse MP4 paths from the assistant's final text summary."""
@@ -596,6 +606,53 @@ class _MessageDispatcher:
             return str(captured_paths[0])
         return None
 
+    def _infer_scene_class(self) -> str | None:
+        """Infer the scene class from source, bash history, or rendered video name."""
+        if self.scene_class:
+            return self.scene_class
+        if self.pipeline_output and self.pipeline_output.scene_class:
+            return self.pipeline_output.scene_class
+
+        scene_file = self._infer_scene_file()
+        source_code: str | None = None
+        if scene_file:
+            source_code = self._hook_state.captured_source_code.get(scene_file)
+        if not source_code and self.pipeline_output and self.pipeline_output.source_code:
+            source_code = self.pipeline_output.source_code
+        if source_code:
+            inferred = self._extract_scene_class_from_source(source_code)
+            if inferred:
+                return inferred
+
+        for command in reversed(self._bash_commands):
+            inferred = self._extract_scene_class_from_bash(command)
+            if inferred:
+                return inferred
+
+        video_output = self.video_output or (
+            self.pipeline_output.video_output if self.pipeline_output else None
+        )
+        if video_output:
+            stem = Path(video_output).stem
+            if stem:
+                return stem
+        return None
+
+    def _extract_scene_class_from_source(self, source_code: str) -> str | None:
+        match = re.search(
+            r"^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*[\w\s,.*]*Scene[\w\s,.*]*\)\s*:",
+            source_code,
+            flags=re.MULTILINE,
+        )
+        return match.group(1) if match else None
+
+    def _extract_scene_class_from_bash(self, command: str) -> str | None:
+        match = re.search(
+            r"(?:^|\s)manim(?:\.exe)?(?:\s+[^\n\r]*?)?\s+[^\s\"']+\.py\s+([A-Za-z_][A-Za-z0-9_]*)",
+            command.strip(),
+        )
+        return match.group(1) if match else None
+
     def _attach_captured_source_code(self, context: str) -> None:
         """Link hook-captured source into PipelineOutput when possible."""
         if self.pipeline_output is None:
@@ -612,6 +669,8 @@ class _MessageDispatcher:
             self.pipeline_output.source_code = self._hook_state.captured_source_code[
                 self.pipeline_output.scene_file
             ]
+            if not self.pipeline_output.scene_class:
+                self.pipeline_output.scene_class = self._infer_scene_class()
             logger.debug("%s: source code linked from hook state", context)
         else:
             logger.debug(
@@ -638,6 +697,10 @@ class _MessageDispatcher:
         input_summary = self._summarize_input(block.input)
         self._print(f"  {icon} {block.name} \u2192 {input_summary}")
         logger.debug("_log_tool_use: id=%s, name=%s", block.id, block.name)
+        if block.name == "Bash" and isinstance(block.input, dict):
+            command = str(block.input.get("command", "")).strip()
+            if command:
+                self._bash_commands.append(command)
         # 发射结构化事件
         self._emit_event(
             PipelineEvent(

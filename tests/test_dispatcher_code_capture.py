@@ -61,6 +61,28 @@ class TestDispatcherCodeCapture:
         assert pipeline_output is not None
         assert pipeline_output.source_code == hook_state.captured_source_code[scene_path]
 
+    def test_pipeline_output_infers_scene_class_from_hook_source_code(self):
+        hook_state = create_hook_state()
+        scene_path = normalize_path_string("scene.py")
+        hook_state.captured_source_code[scene_path] = (
+            "from manim import *\n\nclass GeneratedScene(Scene):\n    pass\n"
+        )
+        dispatcher = _MessageDispatcher(verbose=False, hook_state=hook_state)
+
+        dispatcher.dispatch(
+            _make_result_message(
+                num_turns=1,
+                structured_output={
+                    "video_output": "/tmp/out.mp4",
+                    "scene_file": "scene.py",
+                },
+            )
+        )
+
+        pipeline_output = dispatcher.get_pipeline_output()
+        assert pipeline_output is not None
+        assert pipeline_output.scene_class == "GeneratedScene"
+
     def test_structured_output_uses_only_matching_scene_file(self):
         hook_state = create_hook_state()
         hook_state.captured_source_code[normalize_path_string("actual_scene.py")] = "print('hello')"
@@ -108,3 +130,24 @@ class TestDispatcherCodeCapture:
         assert pipeline_output_b is not None
         assert pipeline_output_a.source_code == "print('A')"
         assert pipeline_output_b.source_code == "print('B')"
+
+    def test_pipeline_output_infers_scene_class_from_bash_command(self):
+        dispatcher = _MessageDispatcher(verbose=False)
+        dispatcher.dispatch(
+            _make_assistant_message(
+                _make_tool_use_block(
+                    "Bash",
+                    {"command": "manim -qh scene.py RenderedLessonScene"},
+                )
+            )
+        )
+        dispatcher.dispatch(
+            _make_result_message(
+                num_turns=1,
+                result='{"video_output": "/tmp/out.mp4"}',
+            )
+        )
+
+        pipeline_output = dispatcher.get_pipeline_output()
+        assert pipeline_output is not None
+        assert pipeline_output.scene_class == "RenderedLessonScene"
