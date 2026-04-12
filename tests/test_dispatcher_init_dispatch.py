@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from claude_agent_sdk import RateLimitEvent, RateLimitInfo, TaskNotificationMessage, TaskProgressMessage, TaskUsage
 
 from ._test_main_dispatcher_helpers import (
@@ -101,7 +103,9 @@ class TestMessageDispatcherState:
 
         assert dispatcher.turn_count == 1
 
-    def test_completed_task_notification_sets_video_output(self):
+    def test_completed_task_notification_tracks_output_file(self, tmp_path: Path):
+        video_path = tmp_path / "video.mp4"
+        video_path.write_bytes(b"fake-mp4")
         dispatcher = _MessageDispatcher(verbose=False)
 
         dispatcher.dispatch(
@@ -109,7 +113,7 @@ class TestMessageDispatcherState:
                 subtype="task_notification",
                 task_id="task-1",
                 status="completed",
-                output_file="/out/video.mp4",
+                output_file=str(video_path),
                 summary="done",
                 uuid="u1",
                 session_id="s1",
@@ -119,6 +123,7 @@ class TestMessageDispatcherState:
 
         assert dispatcher.video_output is not None
         assert dispatcher.video_output.endswith("video.mp4")
+        assert dispatcher.task_notification_output_file == str(video_path.resolve())
         assert dispatcher.task_notification_status == "completed"
 
     def test_unknown_message_type_is_ignored(self):

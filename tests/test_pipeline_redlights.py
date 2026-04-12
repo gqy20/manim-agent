@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from manim_agent import __main__ as main_module
+from manim_agent.review_schema import RenderReviewOutput
+from ._test_main_dispatcher_helpers import _make_two_stage_query_side_effect
 
 
 def _make_text_block(text: str):
@@ -72,12 +74,10 @@ class TestPipelinePhaseLogsViaCallback:
             patch("manim_agent.__main__.query") as mock_query,
             patch("manim_agent.__main__.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
             patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
-            async def mock_query_gen(*_args, **_kwargs):
-                for msg in mock_messages:
-                    yield msg
-
-            mock_query.side_effect = mock_query_gen
+            mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_tts.return_value = MagicMock(
                 audio_path="/tmp/audio.mp3",
                 subtitle_path="/tmp/sub.srt",
@@ -85,6 +85,13 @@ class TestPipelinePhaseLogsViaCallback:
                 word_count=42,
             )
             mock_video.return_value = "/out/final.mp4"
+            mock_frames.return_value = []
+            mock_review.return_value = RenderReviewOutput(
+                approved=True,
+                summary="Looks good.",
+                blocking_issues=[],
+                suggested_edits=[],
+            )
 
             await main_module.run_pipeline(
                 user_text="测试 TTS 日志",
@@ -112,14 +119,19 @@ class TestPipelinePhaseLogsViaCallback:
             patch("manim_agent.__main__.query") as mock_query,
             patch("manim_agent.__main__.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
             patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
-            async def mock_query_gen(*_args, **_kwargs):
-                for msg in mock_messages:
-                    yield msg
-
-            mock_query.side_effect = mock_query_gen
+            mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_tts.return_value = mock_tts_result
             mock_video.return_value = "/out/final.mp4"
+            mock_frames.return_value = []
+            mock_review.return_value = RenderReviewOutput(
+                approved=True,
+                summary="Looks good.",
+                blocking_issues=[],
+                suggested_edits=[],
+            )
 
             await main_module.run_pipeline(
                 user_text="测试 MUX 日志",

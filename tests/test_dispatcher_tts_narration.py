@@ -2,11 +2,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from manim_agent.review_schema import RenderReviewOutput
+
 from ._test_main_dispatcher_helpers import (
     TaskNotificationMessage,
     _make_assistant_message,
     _make_result_message,
     _make_text_block,
+    _make_two_stage_query_side_effect,
     main_module,
 )
 
@@ -34,13 +37,18 @@ class TestTTSNarrationFlow:
             patch("manim_agent.__main__.query") as mock_query,
             patch("manim_agent.__main__.tts_client.synthesize", side_effect=capture_tts),
             patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
+            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
-            async def gen(*_a, **_k):
-                for message in mock_messages:
-                    yield message
-
-            mock_query.side_effect = gen
+            mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_vid.return_value = "final.mp4"
+            mock_frames.return_value = []
+            mock_review.return_value = RenderReviewOutput(
+                approved=True,
+                summary="Looks good.",
+                blocking_issues=[],
+                suggested_edits=[],
+            )
 
             await main_module.run_pipeline(
                 user_text="Original user text",
@@ -69,13 +77,18 @@ class TestTTSNarrationFlow:
             patch("manim_agent.__main__.query") as mock_query,
             patch("manim_agent.__main__.tts_client.synthesize", side_effect=capture_tts),
             patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
+            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
-            async def gen(*_a, **_k):
-                for message in mock_messages:
-                    yield message
-
-            mock_query.side_effect = gen
+            mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_vid.return_value = "final.mp4"
+            mock_frames.return_value = []
+            mock_review.return_value = RenderReviewOutput(
+                approved=True,
+                summary="Looks good.",
+                blocking_issues=[],
+                suggested_edits=[],
+            )
 
             await main_module.run_pipeline(
                 user_text="Fallback narration from the user request.",
@@ -116,13 +129,18 @@ class TestTTSNarrationFlow:
             patch("manim_agent.__main__.query") as mock_query,
             patch("manim_agent.__main__.tts_client.synthesize", side_effect=capture_tts),
             patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
+            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
-            async def gen(*_a, **_k):
-                for message in mock_messages:
-                    yield message
-
-            mock_query.side_effect = gen
+            mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_vid.return_value = "final.mp4"
+            mock_frames.return_value = []
+            mock_review.return_value = RenderReviewOutput(
+                approved=True,
+                summary="Looks good.",
+                blocking_issues=[],
+                suggested_edits=[],
+            )
 
             await main_module.run_pipeline(
                 user_text="Original user text",

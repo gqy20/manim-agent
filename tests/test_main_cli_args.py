@@ -18,7 +18,8 @@ class TestParseArgs:
         assert args.no_tts is False
         assert args.cwd == "."
         assert args.prompt_file is None
-        assert args.max_turns == 50
+        assert args.max_turns == 80
+        assert args.target_duration == 60
 
     def test_parse_args_all_options(self):
         args = main_module.parse_args(
@@ -51,6 +52,7 @@ class TestParseArgs:
         assert args.max_turns == 20
         assert args.cwd == "/workspace"
         assert args.prompt_file == "custom.txt"
+        assert args.target_duration == 60
 
     def test_parse_args_requires_text(self):
         with pytest.raises(SystemExit):

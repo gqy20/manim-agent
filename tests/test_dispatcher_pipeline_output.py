@@ -58,21 +58,23 @@ class TestDispatcherPipelineOutput:
         assert po.scene_file.endswith("scene.py")
         assert po.narration == "hello"
 
-    def test_task_notification_sets_video_output(self):
+    def test_task_notification_sets_video_output_for_existing_file(self, tmp_path: Path):
+        video_path = tmp_path / "sdk-out.mp4"
+        video_path.write_bytes(b"fake-mp4")
         d = _MessageDispatcher(verbose=False)
         d.dispatch(
             TaskNotificationMessage(
                 subtype="task_notification",
                 task_id="t1",
                 status="completed",
-                output_file="/sdk/out.mp4",
+                output_file=str(video_path),
                 summary="done",
                 uuid="u1",
                 session_id="s1",
                 data={},
             )
         )
-        assert d.get_video_output() == str(Path("/sdk/out.mp4").resolve())
+        assert d.get_video_output() == str(video_path.resolve())
 
     def test_get_pipeline_output_falls_back_to_rendered_mp4_after_completion(self, tmp_path: Path):
         video_path = tmp_path / "media" / "videos" / "scene" / "1080p60" / "demo.mp4"
@@ -128,7 +130,7 @@ class TestDispatcherPipelineOutput:
 
         po = d.get_pipeline_output()
         assert po is not None
-        assert po.video_output == str(Path("/task/out.mp4").resolve())
+        assert po.video_output == str(Path("/structured/out.mp4").resolve())
         assert po.scene_file.endswith("scene.py")
         assert po.scene_class == "GeneratedScene"
         assert po.narration == "这是合并后的中文解说。"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PipelineOutput(BaseModel):
@@ -34,7 +34,7 @@ class PipelineOutput(BaseModel):
     )
     narration: str | None = Field(
         default=None,
-        description="Narration text used for TTS.",
+        description="Narration text used for TTS. Default expectation is natural Simplified Chinese unless the task explicitly asks otherwise.",
     )
     implemented_beats: list[str] = Field(
         default_factory=list,
@@ -173,6 +173,13 @@ class PipelineOutput(BaseModel):
         description="Sampled frame image paths inspected during render review.",
     )
 
+    @field_validator("video_output")
+    @classmethod
+    def _video_output_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("video_output must not be blank")
+        return value
+
     @staticmethod
     def output_format_schema() -> dict[str, Any]:
         """Return the JSON schema expected by ClaudeAgentOptions.output_format."""
@@ -208,7 +215,7 @@ class PipelineOutput(BaseModel):
                         },
                         "narration": {
                             "type": ["string", "null"],
-                            "description": "Narration text used for TTS.",
+                            "description": "Narration text used for TTS. Default expectation is natural Simplified Chinese unless the task explicitly asks otherwise.",
                         },
                         "implemented_beats": {
                             "type": "array",

@@ -1,39 +1,40 @@
-﻿"""Shared helpers for split dispatcher-related test modules."""
+"""Shared helpers for split dispatcher-related test modules."""
+
+from __future__ import annotations
 
 import json
-from pathlib import Path
-import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
-from manim_agent import __main__ as main_module
-from manim_agent.__main__ import _MessageDispatcher
-from manim_agent.hooks import create_hook_state
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
-    RateLimitEvent,
-    RateLimitInfo,
-    TaskProgressMessage,
     TaskNotificationMessage,
-    TaskUsage,
     TextBlock,
-    ToolUseBlock,
-    ToolResultBlock,
     ThinkingBlock,
+    ToolResultBlock,
+    ToolUseBlock,
 )
+
+from manim_agent import __main__ as main_module
+from manim_agent.__main__ import _MessageDispatcher
 
 
 def _make_text_block(text: str) -> TextBlock:
     return TextBlock(text=text)
 
 
-def _make_tool_use_block(name: str, input_dict: dict | None = None, tool_id: str = "tu_001") -> ToolUseBlock:
+def _make_tool_use_block(
+    name: str,
+    input_dict: dict | None = None,
+    tool_id: str = "tu_001",
+) -> ToolUseBlock:
     return ToolUseBlock(id=tool_id, name=name, input=input_dict or {})
 
 
-def _make_tool_result_block(tool_id: str = "tu_001", content: str = "ok", is_error: bool = False) -> ToolResultBlock:
+def _make_tool_result_block(
+    tool_id: str = "tu_001",
+    content: str = "ok",
+    is_error: bool = False,
+) -> ToolResultBlock:
     return ToolResultBlock(tool_use_id=tool_id, content=content, is_error=is_error)
 
 
@@ -59,3 +60,39 @@ def _make_result_message(**overrides) -> ResultMessage:
     )
     defaults.update(overrides)
     return ResultMessage(**defaults)
+
+
+def _make_scene_plan_text() -> str:
+    return """Mode
+Teaching animation
+Learning Goal
+Explain the core idea clearly.
+Audience
+Beginner learners.
+Beat List
+1. Hook
+2. Main idea
+3. Wrap-up
+Narration Outline
+Open with intuition, then explain the main relationship.
+Visual Risks
+Avoid overcrowding labels.
+Build Handoff
+Implement the beats in order and keep narration aligned.
+"""
+
+
+def _make_two_stage_query_side_effect(build_messages):
+    planning_messages = [
+        _make_assistant_message(_make_text_block(_make_scene_plan_text())),
+        _make_result_message(num_turns=1, result="planning complete"),
+    ]
+    call_count = {"value": 0}
+
+    async def _side_effect(*_args, **_kwargs):
+        call_count["value"] += 1
+        messages = planning_messages if call_count["value"] == 1 else build_messages
+        for message in messages:
+            yield message
+
+    return _side_effect
