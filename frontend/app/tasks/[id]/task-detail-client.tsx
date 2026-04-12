@@ -18,6 +18,243 @@ import { mergeTaskState } from "@/lib/task-state";
 import type { SSEEvent, Task, TaskStatus } from "@/types";
 import { isStatusPayload } from "@/types";
 
+type VideoPlaceholderPhase = "init" | "scene" | "render" | "tts" | "mux" | "done";
+type TtsTransportMode = "sync" | "async" | null;
+
+function formatElapsedRuntime(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return [hours, minutes, seconds].map((value) => String(value).padStart(2, "0")).join(":");
+  }
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function getElapsedRuntime(createdAt: string, completedAt: string | null, now: number): number {
+  const startedAt = new Date(createdAt).getTime();
+  if (Number.isNaN(startedAt)) return 0;
+
+  const endedAt = completedAt ? new Date(completedAt).getTime() : now;
+  if (Number.isNaN(endedAt)) {
+    return Math.max(0, now - startedAt);
+  }
+
+  return Math.max(0, endedAt - startedAt);
+}
+
+function detectVideoPlaceholderPhase(events: SSEEvent[]): VideoPlaceholderPhase {
+  const latestStatus = [...events]
+    .reverse()
+    .find((event) => isStatusPayload(event))
+    ?.data;
+
+  if (latestStatus?.phase) {
+    return latestStatus.phase;
+  }
+
+  const logText = events
+    .flatMap((event) =>
+      event.type === "log" && typeof event.data === "string" ? [event.data.toLowerCase()] : [],
+    )
+    .join(" ");
+
+  if (!logText) return "init";
+  if (logText.includes("[tts]") || logText.includes("voice") || logText.includes("speech")) return "tts";
+  if (logText.includes("[mux]") || logText.includes("ffmpeg") || logText.includes("final video")) return "mux";
+  if (logText.includes("render") || logText.includes("manim") || logText.includes("phase 2")) return "render";
+  if (logText.includes("scene") || logText.includes("generatedscene") || logText.includes("tool")) return "scene";
+  return "init";
+}
+
+function detectTtsTransportMode(events: SSEEvent[]): TtsTransportMode {
+  for (const event of [...events].reverse()) {
+    if (event.type !== "log" || typeof event.data !== "string") continue;
+    const line = event.data.toLowerCase();
+    if (line.includes("[tts] transport: sync http")) return "sync";
+    if (line.includes("[tts] transport: async long-text")) return "async";
+  }
+  return null;
+}
+
+function VideoPipelinePlaceholder({
+  isRunning,
+  taskStatus,
+  events,
+  createdAt,
+  completedAt,
+}: {
+  isRunning: boolean;
+  taskStatus: TaskStatus;
+  events: SSEEvent[];
+  createdAt: string;
+  completedAt: string | null;
+}) {
+  const phase = useMemo(() => detectVideoPlaceholderPhase(events), [events]);
+  const ttsTransportMode = useMemo(() => detectTtsTransportMode(events), [events]);
+  const [runtimeNow, setRuntimeNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    setRuntimeNow(Date.now());
+
+    if (!isRunning) return;
+
+    const timer = window.setInterval(() => {
+      setRuntimeNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isRunning]);
+
+  const elapsedLabel = useMemo(
+    () => formatElapsedRuntime(getElapsedRuntime(createdAt, completedAt, runtimeNow)),
+    [completedAt, createdAt, runtimeNow],
+  );
+
+  const phaseMeta: Record<VideoPlaceholderPhase, { label: string; detail: string; accent: string }> = {
+    init: {
+      label: "SYSTEM LINK",
+      detail: "Bootstrapping the agent runtime",
+      accent: "from-cyan-500/25 via-sky-500/10 to-transparent",
+    },
+    scene: {
+      label: "SCENE DRAFT",
+      detail: "Sketching animation structure and beats",
+      accent: "from-violet-500/25 via-cyan-500/10 to-transparent",
+    },
+    render: {
+      label: "FRAME RENDER",
+      detail: "Compiling frames into motion",
+      accent: "from-emerald-500/20 via-cyan-500/10 to-transparent",
+    },
+    tts: {
+      label: "VOICE SYNTH",
+      detail: "Generating narration and timing cues",
+      accent: "from-orange-500/20 via-cyan-500/10 to-transparent",
+    },
+    mux: {
+      label: "FINAL PASS",
+      detail: "Merging assets into the delivery file",
+      accent: "from-sky-500/25 via-cyan-500/10 to-transparent",
+    },
+    done: {
+      label: "DELIVERY READY",
+      detail: "Final output has been assembled",
+      accent: "from-emerald-500/25 via-cyan-500/10 to-transparent",
+    },
+  };
+
+  const currentPhase = useMemo(() => {
+    if (phase !== "tts") return phaseMeta[phase];
+
+    return {
+      ...phaseMeta.tts,
+      detail:
+        ttsTransportMode === "sync"
+          ? "Streaming back a direct HTTP voice render"
+          : ttsTransportMode === "async"
+            ? "Falling back to the long-text voice pipeline"
+            : phaseMeta.tts.detail,
+    };
+  }, [phase, phaseMeta, ttsTransportMode]);
+
+  if (taskStatus === "failed") {
+    return (
+      <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300">
+        <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 via-transparent to-transparent" />
+        <div className="relative z-10 flex flex-col items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-red-500/20 bg-gradient-to-br from-red-500/10 to-red-950/30 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+            <XCircle className="h-6 w-6 text-red-400/80" />
+          </div>
+          <div className="flex flex-col items-center space-y-1 text-center">
+            <span className="text-[11px] font-mono uppercase tracking-widest text-red-400/80">Render Failed</span>
+            <span className="text-[10px] font-mono text-white/30">CHECK LOGS FOR TRACEBACK</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isRunning) {
+    return (
+      <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300">
+        <div className="absolute inset-0 bg-blue-500/5 blur-[100px] transition-colors duration-1000 group-hover:bg-cyan-500/10" />
+        <svg className="absolute inset-0 h-full w-full opacity-[0.03]" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="detail-grid-idle" width="28" height="28" patternUnits="userSpaceOnUse">
+              <path d="M 28 0 L 0 0 0 28" fill="none" stroke="currentColor" strokeWidth="0.5" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#detail-grid-idle)" />
+        </svg>
+        <div className="relative z-10 flex flex-col items-center gap-4">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/5 bg-white/5">
+            <Film className="h-6 w-6 text-white/20" />
+          </div>
+          <div className="flex flex-col items-center space-y-1 text-center">
+            <span className="text-[11px] font-mono uppercase tracking-widest text-white/30">RESULT SYNCING</span>
+            <span className="max-w-[22rem] text-[10px] font-mono text-white/20">
+              Waiting for final artifacts to be retrieved.
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-cyan-500/10 bg-black/40 shadow-2xl ring-1 ring-cyan-500/10 backdrop-blur-xl transition-all duration-300">
+      <div className={`absolute inset-0 bg-gradient-to-br ${currentPhase.accent}`} />
+      <div className="video-grid-sweep absolute inset-0" />
+      <svg className="absolute inset-0 h-full w-full opacity-[0.05]" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="detail-grid-active" width="28" height="28" patternUnits="userSpaceOnUse">
+            <path d="M 28 0 L 0 0 0 28" fill="none" stroke="currentColor" strokeWidth="0.5" />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#detail-grid-active)" />
+      </svg>
+      <div className="video-grid-radar absolute left-1/2 top-1/2 h-[38vmin] w-[38vmin] -translate-x-1/2 -translate-y-1/2 rounded-full" />
+      <div className="pointer-events-none absolute inset-x-8 top-8 flex justify-between opacity-50">
+        <span className="h-3 w-8 rounded-full border border-cyan-500/20" />
+        <span className="h-3 w-14 rounded-full border border-cyan-500/15" />
+      </div>
+      <div className="pointer-events-none absolute inset-x-8 bottom-8 flex justify-between opacity-40">
+        <span className="h-3 w-14 rounded-full border border-cyan-500/15" />
+        <span className="h-3 w-8 rounded-full border border-cyan-500/20" />
+      </div>
+      <div className="relative z-10 flex flex-col items-center gap-5">
+        <div className={`video-orb video-orb-${phase}`}>
+          <div className="video-orb-core" />
+          <div className="video-orb-ring video-orb-ring-primary" />
+          <div className="video-orb-ring video-orb-ring-secondary" />
+          <div className="video-orb-ring video-orb-ring-orbit" />
+          <div className="video-orb-pulse" />
+        </div>
+        <div className="flex flex-col items-center space-y-2 text-center">
+          <div className="rounded-full border border-cyan-400/15 bg-cyan-500/5 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-200/80 shadow-[0_0_18px_rgba(34,211,238,0.08)]">
+            Run Time {elapsedLabel}
+          </div>
+          {phase === "tts" && ttsTransportMode && (
+            <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1 font-mono text-[9px] uppercase tracking-[0.24em] text-white/55">
+              {ttsTransportMode === "sync" ? "Sync TTS" : "Async Fallback"}
+            </div>
+          )}
+          <span className="text-[11px] font-mono uppercase tracking-[0.26em] text-cyan-300 drop-shadow-[0_0_10px_rgba(34,211,238,0.45)]">
+            {currentPhase.label}
+          </span>
+          <span className="max-w-[22rem] text-[10px] font-mono text-white/28">
+            {currentPhase.detail}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DetailSkeleton() {
   return (
     <div className="animate-fade-in-up space-y-6">
@@ -393,56 +630,13 @@ export default function TaskDetailClient() {
           {showVideo && stableVideoSrc ? (
             <VideoPlayer src={stableVideoSrc} />
           ) : (
-            <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300">
-              <div className="absolute inset-0 bg-blue-500/5 blur-[100px] transition-colors duration-1000 group-hover:bg-cyan-500/10" />
-              <svg className="absolute inset-0 h-full w-full opacity-[0.03]" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                  <pattern id="detail-grid" width="28" height="28" patternUnits="userSpaceOnUse">
-                    <path d="M 28 0 L 0 0 0 28" fill="none" stroke="currentColor" strokeWidth="0.5" />
-                  </pattern>
-                </defs>
-                <rect width="100%" height="100%" fill="url(#detail-grid)" />
-              </svg>
-              <div className="relative z-10 flex flex-col items-center gap-4">
-                {isRunning ? (
-                  <>
-                    <div className="relative">
-                      <div className="absolute -inset-4 rounded-full bg-cyan-500/10 animate-ping" style={{ animationDuration: "3s" }} />
-                      <div className="absolute -inset-2 rounded-full bg-blue-500/20 animate-pulse" />
-                      <Loader2 className="relative z-10 h-10 w-10 animate-spin text-cyan-400" />
-                    </div>
-                    <div className="flex flex-col items-center space-y-1 text-center">
-                      <span className="text-[11px] font-mono uppercase tracking-widest text-cyan-400/80">
-                        Pipeline In Progress
-                      </span>
-                      <span className="max-w-[22rem] text-[10px] font-mono text-white/30">Waiting for final video rendering</span>
-                    </div>
-                  </>
-                ) : task.status === "failed" ? (
-                  <>
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-red-500/20 bg-gradient-to-br from-red-500/10 to-red-950/30 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
-                      <XCircle className="h-6 w-6 text-red-400/80" />
-                    </div>
-                    <div className="flex flex-col items-center space-y-1 text-center">
-                      <span className="text-[11px] font-mono uppercase tracking-widest text-red-400/80">Render Failed</span>
-                      <span className="text-[10px] font-mono text-white/30">CHECK LOGS FOR TRACEBACK</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/5 bg-white/5">
-                      <Film className="h-6 w-6 text-white/20" />
-                    </div>
-                    <div className="flex flex-col items-center space-y-1 text-center">
-                      <span className="text-[11px] font-mono uppercase tracking-widest text-white/30">RESULT SYNCING</span>
-                      <span className="max-w-[22rem] text-[10px] font-mono text-white/20">
-                        Waiting for final artifacts to be retrieved.
-                      </span>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+            <VideoPipelinePlaceholder
+              isRunning={isRunning}
+              taskStatus={task.status}
+              events={logs}
+              createdAt={task.created_at}
+              completedAt={task.completed_at}
+            />
           )}
 
         </div>

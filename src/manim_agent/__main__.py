@@ -659,6 +659,10 @@ async def run_pipeline(
             model=model,
             output_dir=str(Path(output_path).parent),
         )
+        transport_label = "SYNC HTTP" if tts_result.mode == "sync" else "ASYNC LONG-TEXT"
+        subtitle_label = "embedded captions ready" if tts_result.subtitle_path else "audio-only mux"
+        dispatcher._print(f"  [TTS] Transport: {transport_label}")
+        dispatcher._print(f"  [TTS] Output mode: {subtitle_label}")
         dispatcher._print(f"  TTS done: {tts_result.duration_ms}ms, {tts_result.word_count} chars")
 
         dispatcher._print("[MUX] Phase 4/4: mux final video")

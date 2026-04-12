@@ -6,7 +6,9 @@ The public API is kept compatible so ``routes.py`` requires minimal changes.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -15,6 +17,15 @@ from typing import Any
 import asyncpg
 
 from .models import TaskCreateRequest, TaskStatus, TaskResponse
+
+
+logger = logging.getLogger(__name__)
+_RETRYABLE_DB_ERRORS = (
+    OSError,
+    ConnectionError,
+    TimeoutError,
+    asyncpg.InterfaceError,
+)
 
 
 def _get_database_url() -> str:
@@ -63,6 +74,37 @@ class TaskStore:
         return self._pool
 
     # ── CRUD ────────────────────────────────────────────────
+
+    async def _run_with_retry(
+        self,
+        operation: str,
+        func,
+        *,
+        attempts: int = 3,
+        base_delay: float = 0.35,
+    ):
+        last_error: Exception | None = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                return await func()
+            except _RETRYABLE_DB_ERRORS as exc:
+                last_error = exc
+                if attempt >= attempts:
+                    break
+                delay = base_delay * attempt
+                logger.warning(
+                    "TaskStore %s attempt %d/%d failed: %s; retrying in %.2fs",
+                    operation,
+                    attempt,
+                    attempts,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+
+        assert last_error is not None
+        raise last_error
 
     async def create(self, req: TaskCreateRequest) -> dict[str, Any]:
         task_id = str(uuid.uuid4())[:8]
@@ -114,38 +156,44 @@ class TaskStore:
             else None
         )
 
-        async with self.pool.acquire() as conn:
-            sets = ["status = $2"]
-            vals: list[Any] = [task_id, status.value]
-            idx = 3
+        async def _update() -> None:
+            async with self.pool.acquire() as conn:
+                sets = ["status = $2"]
+                vals: list[Any] = [task_id, status.value]
+                idx = 3
 
-            if completed_at is not None:
-                sets.append(f"completed_at = ${idx}")
-                vals.append(completed_at)
-                idx += 1
+                if completed_at is not None:
+                    sets.append(f"completed_at = ${idx}")
+                    vals.append(completed_at)
+                    idx += 1
 
-            for k, v in kwargs.items():
-                if k == "pipeline_output" and v is not None:
-                    v = json.dumps(v, ensure_ascii=False)
-                    sets.append(f"{k} = ${idx}::jsonb")
-                else:
-                    sets.append(f"{k} = ${idx}")
-                vals.append(v)
-                idx += 1
+                for k, v in kwargs.items():
+                    if k == "pipeline_output" and v is not None:
+                        v = json.dumps(v, ensure_ascii=False)
+                        sets.append(f"{k} = ${idx}::jsonb")
+                    else:
+                        sets.append(f"{k} = ${idx}")
+                    vals.append(v)
+                    idx += 1
 
-            sets.append(f"updated_at = ${idx}")
-            vals.append(datetime.now(timezone.utc))
+                sets.append(f"updated_at = ${idx}")
+                vals.append(datetime.now(timezone.utc))
 
-            sql = f"UPDATE tasks SET {', '.join(sets)} WHERE id = $1"
-            await conn.execute(sql, *vals)
+                sql = f"UPDATE tasks SET {', '.join(sets)} WHERE id = $1"
+                await conn.execute(sql, *vals)
+
+        await self._run_with_retry(f"update_status[{task_id}]", _update)
 
     async def append_log(self, task_id: str, line: str) -> None:
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO task_logs (task_id, content) VALUES ($1, $2)",
-                task_id,
-                line,
-            )
+        async def _append() -> None:
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO task_logs (task_id, content) VALUES ($1, $2)",
+                    task_id,
+                    line,
+                )
+
+        await self._run_with_retry(f"append_log[{task_id}]", _append)
 
     async def list_all(self, limit: int = 50) -> list[dict[str, Any]]:
         async with self.pool.acquire() as conn:

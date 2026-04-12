@@ -51,7 +51,7 @@ const PIPELINE_PHASES: PipelinePhase[] = [
   },
   {
     id: "mux",
-    label: "COMP",
+    label: "FINAL",
     icon: <Combine className="h-3.5 w-3.5" />,
     keywords: ["phase 4", "[mux]", "ffmpeg", "final video"],
   },
@@ -238,24 +238,6 @@ export function PipelineProgress({ events, taskStatus }: PipelineProgressProps) 
   const doneCount = phases.filter((phase) => phase.status === "done").length;
   const activeUntil = activeIndex >= 0 ? activeIndex : doneCount;
 
-  const isIdle = taskStatus === "pending" && events.length === 0;
-  const isCompleted = taskStatus === "completed";
-  const isFailed = taskStatus === "failed";
-  const activePhase = phases.find((phase) => phase.status === "active");
-  const headerLabel = isCompleted
-    ? "Completed"
-    : isFailed
-      ? "Needs Attention"
-      : activePhase?.phase.label ?? latestStatusPayload?.phase ?? (isIdle ? "Idle" : "Running");
-  const headerTone = isCompleted
-    ? "text-emerald-400"
-    : isFailed
-      ? "text-red-400"
-      : isIdle
-        ? "text-muted-foreground/30"
-        : "text-cyan-400";
-  const phaseMessage = latestStatusPayload?.message ?? null;
-
   return (
     <div className="w-full relative flex items-center justify-between pb-1 gap-1">
       {phases.map((state, index) => {
@@ -273,12 +255,12 @@ export function PipelineProgress({ events, taskStatus }: PipelineProgressProps) 
                       : "left-1/2 -translate-x-1/2 text-center"
                 } ${
                   state.status === "active"
-                    ? "font-semibold text-cyan-400 drop-shadow-[0_0_10px_rgba(6,182,212,0.8)]"
+                    ? "font-semibold text-cyan-300 drop-shadow-[0_0_12px_rgba(34,211,238,0.95)]"
                     : state.status === "done"
-                      ? "text-emerald-400/90"
+                      ? "text-emerald-400/75"
                       : state.status === "error"
-                        ? "text-red-400/90 drop-shadow-[0_0_10px_rgba(248,113,113,0.8)]"
-                        : "text-muted-foreground/40"
+                        ? "font-medium text-red-400/90 drop-shadow-[0_0_10px_rgba(248,113,113,0.8)]"
+                        : "text-muted-foreground/25"
                 }`}
               >
                 {state.phase.label}

@@ -437,14 +437,7 @@ export function LogViewer({ events, isRunning, taskStatus }: LogViewerProps) {
         <div className="flex-1 px-6 opacity-90 max-w-[600px] mx-auto min-w-0">
           <PipelineProgress events={events} taskStatus={taskStatus} />
         </div>
-        <div className="flex items-center justify-end w-32">
-          {isRunning && (
-            <span className="flex items-center justify-end gap-2 pl-4 border-l border-white/10 shrink-0">
-              <span className="h-3 w-1 animate-pulse bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
-              <span className="font-mono text-[10px] uppercase tracking-wider text-green-400">Active</span>
-            </span>
-          )}
-        </div>
+        <div className="w-32 shrink-0" />
       </div>
 
       {events.length > 0 && <span className="shrink-0"><StatsBar events={events} /></span>}

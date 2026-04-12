@@ -196,8 +196,19 @@ def _safe_schedule(loop: asyncio.AbstractEventLoop, coro_factory) -> None:
     Silently drops the callback if the loop is already closed (e.g. during
     test teardown or server shutdown).
     """
+    def _schedule() -> None:
+        task = asyncio.create_task(coro_factory())
+
+        def _log_task_failure(done_task: asyncio.Task[Any]) -> None:
+            try:
+                done_task.result()
+            except Exception:
+                logger.exception("Background task scheduled via _safe_schedule failed")
+
+        task.add_done_callback(_log_task_failure)
+
     try:
-        loop.call_soon_threadsafe(lambda: asyncio.create_task(coro_factory()))
+        loop.call_soon_threadsafe(_schedule)
     except RuntimeError:
         # Loop closed — acceptable during shutdown / test cleanup
         pass
