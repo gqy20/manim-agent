@@ -146,3 +146,71 @@ def build_output_repair_prompt(
         f"{partial_output_json}\n"
     )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
+
+
+def build_narration_generation_prompt(
+    user_text: str,
+    target_duration_seconds: int,
+    *,
+    plan_text: str,
+    implemented_beats: list[str],
+    beat_to_narration_map: list[str],
+    build_summary: str | None,
+    video_duration_seconds: float | None,
+) -> str:
+    """Build a no-tools prompt for generating natural spoken Chinese narration.
+
+    Runs after the render is complete, so the LLM has full context about
+    what was actually built vs what was planned.
+    """
+    normalized = user_text.strip()
+    target_duration = format_target_duration(target_duration_seconds)
+
+    beats_json = json.dumps(implemented_beats, ensure_ascii=False, indent=2)
+    beat_map_json = json.dumps(beat_to_narration_map, ensure_ascii=False, indent=2)
+
+    duration_context = (
+        f"{video_duration_seconds:.1f}s"
+        if video_duration_seconds is not None and video_duration_seconds > 0
+        else "unknown"
+    )
+
+    # Character count targets based on video duration
+    effective_duration = video_duration_seconds or target_duration_seconds
+    char_min = max(20, int(effective_duration * 2.5))
+    char_max = max(40, int(effective_duration * 4))
+
+    guidance = (
+        "\n\nNarration generation pass:\n"
+        "- Do not use any tools in this pass.\n"
+        "- Do not write, edit, render, probe, or inspect files.\n"
+        "- Your ONLY job is to produce a natural, spoken Simplified Chinese narration "
+        "for the completed educational math animation.\n\n"
+
+        "## What you are narrating\n"
+        f"- Original user request: {normalized}\n"
+        f"- Target video duration: about {target_duration}\n"
+        f"- Actual rendered video duration: {duration_context}\n\n"
+
+        "## Animation structure (what was actually built)\n"
+        f"- Implemented beats (in order):\n{beats_json}\n\n"
+        f"- Beat-to-narration hints from the build phase:\n{beat_map_json}\n\n"
+        f"- Build summary: {build_summary or '(none)'}\n\n"
+
+        "## Approved scene plan (reference for context)\n"
+        f"{plan_text}\n\n"
+
+        "## Output requirements\n"
+        "- Write the narration as continuous spoken Chinese, like a teacher explaining to students.\n"
+        "- Each sentence should map naturally to one animation beat in order.\n"
+        "- Use conversational connectors: '首先', '接下来', '然后', "
+        "'我们可以看到', '注意', '最后', '也就是说'.\n"
+        "- Avoid bullet points, numbered lists, or instructional language.\n"
+        "- Do NOT include the user request text, topic title only, or meta-instructions.\n"
+        "- Do NOT say '请制作', '演示', '生成', or any task-description phrasing.\n"
+        "- Do NOT read formulas verbatim — describe what they show instead.\n"
+        f"- Match the narration length to the video duration: aim for about "
+        f"{char_min}–{char_max} Chinese characters.\n"
+        "- Return ONLY the narration text as your response, nothing else.\n"
+    )
+    return f"{normalized}{guidance}" if normalized else guidance.strip()

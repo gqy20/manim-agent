@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from manim_agent import __main__ as main_module
+from manim_agent import pipeline as main_module
 from manim_agent.review_schema import RenderReviewOutput
 from ._test_main_dispatcher_helpers import _make_two_stage_query_side_effect
 
@@ -71,11 +71,11 @@ class TestPipelinePhaseLogsViaCallback:
         ]
 
         with (
-            patch("manim_agent.__main__.query") as mock_query,
-            patch("manim_agent.__main__.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
-            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
-            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
-            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock) as mock_review,
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_tts.return_value = MagicMock(
@@ -116,11 +116,11 @@ class TestPipelinePhaseLogsViaCallback:
         )
 
         with (
-            patch("manim_agent.__main__.query") as mock_query,
-            patch("manim_agent.__main__.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
-            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
-            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
-            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock) as mock_review,
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_tts.return_value = mock_tts_result

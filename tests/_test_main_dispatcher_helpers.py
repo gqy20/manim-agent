@@ -14,8 +14,8 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from manim_agent import __main__ as main_module
-from manim_agent.__main__ import _MessageDispatcher
+from manim_agent.dispatcher import _MessageDispatcher
+from manim_agent import pipeline as main_module
 
 
 def _make_text_block(text: str) -> TextBlock:

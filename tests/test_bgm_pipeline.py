@@ -72,14 +72,14 @@ async def test_pipeline_falls_back_to_voice_only_when_bgm_generation_fails():
             yield msg
 
     with (
-        patch("manim_agent.__main__.query", side_effect=mock_query_gen),
+        patch("manim_agent.pipeline.query", side_effect=mock_query_gen),
         patch(
-            "manim_agent.__main__.render_review.extract_review_frames",
+            "manim_agent.pipeline.render_review.extract_review_frames",
             new_callable=AsyncMock,
             return_value=["frame-1.png"],
         ),
         patch(
-            "manim_agent.__main__._run_render_review",
+            "manim_agent.pipeline._run_render_review",
             new_callable=AsyncMock,
             return_value=RenderReviewOutput(
                 summary="Looks good.",
@@ -88,14 +88,14 @@ async def test_pipeline_falls_back_to_voice_only_when_bgm_generation_fails():
                 suggested_edits=[],
             ),
         ),
-        patch("manim_agent.__main__.video_builder._get_duration", new_callable=AsyncMock, return_value=60.0),
-        patch("manim_agent.__main__.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+        patch("manim_agent.pipeline.video_builder._get_duration", new_callable=AsyncMock, return_value=60.0),
+        patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
         patch(
-            "manim_agent.__main__.music_client.generate_instrumental",
+            "manim_agent.pipeline.music_client.generate_instrumental",
             new_callable=AsyncMock,
             side_effect=RuntimeError("bgm unavailable"),
         ) as mock_bgm,
-        patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_mux,
+        patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_mux,
     ):
         mock_tts.return_value = MagicMock(
             audio_path="out/audio.mp3",

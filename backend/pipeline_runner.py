@@ -138,7 +138,7 @@ async def _pipeline_body(
     Shared by both thread-mode and inline-mode callers.
     Raises on pipeline failure so caller can handle status update.
     """
-    from manim_agent.__main__ import run_pipeline
+    from manim_agent.pipeline import run_pipeline
 
     dispatcher_ref: list[Any] = []
     task_dir = Path(cwd).resolve()

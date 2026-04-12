@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from manim_agent.__main__ import main
 from manim_agent.repo_paths import resolve_plugin_dir
 
 from ._test_main_dispatcher_helpers import (
@@ -111,11 +112,11 @@ class TestRunPipeline:
         ]
 
         with (
-            patch("manim_agent.__main__.query") as mock_query,
-            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
-            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
-            patch("manim_agent.__main__.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
-            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
+            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
+            patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
             mock_tts.return_value = MagicMock(
@@ -148,11 +149,11 @@ class TestRunPipeline:
         ]
 
         with (
-            patch("manim_agent.__main__.query") as mock_query,
-            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
-            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
-            patch("manim_agent.__main__.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
-            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
+            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
+            patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
 
@@ -181,9 +182,9 @@ class TestRunPipeline:
         ]
 
         with (
-            patch("manim_agent.__main__.query") as mock_query,
-            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
-            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
+            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
 
@@ -202,6 +203,7 @@ class TestRunPipeline:
             "scene",
             "render",
             "render",
+            "narration",
             "render",
         ]
         assert all(e.data.task_status == "running" for e in status_events)
@@ -213,7 +215,7 @@ class TestRunPipeline:
         ]
 
         with (
-            patch("manim_agent.__main__.query") as mock_query,
+            patch("manim_agent.pipeline.query") as mock_query,
             pytest.raises(RuntimeError, match="valid pipeline output"),
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
@@ -235,7 +237,7 @@ class TestRunPipeline:
         ]
 
         with (
-            patch("manim_agent.__main__.query") as mock_query,
+            patch("manim_agent.pipeline.query") as mock_query,
             pytest.raises(RuntimeError, match="valid pipeline output"),
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
@@ -271,11 +273,11 @@ class TestRunPipeline:
         ]
 
         with (
-            patch("manim_agent.__main__.query") as mock_query,
-            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
-            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
-            patch("manim_agent.__main__.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
-            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
+            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
+            patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
             mock_tts.return_value = MagicMock(
@@ -301,6 +303,7 @@ class TestRunPipeline:
             "scene",
             "render",
             "render",
+            "narration",
             "tts",
             "mux",
         ]
@@ -390,10 +393,10 @@ class TestAsyncioImport:
     def test_main_is_coroutine_function(self):
         import inspect
 
-        assert inspect.iscoroutinefunction(main_module.main)
+        assert inspect.iscoroutinefunction(main)
 
     def test_main_callable_without_nameerror(self):
-        assert callable(main_module.main)
+        assert callable(main)
 
 
 class TestBackgroundMusic:
@@ -413,16 +416,16 @@ class TestBackgroundMusic:
         ]
 
         with (
-            patch("manim_agent.__main__.query") as mock_query,
-            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
-            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
-            patch("manim_agent.__main__.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
+            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
+            patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
             patch(
-                "manim_agent.__main__.music_client.generate_instrumental",
+                "manim_agent.pipeline.music_client.generate_instrumental",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("bgm unavailable"),
             ) as mock_bgm,
-            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
             mock_tts.return_value = MagicMock(

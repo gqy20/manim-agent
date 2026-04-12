@@ -33,12 +33,15 @@ class TestTTSNarrationFlow:
             captured_tts_text.append(text)
             return MagicMock(audio_path="a.mp3", subtitle_path="sub.srt", duration_ms=1000)
 
+        expected_narration = "First show a circle, then morph it into a square."
+
         with (
-            patch("manim_agent.__main__.query") as mock_query,
-            patch("manim_agent.__main__.tts_client.synthesize", side_effect=capture_tts),
-            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
-            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
-            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock) as mock_review,
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.generate_narration", new_callable=AsyncMock, return_value=expected_narration),
+            patch("manim_agent.pipeline.tts_client.synthesize", side_effect=capture_tts),
+            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
+            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_vid.return_value = "final.mp4"
@@ -56,7 +59,7 @@ class TestTTSNarrationFlow:
                 no_tts=False,
             )
 
-        assert captured_tts_text == ["First show a circle, then morph it into a square."]
+        assert captured_tts_text == [expected_narration]
 
     @pytest.mark.asyncio
     async def test_tts_falls_back_to_user_text_when_structured_output_narration_missing(self):
@@ -73,12 +76,15 @@ class TestTTSNarrationFlow:
             captured_tts_text.append(text)
             return MagicMock(audio_path="a.mp3", subtitle_path="sub.srt", duration_ms=1000)
 
+        expected_narration = "Fallback narration from the user request."
+
         with (
-            patch("manim_agent.__main__.query") as mock_query,
-            patch("manim_agent.__main__.tts_client.synthesize", side_effect=capture_tts),
-            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
-            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
-            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock) as mock_review,
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.generate_narration", new_callable=AsyncMock, return_value=expected_narration),
+            patch("manim_agent.pipeline.tts_client.synthesize", side_effect=capture_tts),
+            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
+            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_vid.return_value = "final.mp4"
@@ -96,7 +102,7 @@ class TestTTSNarrationFlow:
                 no_tts=False,
             )
 
-        assert captured_tts_text == ["Fallback narration from the user request."]
+        assert captured_tts_text == [expected_narration]
 
     @pytest.mark.asyncio
     async def test_tts_uses_merged_narration_after_task_notification(self):
@@ -125,12 +131,15 @@ class TestTTSNarrationFlow:
             captured_tts_text.append(text)
             return MagicMock(audio_path="a.mp3", subtitle_path="sub.srt", duration_ms=1000)
 
+        expected_narration = "Narration from structured output."
+
         with (
-            patch("manim_agent.__main__.query") as mock_query,
-            patch("manim_agent.__main__.tts_client.synthesize", side_effect=capture_tts),
-            patch("manim_agent.__main__.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
-            patch("manim_agent.__main__.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
-            patch("manim_agent.__main__._run_render_review", new_callable=AsyncMock) as mock_review,
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.generate_narration", new_callable=AsyncMock, return_value=expected_narration),
+            patch("manim_agent.pipeline.tts_client.synthesize", side_effect=capture_tts),
+            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
+            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_vid.return_value = "final.mp4"
@@ -148,4 +157,4 @@ class TestTTSNarrationFlow:
                 no_tts=False,
             )
 
-        assert captured_tts_text == ["Narration from structured output."]
+        assert captured_tts_text == [expected_narration]

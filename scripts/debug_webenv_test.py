@@ -30,7 +30,8 @@ from claude_agent_sdk import (
     query,
 )
 from manim_agent import prompts
-from manim_agent.__main__ import _on_post_tool_use, _build_options, run_pipeline
+from manim_agent.hooks import _on_post_tool_use
+from manim_agent.pipeline import _build_options, run_pipeline
 
 
 # ── Simulate web backend environment ─────────────────────────────

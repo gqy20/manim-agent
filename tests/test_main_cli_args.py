@@ -3,12 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from manim_agent import __main__ as main_module
+from manim_agent.__main__ import parse_args
+from manim_agent import pipeline as main_module
 
 
 class TestParseArgs:
     def test_parse_args_defaults(self):
-        args = main_module.parse_args(["解释圆形如何变成正方形"])
+        args = parse_args(["解释圆形如何变成正方形"])
 
         assert args.text == "解释圆形如何变成正方形"
         assert args.output == "output.mp4"
@@ -22,7 +23,7 @@ class TestParseArgs:
         assert args.target_duration == 60
 
     def test_parse_args_all_options(self):
-        args = main_module.parse_args(
+        args = parse_args(
             [
                 "讲解二叉树",
                 "-o",
@@ -56,7 +57,7 @@ class TestParseArgs:
 
     def test_parse_args_requires_text(self):
         with pytest.raises(SystemExit):
-            main_module.parse_args([])
+            parse_args([])
 
 
 class TestStderrHandler:

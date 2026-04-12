@@ -26,7 +26,7 @@ def estimate_spoken_duration_seconds(text: str) -> float:
 
     cjk_chars = len(re.findall(r"[\u4e00-\u9fff]", normalized))
     latin_words = len(re.findall(r"[A-Za-z0-9]+", normalized))
-    punctuation = len(re.findall(r"[锛屻€傦紒锛?.!?锛?锛?銆乚", normalized))
+    punctuation = len(re.findall(r"[，。！？、；：……\.\!\?\,\;]", normalized))
 
     return (cjk_chars / 3.8) + (latin_words / 2.5) + (punctuation * 0.12)
 
