@@ -304,6 +304,24 @@ class TestBuildOptions:
         assert plugin_root.exists()
         assert manifest.exists()
 
+    def test_scene_plan_and_build_skills_exist(self):
+        plugin_root = main_module.MANIM_PLUGIN_DIR
+        scene_plan_skill = plugin_root / "skills" / "scene-plan" / "SKILL.md"
+        scene_build_skill = plugin_root / "skills" / "scene-build" / "SKILL.md"
+        assert scene_plan_skill.exists()
+        assert scene_build_skill.exists()
+
+    def test_old_misspelled_skill_paths_do_not_exist(self):
+        plugin_root = main_module.MANIM_PLUGIN_DIR
+        assert not (plugin_root / "skills" / "scence-plan").exists()
+        assert not (plugin_root / "skills" / "scence-build").exists()
+
+    def test_plugin_manifest_mentions_scene_plan_and_build(self):
+        manifest = main_module.MANIM_PLUGIN_DIR / ".codex-plugin" / "plugin.json"
+        text = manifest.read_text(encoding="utf-8")
+        assert "/scene-plan" in text
+        assert "/scene-build" in text
+
 
 class TestAsyncioImport:
     def test_asyncio_in_module_globals(self):

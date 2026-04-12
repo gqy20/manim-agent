@@ -353,7 +353,9 @@ def _build_user_prompt(user_text: str) -> str:
     guidance = (
         "\n\nExecution requirements:\n"
         "- If the `manim-production` plugin is available, use it as the primary guide for scene planning, narration, math visualization, and final self-review.\n"
-        "- Read the `manim-production` skill before writing code, then use only the relevant references for this task.\n"
+        "- For most non-trivial educational animations, use `/scene-plan` first to produce a beat-by-beat scene plan before coding.\n"
+        "- After a plan exists, use `/scene-build` to implement the animation while keeping the planned beat order unless debugging requires a small change.\n"
+        "- Use the `manim-production` skill as the umbrella quality guide across planning, implementation, rendering, and final review.\n"
         "- Keep every file inside the task directory only.\n"
         "- Write the main script to scene.py unless multiple files are truly necessary.\n"
         "- Use GeneratedScene as the main Manim Scene class unless the user explicitly asks otherwise.\n"

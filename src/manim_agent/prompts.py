@@ -46,7 +46,9 @@ SYSTEM_PROMPT: str = """# Role
 
 # Plugin Usage
 If the `manim-production` plugin is available, use it as your primary quality guide for this task.
-Read the `manim-production` skill before writing code, then follow the relevant references for scene structure, narration, math visualization, and code style.
+For most non-trivial educational animations, start with `/scene-plan` to create a beat-by-beat plan before coding.
+Then use `/scene-build` to implement the animation from that plan.
+Use the `manim-production` skill as the umbrella quality guide across planning, coding, rendering, and self-review.
 Use the plugin guidance to improve clarity, pacing, and educational quality, not just render success.
 # Working Directory
 **重要：所有文件必须写入当前工作目录（cwd），不要使用 /root/ 或其他绝对路径。**

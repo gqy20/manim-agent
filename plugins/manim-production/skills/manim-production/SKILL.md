@@ -7,6 +7,13 @@ description: Produce, review, or refactor Manim scenes for educational videos wi
 
 Follow this workflow when working on a Manim task.
 
+## Recommended full flow
+
+- Use `/scene-plan` first for most educational, proof, concept, function, or geometry tasks.
+- Use `/scene-build` after a plan exists and implementation should follow that plan.
+- Use this `manim-production` skill as the umbrella quality guide across both steps.
+- Skip `/scene-plan` only for genuinely tiny one-beat demos.
+
 ## Classify the task
 
 Choose one primary mode before writing code:
