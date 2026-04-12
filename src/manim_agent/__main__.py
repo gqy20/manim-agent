@@ -1104,41 +1104,67 @@ async def run_pipeline(
             video_output,
             resolved_cwd,
         )
-        review_result = await _run_render_review(
-            user_text=user_text,
-            plan_text=plan_text,
-            video_output=video_output,
-            frame_paths=review_frames,
-            target_duration_seconds=target_duration_seconds,
-            actual_duration_seconds=po.duration_seconds if po is not None else None,
-            cwd=resolved_cwd,
-            system_prompt=system_prompt,
-            quality=quality,
-            log_callback=log_callback,
-        )
-        dispatcher._print(f"  [REVIEW] {review_result.summary}")
-        if review_result.blocking_issues:
-            for issue in review_result.blocking_issues:
-                dispatcher._print(f"  [REVIEW][BLOCK] {issue}")
-        if review_result.suggested_edits:
-            for edit in review_result.suggested_edits:
-                dispatcher._print(f"  [REVIEW][FIX] {edit}")
-        if po is not None:
-            po.review_summary = review_result.summary
-            po.review_approved = review_result.approved
-            po.review_blocking_issues = list(review_result.blocking_issues)
-            po.review_suggested_edits = list(review_result.suggested_edits)
-            po.review_frame_paths = list(review_frames)
-        dispatcher.partial_review_summary = review_result.summary
-        dispatcher.partial_review_approved = review_result.approved
-        dispatcher.partial_review_blocking_issues = list(review_result.blocking_issues)
-        dispatcher.partial_review_suggested_edits = list(review_result.suggested_edits)
-        dispatcher.partial_review_frame_paths = list(review_frames)
-        if not review_result.approved:
-            raise RuntimeError(
-                "Rendered video failed the render-review gate. "
-                + "; ".join(review_result.blocking_issues or [review_result.summary])
+        review_result: RenderReviewOutput | None = None
+        review_warning: str | None = None
+        try:
+            review_result = await _run_render_review(
+                user_text=user_text,
+                plan_text=plan_text,
+                video_output=video_output,
+                frame_paths=review_frames,
+                target_duration_seconds=target_duration_seconds,
+                actual_duration_seconds=po.duration_seconds if po is not None else None,
+                cwd=resolved_cwd,
+                system_prompt=system_prompt,
+                quality=quality,
+                log_callback=log_callback,
             )
+        except RuntimeError as exc:
+            if "structured verdict" not in str(exc):
+                raise
+            review_warning = (
+                "Render review did not produce a structured verdict. "
+                "Continuing because review formatting can be incomplete without blocking delivery."
+            )
+            dispatcher._print(f"  [WARN] {review_warning}")
+            logger.warning("run_pipeline: %s", review_warning)
+
+        if review_result is not None:
+            dispatcher._print(f"  [REVIEW] {review_result.summary}")
+            if review_result.blocking_issues:
+                for issue in review_result.blocking_issues:
+                    dispatcher._print(f"  [REVIEW][BLOCK] {issue}")
+            if review_result.suggested_edits:
+                for edit in review_result.suggested_edits:
+                    dispatcher._print(f"  [REVIEW][FIX] {edit}")
+            if po is not None:
+                po.review_summary = review_result.summary
+                po.review_approved = review_result.approved
+                po.review_blocking_issues = list(review_result.blocking_issues)
+                po.review_suggested_edits = list(review_result.suggested_edits)
+                po.review_frame_paths = list(review_frames)
+            dispatcher.partial_review_summary = review_result.summary
+            dispatcher.partial_review_approved = review_result.approved
+            dispatcher.partial_review_blocking_issues = list(review_result.blocking_issues)
+            dispatcher.partial_review_suggested_edits = list(review_result.suggested_edits)
+            dispatcher.partial_review_frame_paths = list(review_frames)
+            if not review_result.approved:
+                raise RuntimeError(
+                    "Rendered video failed the render-review gate. "
+                    + "; ".join(review_result.blocking_issues or [review_result.summary])
+                )
+        else:
+            if po is not None:
+                po.review_summary = review_warning
+                po.review_approved = None
+                po.review_blocking_issues = []
+                po.review_suggested_edits = []
+                po.review_frame_paths = list(review_frames)
+            dispatcher.partial_review_summary = review_warning
+            dispatcher.partial_review_approved = None
+            dispatcher.partial_review_blocking_issues = []
+            dispatcher.partial_review_suggested_edits = []
+            dispatcher.partial_review_frame_paths = list(review_frames)
 
         duration_issue = _duration_target_issue(
             po.duration_seconds if po is not None else None,
