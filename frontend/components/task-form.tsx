@@ -121,12 +121,8 @@ export function TaskForm() {
   const handlePromptChange = useCallback(
     (value: string) => {
       setText(value);
-      if (clarification && value.trim() !== clarificationSourceText) {
-        setClarification(null);
-        setClarificationSourceText("");
-      }
     },
-    [clarification, clarificationSourceText],
+    [],
   );
 
   const runTaskCreation = useCallback(
@@ -201,8 +197,8 @@ export function TaskForm() {
     const normalized = text.trim();
     if (!normalized) return;
 
-    if (clarification && clarificationSourceText === normalized) {
-      await runTaskCreation(clarification.recommended_request_cn);
+    if (clarification && clarificationSourceText && normalized !== clarificationSourceText) {
+      await runTaskCreation(normalized);
       return;
     }
 
@@ -212,6 +208,7 @@ export function TaskForm() {
       const result = await clarifyContent({ user_text: normalized });
       setClarification(result.clarification);
       setClarificationSourceText(normalized);
+      setText(result.clarification.recommended_request_cn);
     } catch (err) {
       setError(err instanceof Error ? err.message : "内容理解失败");
     } finally {
@@ -220,7 +217,7 @@ export function TaskForm() {
   }
 
   const hasCurrentClarification =
-    !!clarification && clarificationSourceText === text.trim();
+    !!clarification && !!clarificationSourceText && text.trim() !== clarificationSourceText;
   const canSubmit = !submitting && !clarifying && !!text.trim();
 
   useGSAP(() => {
@@ -288,6 +285,7 @@ export function TaskForm() {
               variant="outline"
               size="sm"
               onClick={() => {
+                setText(clarificationSourceText);
                 setClarification(null);
                 setClarificationSourceText("");
               }}
@@ -357,8 +355,8 @@ export function TaskForm() {
 
           <section className="mt-4 rounded-xl border border-white/10 bg-black/15 p-3">
             <p className="text-xs font-medium text-white/45">推荐提交文本</p>
-            <p className="mt-2 text-sm leading-6 text-white/88">
-              {clarification.recommended_request_cn}
+            <p className="mt-1 text-[11px] text-white/45">
+              系统已将推荐文本回填到上方输入框，你可以直接修改后继续生成。
             </p>
           </section>
         </div>
