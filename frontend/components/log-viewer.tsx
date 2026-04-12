@@ -17,6 +17,7 @@ import {
   isToolResult,
   isToolStart,
 } from "@/types";
+import { getLatestStructuredStatus, normalizeVisualPhase } from "@/lib/pipeline-phase";
 
 import { PipelineProgress } from "./pipeline-progress";
 
@@ -127,9 +128,13 @@ function StatsBar({ events }: { events: SSEEvent[] }) {
   );
 }
 
-function detectPhase(event: SSEEvent, index: number): PhaseMarker | null {
+function detectPhase(
+  event: SSEEvent,
+  index: number,
+  hasStructuredPhaseStatus: boolean,
+): PhaseMarker | null {
   if (isStatusPayload(event)) {
-    const phase = event.data.phase;
+    const phase = normalizeVisualPhase(event.data.phase);
     if (!phase) return null;
 
     const structuredMap: Record<string, PhaseMarker> = {
@@ -137,12 +142,14 @@ function detectPhase(event: SSEEvent, index: number): PhaseMarker | null {
       scene: { id: `phase-${index}`, label: "SCENE", icon: "SCEN", className: "phase-scene" },
       render: { id: `phase-${index}`, label: "RENDER", icon: "RNDR", className: "phase-render" },
       tts: { id: `phase-${index}`, label: "VOICE", icon: "VOIC", className: "phase-tts" },
-      mux: { id: `phase-${index}`, label: "COMP", icon: "COMP", className: "phase-mux" },
-      done: { id: `phase-${index}`, label: "DONE", icon: "DONE", className: "phase-done" },
-
+      mux: { id: `phase-${index}`, label: "FINAL", icon: "COMP", className: "phase-mux" },
     };
 
     return structuredMap[phase] ?? null;
+  }
+
+  if (hasStructuredPhaseStatus) {
+    return null;
   }
 
   if (event.type !== "log" || typeof event.data !== "string") return null;
@@ -407,9 +414,10 @@ export function LogViewer({ events, isRunning, taskStatus }: LogViewerProps) {
   }, [events]);
 
   const phaseMarkers = useMemo(() => {
+    const hasStructuredPhaseStatus = !!getLatestStructuredStatus(events)?.phase;
     const markers: { index: number; marker: PhaseMarker }[] = [];
     events.forEach((event, index) => {
-      const marker = detectPhase(event, index);
+      const marker = detectPhase(event, index, hasStructuredPhaseStatus);
       if (marker) {
         markers.push({ index, marker });
       }

@@ -2,8 +2,7 @@
 
 import { useMemo } from "react";
 import type { ReactNode } from "react";
-import type { SSEEvent, StatusPayload } from "@/types";
-import { isStatusPayload } from "@/types";
+import type { SSEEvent } from "@/types";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -14,52 +13,43 @@ import {
   Mic,
   Sparkles,
 } from "lucide-react";
+import {
+  getLatestVisualPhase,
+  getVisualPhaseIndex,
+  type VisualPipelinePhase,
+} from "@/lib/pipeline-phase";
 
 export interface PipelinePhase {
   id: string;
   label: string;
   icon: ReactNode;
-  keywords: string[];
 }
-
-const PHASE_ORDER = ["init", "scene", "render", "tts", "mux", "done"] as const;
 
 const PIPELINE_PHASES: PipelinePhase[] = [
   {
     id: "init",
     label: "INIT",
     icon: <Sparkles className="h-3.5 w-3.5" />,
-    keywords: ["[progress]", "phase 1", "connect", "init"],
   },
   {
     id: "scene",
     label: "SCENE",
     icon: <Film className="h-3.5 w-3.5" />,
-    keywords: ["scene", "write", "edit", ".py", "generatedscene"],
   },
   {
     id: "render",
     label: "RENDER",
     icon: <Clapperboard className="h-3.5 w-3.5" />,
-    keywords: ["phase 2", "render", "manim", "-qh", "-qm", "-ql"],
   },
   {
     id: "tts",
     label: "VOICE",
     icon: <Mic className="h-3.5 w-3.5" />,
-    keywords: ["phase 3", "[tts]", "voice", "speech", "narration"],
   },
   {
     id: "mux",
     label: "FINAL",
     icon: <Combine className="h-3.5 w-3.5" />,
-    keywords: ["phase 4", "[mux]", "ffmpeg", "final video"],
-  },
-  {
-    id: "done",
-    label: "DONE",
-    icon: <CheckCircle2 className="h-3.5 w-3.5" />,
-    keywords: ["[summary]", "completed", "final.mp4"],
   },
 ];
 
@@ -75,91 +65,35 @@ interface PipelineProgressProps {
   taskStatus: string;
 }
 
-function getActivePhaseIndexFromStatus(
-  phase: StatusPayload["phase"] | undefined,
-): number {
-  if (!phase) return -1;
-  return PHASE_ORDER.indexOf(phase as (typeof PHASE_ORDER)[number]);
-}
-
-function detectSignalDrivenPhaseIndex(events: SSEEvent[]): number {
-  const latestStatusIndex = [...events]
-    .reverse()
-    .find((event): event is SSEEvent & { data: StatusPayload } => isStatusPayload(event))
-    ?.data.phase;
-
-  const statusIndex = getActivePhaseIndexFromStatus(latestStatusIndex);
-  const hasSceneSignals = events.some(
-    (event) =>
-      event.type === "tool_start" ||
-      event.type === "tool_result" ||
-      event.type === "thinking" ||
-      event.type === "progress",
-  );
-
-  let inferredIndex = detectLegacyPhaseFromLogs(events);
-  if (inferredIndex === -1 && hasSceneSignals) {
-    inferredIndex = PHASE_ORDER.indexOf("scene");
-  }
-
-  return Math.max(statusIndex, inferredIndex);
-}
-
-function detectLegacyPhaseFromLogs(events: SSEEvent[]): number {
-  const logText = events
-    .flatMap((event) =>
-      event.type === "log" && typeof event.data === "string" ? [event.data.toLowerCase()] : [],
-    )
-    .join(" ");
-
-  let maxActiveIndex = -1;
-  for (let index = 0; index < PIPELINE_PHASES.length; index += 1) {
-    const phase = PIPELINE_PHASES[index];
-    if (phase.keywords.some((keyword) => logText.includes(keyword))) {
-      maxActiveIndex = index;
-    }
-  }
-
-  if (maxActiveIndex === -1 && events.length > 0) {
-    return 0;
-  }
-
-  return maxActiveIndex;
-}
-
 function detectCurrentPhases(events: SSEEvent[], taskStatus: string): PhaseState[] {
-  const isTerminal = ["completed", "failed"].includes(taskStatus);
+  const visualPhase = getLatestVisualPhase(events);
+  const activePhase: VisualPipelinePhase | null =
+    visualPhase ?? (events.length > 0 ? "init" : null);
+  const activeIndex = getVisualPhaseIndex(activePhase);
   const hasError = taskStatus === "failed";
-
   const states: PhaseState[] = PIPELINE_PHASES.map((phase) => ({
     phase,
     status: "pending",
   }));
 
-  let maxActiveIndex = detectSignalDrivenPhaseIndex(events);
-
-  if (maxActiveIndex < 0 && isTerminal) {
-    maxActiveIndex = PHASE_ORDER.indexOf("done");
-  }
-
   for (let index = 0; index < states.length; index += 1) {
-    if (index < maxActiveIndex) {
+    if (index < activeIndex) {
       states[index].status = "done";
-    } else if (index === maxActiveIndex) {
-      states[index].status = isTerminal ? (hasError ? "error" : "done") : "active";
+    } else if (index === activeIndex) {
+      states[index].status = hasError ? "error" : "active";
     }
   }
 
-  if (taskStatus === "completed") {
+  if (taskStatus === "completed" && visualPhase === "mux") {
     states.forEach((state) => {
       state.status = "done";
     });
   }
 
   if (taskStatus === "failed") {
-    const activeState = states.find((state) => state.status === "active");
-    if (activeState) {
-      activeState.status = "error";
+    const failedIndex = activeIndex >= 0 ? activeIndex : 0;
+    if (states[failedIndex]) {
+      states[failedIndex].status = "error";
     }
   }
 

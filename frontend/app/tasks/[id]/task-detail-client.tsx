@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getTask, getVideoUrl } from "@/lib/api";
 import { logger } from "@/lib/logger";
+import { getDisplayPhaseForTask } from "@/lib/pipeline-phase";
 import { connectTaskEvents } from "@/lib/sse-client";
 import { mergeTaskState } from "@/lib/task-state";
 import type { SSEEvent, Task, TaskStatus } from "@/types";
@@ -82,57 +83,11 @@ function getElapsedRuntime(createdAt: string, completedAt: string | null, now: n
   return Math.max(0, endedAt - startedAt);
 }
 
-function detectVideoPlaceholderPhase(events: SSEEvent[]): VideoPlaceholderPhase {
-  const logText = events
-    .flatMap((event) =>
-      event.type === "log" && typeof event.data === "string" ? [event.data.toLowerCase()] : [],
-    )
-    .join(" ");
-
-  const latestStatus = [...events]
-    .reverse()
-    .find((event) => isStatusPayload(event))
-    ?.data;
-
-  const phaseOrder: VideoPlaceholderPhase[] = ["init", "scene", "render", "tts", "mux", "done"];
-  const statusPhase = latestStatus?.phase ?? null;
-  const statusIndex = statusPhase ? phaseOrder.indexOf(statusPhase) : -1;
-
-  let inferredPhase: VideoPlaceholderPhase = "init";
-  if (logText.includes("[tts]") || logText.includes("voice") || logText.includes("speech")) {
-    inferredPhase = "tts";
-  } else if (
-    logText.includes("[mux]") ||
-    logText.includes("ffmpeg") ||
-    logText.includes("final video")
-  ) {
-    inferredPhase = "mux";
-  } else if (
-    logText.includes("render") ||
-    logText.includes("manim") ||
-    logText.includes("phase 2")
-  ) {
-    inferredPhase = "render";
-  } else if (
-    logText.includes("scene") ||
-    logText.includes("generatedscene") ||
-    logText.includes("tool")
-  ) {
-    inferredPhase = "scene";
-  } else if (
-    events.some(
-      (event) =>
-        event.type === "tool_start" ||
-        event.type === "tool_result" ||
-        event.type === "thinking" ||
-        event.type === "progress",
-    )
-  ) {
-    inferredPhase = "scene";
-  }
-
-  const inferredIndex = phaseOrder.indexOf(inferredPhase);
-  return phaseOrder[Math.max(statusIndex, inferredIndex)] ?? "init";
+function detectVideoPlaceholderPhase(
+  events: SSEEvent[],
+  taskStatus: TaskStatus,
+): VideoPlaceholderPhase {
+  return getDisplayPhaseForTask(events, taskStatus);
 }
 
 function detectTtsTransportMode(events: SSEEvent[]): TtsTransportMode {
@@ -158,7 +113,10 @@ function VideoPipelinePlaceholder({
   createdAt: string;
   completedAt: string | null;
 }) {
-  const phase = useMemo(() => detectVideoPlaceholderPhase(events), [events]);
+  const phase = useMemo(
+    () => detectVideoPlaceholderPhase(events, taskStatus),
+    [events, taskStatus],
+  );
   const ttsTransportMode = useMemo(() => detectTtsTransportMode(events), [events]);
   const [runtimeNow, setRuntimeNow] = useState(() => Date.now());
 

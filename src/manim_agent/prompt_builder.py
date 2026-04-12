@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 
 def format_target_duration(seconds: int) -> str:
     """Format a target runtime for prompt guidance."""
@@ -94,5 +96,47 @@ def build_implementation_prompt(
         "- Make the narration spoken and synchronized with the animation, and cover the full flow rather than collapsing into a one-sentence summary.\n"
         "\nApproved visible scene plan:\n"
         f"{plan_text}\n"
+    )
+    return f"{normalized}{guidance}" if normalized else guidance.strip()
+
+
+def build_output_repair_prompt(
+    user_text: str,
+    target_duration_seconds: int,
+    *,
+    plan_text: str,
+    partial_output: dict[str, object] | None,
+    video_output: str,
+) -> str:
+    """Build a no-tools repair prompt for missing structured output fields."""
+    normalized = user_text.strip()
+    target_duration = format_target_duration(target_duration_seconds)
+    partial_output_json = json.dumps(
+        partial_output or {},
+        ensure_ascii=False,
+        indent=2,
+    )
+    guidance = (
+        "\n\nStructured output repair pass:\n"
+        f"- Target final video duration: about {target_duration}.\n"
+        "- Do not use any tools in this pass.\n"
+        "- Do not write, edit, render, probe, or inspect files.\n"
+        "- The render already exists and should be preserved.\n"
+        "- Your only job is to return a corrected structured_output object.\n"
+        f"- Keep `video_output` set to `{video_output}`.\n"
+        "- Fill in the missing build bookkeeping from the approved plan and the work you already completed.\n"
+        "- `implemented_beats` must be the ordered beat titles actually implemented.\n"
+        "- `build_summary` must briefly summarize what the animation build accomplished.\n"
+        "- `deviations_from_plan` must be an array, even if empty.\n"
+        "- `beat_to_narration_map` must contain one short narration mapping line per beat in order.\n"
+        "- `narration_coverage_complete` must be true only if the narration would cover the full beat flow.\n"
+        "- `estimated_narration_duration_seconds` must be a reasonable estimate.\n"
+        "- If source code was not captured, leave `source_code` as null instead of inventing it.\n"
+        "- If audio/subtitle artifacts do not exist yet, keep them null.\n"
+        "- Return only the corrected structured output via the schema.\n"
+        "\nApproved visible scene plan:\n"
+        f"{plan_text}\n"
+        "\nCurrent partial structured output:\n"
+        f"{partial_output_json}\n"
     )
     return f"{normalized}{guidance}" if normalized else guidance.strip()

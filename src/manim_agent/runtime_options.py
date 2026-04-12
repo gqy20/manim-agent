@@ -141,14 +141,18 @@ def build_options(
     }
 
     permission_mode = select_permission_mode()
-    resolved_allowed_tools = allowed_tools or [
-        "Read",
-        "Write",
-        "Edit",
-        "Bash",
-        "Glob",
-        "Grep",
-    ]
+    resolved_allowed_tools = (
+        allowed_tools
+        if allowed_tools is not None
+        else [
+            "Read",
+            "Write",
+            "Edit",
+            "Bash",
+            "Glob",
+            "Grep",
+        ]
+    )
 
     options = ClaudeAgentOptions(
         cwd=resolved_cwd,

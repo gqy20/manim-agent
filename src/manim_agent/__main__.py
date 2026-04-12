@@ -822,6 +822,12 @@ async def run_pipeline(
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2/5: implementation pass")
         if build_options.allowed_tools:
             dispatcher._print(f"  [SYS] Allowed tools: {', '.join(build_options.allowed_tools)}")
+        _emit_status(
+            event_callback,
+            task_status="running",
+            phase="scene",
+            message="Visible scene plan accepted. Beginning implementation pass.",
+        )
 
         user_prompt = _build_implementation_prompt(
             user_text,
@@ -934,6 +940,49 @@ async def run_pipeline(
             dispatcher.partial_estimated_narration_duration_seconds = (
                 po.estimated_narration_duration_seconds
             )
+
+        needs_build_summary = not _has_structured_build_summary(po)
+        needs_narration_summary = not _has_narration_sync_summary(po)
+        if video_output and (needs_build_summary or needs_narration_summary):
+            dispatcher._print("  [REPAIR] Structured output is incomplete. Running a no-tools repair pass.")
+            repair_prompt = prompt_builder.build_output_repair_prompt(
+                user_text,
+                target_duration_seconds,
+                plan_text=plan_text,
+                partial_output=dispatcher.get_persistable_pipeline_output(),
+                video_output=video_output,
+            )
+            repair_options = _build_options(
+                cwd=resolved_cwd,
+                system_prompt=system_prompt,
+                max_turns=6,
+                prompt_file=prompt_file,
+                quality=quality,
+                log_callback=_counting_log_callback,
+                allowed_tools=[],
+            )
+            async for message in query(prompt=repair_prompt, options=repair_options):
+                dispatcher.dispatch(message)
+
+            repair_result_summary = dispatcher.result_summary
+            result_summary = _merge_result_summaries(result_summary, repair_result_summary)
+            po = dispatcher.get_pipeline_output()
+            if po is not None:
+                if result_summary is not None:
+                    po.run_turns = result_summary.get("turns")
+                    po.run_duration_ms = result_summary.get("duration_ms")
+                    po.run_cost_usd = result_summary.get("cost_usd")
+                po.run_tool_use_count = dispatcher.tool_use_count
+                po.run_tool_stats = dict(dispatcher.tool_stats)
+                po.target_duration_seconds = target_duration_seconds
+                po.plan_text = plan_text
+                dispatcher.partial_build_summary = po.build_summary
+                dispatcher.partial_deviations_from_plan = list(po.deviations_from_plan)
+                dispatcher.partial_beat_to_narration_map = list(po.beat_to_narration_map)
+                dispatcher.partial_narration_coverage_complete = po.narration_coverage_complete
+                dispatcher.partial_estimated_narration_duration_seconds = (
+                    po.estimated_narration_duration_seconds
+                )
 
         if not _has_structured_build_summary(po):
             raise RuntimeError(
