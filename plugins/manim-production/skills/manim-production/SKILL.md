@@ -55,4 +55,5 @@ Choose one primary mode before building:
 - For spatial composition (screen zones, sizing, color, per-mode layouts), read `references/spatial-composition.md`.
 - For animation craft (motion selection, rate functions, timing, composition), read `references/animation-craft.md`.
 - For render quality (presets, caching, performance, file size), read `references/render-quality.md`.
+- For the 3Blue1Brown visual style profile (colors, typography, animation pacing, compositional patterns), read `references/style-3b1b.md`.
 - For layout or failure patterns, read only the specific reference you need.

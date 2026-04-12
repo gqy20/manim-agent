@@ -10,6 +10,7 @@ PROFILE
 .venv/
 tmp/
 artifacts/
+3b1b_videos/
 # Claude Code (local config, permissions, sessions)
 .claude/
 

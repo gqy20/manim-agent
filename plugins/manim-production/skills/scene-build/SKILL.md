@@ -144,6 +144,7 @@ self.play(Indicate(term), rate_func=ease_out_back)
 - For spatial composition, screen zones, element sizing, color palette, and per-mode layout templates, read `../manim-production/references/spatial-composition.md`.
 - For animation selection, rate functions, timing, composition patterns, and motion craft, read `../manim-production/references/animation-craft.md`.
 - For render quality presets, caching behavior, file size budgeting, performance bottlenecks, and renderer selection, read `../manim-production/references/render-quality.md`.
+- For the 3Blue1Brown visual style profile (exact color hex codes, LaTeX template config, animation speed/easing preferences), read `../manim-production/references/style-3b1b.md`.
 - For common implementation mistakes and error-fix patterns, read `references/build-anti-patterns.md`.
 
 ## Final response
