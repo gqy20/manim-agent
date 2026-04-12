@@ -261,7 +261,9 @@ class _MessageDispatcher:
                 self._attach_captured_source_code("_handle_result")
                 if self.pipeline_output is None:
                     self.pipeline_output = validated_output
-                    self._sync_compat_attrs()
+                else:
+                    self._merge_pipeline_output(validated_output)
+                self._sync_compat_attrs()
             except Exception as e:
                 logger.warning("structured_output validation failed: %s", e)
                 logger.debug("_handle_result: validation failed: %s", e)
@@ -406,6 +408,24 @@ class _MessageDispatcher:
             self.video_output = self.pipeline_output.video_output
             self.scene_file = self.pipeline_output.scene_file
             self.scene_class = self.pipeline_output.scene_class
+
+    def _merge_pipeline_output(self, incoming: PipelineOutput) -> None:
+        """Merge richer structured fields into an existing pipeline output."""
+        if self.pipeline_output is None:
+            self.pipeline_output = incoming
+            return
+
+        current = self.pipeline_output
+        current.video_output = current.video_output or incoming.video_output
+        current.scene_file = incoming.scene_file or current.scene_file
+        current.scene_class = incoming.scene_class or current.scene_class
+        current.duration_seconds = (
+            incoming.duration_seconds
+            if incoming.duration_seconds is not None
+            else current.duration_seconds
+        )
+        current.narration = incoming.narration or current.narration
+        current.source_code = incoming.source_code or current.source_code
 
     def _discover_rendered_video_path(self) -> str | None:
         """Discover a rendered MP4 from SDK signals or task output artifacts."""
