@@ -179,9 +179,11 @@ def _build_options(
         "Read", "Write", "Edit", "Bash", "Glob", "Grep",
     ]
 
+    plugin_dir = _resolve_plugin_dir(resolved_cwd)
+
     options = ClaudeAgentOptions(
         cwd=resolved_cwd,
-        add_dirs=[resolved_cwd],
+        add_dirs=[resolved_cwd, str(plugin_dir)],
         system_prompt=final_system_prompt,
         permission_mode=permission_mode,
         max_turns=max_turns,
