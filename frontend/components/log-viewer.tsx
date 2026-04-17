@@ -442,7 +442,7 @@ export function LogViewer({ events, isRunning, taskStatus }: LogViewerProps) {
             SYS.LOGS
           </span>
         </div>
-        <div className="min-w-0 flex-1 opacity-90 sm:px-2 lg:mx-auto lg:max-w-[600px] lg:px-6">
+        <div className="min-w-0 flex-1 opacity-90 sm:px-2 lg:mx-auto lg:max-w-[520px] lg:px-4">
           <PipelineProgress events={events} taskStatus={taskStatus} />
         </div>
         <div className="hidden shrink-0 lg:block lg:w-32" />
