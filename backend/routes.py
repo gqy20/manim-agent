@@ -352,7 +352,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     bgm_volume=req.bgm_volume,
                     target_duration_seconds=req.target_duration_seconds,
                     cwd=str(output_dir),
-                    max_turns=80,
+                    max_turns=200,
                     preset=req.preset,
                     log_callback=log_callback,
                     event_callback=event_callback,
