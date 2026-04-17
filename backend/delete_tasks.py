@@ -29,7 +29,7 @@ from backend.task_store import _get_database_url
 import asyncpg
 
 _OUTPUT_ROOT = ROOT / "backend" / "output"
-_GARBLE_REGEX = re.compile(r"(鈹|锟|�|[?？]{4,})")
+_GARBLE_REGEX = re.compile(r"(\ufffd|[?？]{4,})")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -78,7 +78,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _garbled_sql_clause() -> str:
     return (
-        "user_text ~ '(鈹|锟|�|[?？]{4,})'"
+        "user_text ~ '(\ufffd|[?？]{4,})'"
     )
 
 
