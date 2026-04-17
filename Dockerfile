@@ -40,6 +40,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # ── Python dependencies ─────────────────────────────────────────
+# Cache bust: invalidate Docker layer when source changes
+ARG CACHE_BUST=v2-plugin-addirs-fix
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
 RUN pip install uv && \
