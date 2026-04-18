@@ -17,6 +17,7 @@ class TestTaskStoreLogging:
 
         with (
             patch("backend.task_store.asyncpg.create_pool", new=AsyncMock(return_value=fake_pool)),
+            patch.object(TaskStore, "_ensure_status_constraint", new=AsyncMock()),
             caplog.at_level(logging.INFO),
         ):
             store = TaskStore()

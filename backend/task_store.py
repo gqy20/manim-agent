@@ -55,6 +55,7 @@ class TaskStore:
             min_size=2,
             max_size=10,
         )
+        await self._ensure_status_constraint()
         log_event(
             logger,
             logging.INFO,
@@ -124,6 +125,50 @@ class TaskStore:
             error_type=type(last_error).__name__,
         )
         raise last_error
+
+    async def _ensure_status_constraint(self) -> None:
+        """Ensure the tasks.status CHECK constraint allows the stopped state."""
+        async with self.pool.acquire() as conn:
+            constraints = await conn.fetch(
+                """
+                SELECT conname, pg_get_constraintdef(oid) AS definition
+                FROM pg_constraint
+                WHERE conrelid = 'tasks'::regclass
+                  AND contype = 'c'
+                """
+            )
+
+            status_constraint_name: str | None = None
+            status_constraint_definition: str | None = None
+            for row in constraints:
+                definition = row["definition"] or ""
+                if "status" in definition:
+                    status_constraint_name = row["conname"]
+                    status_constraint_definition = definition
+                    break
+
+            if status_constraint_name is None:
+                return
+
+            if "stopped" in (status_constraint_definition or ""):
+                return
+
+            await conn.execute(
+                f'ALTER TABLE tasks DROP CONSTRAINT "{status_constraint_name}"'
+            )
+            await conn.execute(
+                """
+                ALTER TABLE tasks
+                ADD CONSTRAINT tasks_status_check
+                CHECK (status IN ('pending', 'running', 'completed', 'failed', 'stopped'))
+                """
+            )
+            log_event(
+                logger,
+                logging.INFO,
+                "task_store_status_constraint_updated",
+                constraint=status_constraint_name,
+            )
 
     async def create(self, req: TaskCreateRequest) -> dict[str, Any]:
         task_id = str(uuid.uuid4())[:8]
