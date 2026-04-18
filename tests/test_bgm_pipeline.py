@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from manim_agent.review_schema import RenderReviewOutput
+from manim_agent.schemas import Phase3RenderReviewOutput as RenderReviewOutput
 
 from ._test_main_dispatcher_helpers import (
     _make_assistant_message,
@@ -88,14 +88,20 @@ async def test_pipeline_falls_back_to_voice_only_when_bgm_generation_fails():
                 suggested_edits=[],
             ),
         ),
-        patch("manim_agent.pipeline.video_builder._get_duration", new_callable=AsyncMock, return_value=60.0),
+        patch(
+            "manim_agent.pipeline.video_builder._get_duration",
+            new_callable=AsyncMock,
+            return_value=60.0,
+        ),
         patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
         patch(
             "manim_agent.pipeline.music_client.generate_instrumental",
             new_callable=AsyncMock,
             side_effect=RuntimeError("bgm unavailable"),
         ) as mock_bgm,
-        patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_mux,
+        patch(
+            "manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock
+        ) as mock_mux,
     ):
         mock_tts.return_value = MagicMock(
             audio_path="out/audio.mp3",

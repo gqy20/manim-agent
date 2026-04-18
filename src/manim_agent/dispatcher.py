@@ -20,9 +20,8 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from .build_spec_schema import ScenePlanOutput
+from .schemas import Phase1PlanningOutput as ScenePlanOutput, PipelineOutput
 from .hooks import _HookState, get_hook_state, normalize_path_string
-from .output_schema import PipelineOutput
 from .pipeline_events import (
     EventType,
     PipelineEvent,
@@ -165,8 +164,7 @@ class _MessageDispatcher:
                 scene_class=self._infer_scene_class(),
             )
             logger.debug(
-                "get_pipeline_output: built PipelineOutput from filesystem scan, "
-                "video_output=%r",
+                "get_pipeline_output: built PipelineOutput from filesystem scan, video_output=%r",
                 discovered_video,
             )
         else:
@@ -224,7 +222,9 @@ class _MessageDispatcher:
             "build_summary": getattr(self, "partial_build_summary", None),
             "deviations_from_plan": list(getattr(self, "partial_deviations_from_plan", [])),
             "beat_to_narration_map": list(getattr(self, "partial_beat_to_narration_map", [])),
-            "narration_coverage_complete": getattr(self, "partial_narration_coverage_complete", None),
+            "narration_coverage_complete": getattr(
+                self, "partial_narration_coverage_complete", None
+            ),
             "estimated_narration_duration_seconds": getattr(
                 self,
                 "partial_estimated_narration_duration_seconds",
@@ -287,8 +287,12 @@ class _MessageDispatcher:
         self._assistant_msg_count += 1
         logger.debug(
             "_handle_assistant #%d: stop_reason=%r, model=%r, error=%r, blocks=%d, message_id=%r",
-            self._assistant_msg_count, msg.stop_reason, msg.model,
-            msg.error, len(msg.content), msg.message_id,
+            self._assistant_msg_count,
+            msg.stop_reason,
+            msg.model,
+            msg.error,
+            len(msg.content),
+            msg.message_id,
         )
         for block in msg.content:
             if isinstance(block, TextBlock):
@@ -301,7 +305,9 @@ class _MessageDispatcher:
                 name = block.name
                 self.tool_stats[name] = self.tool_stats.get(name, 0) + 1
                 if name in ("Write", "Edit"):
-                    logger.debug("_handle_assistant: %s tool called (hook will capture source)", name)
+                    logger.debug(
+                        "_handle_assistant: %s tool called (hook will capture source)", name
+                    )
 
             elif isinstance(block, ToolResultBlock):
                 self._log_tool_result(block)
@@ -314,11 +320,14 @@ class _MessageDispatcher:
         self._result_message = msg
         logger.debug(
             "_handle_result: stop_reason=%r, is_error=%s, num_turns=%d",
-            msg.stop_reason, msg.is_error, msg.num_turns,
+            msg.stop_reason,
+            msg.is_error,
+            msg.num_turns,
         )
         logger.debug(
             "_handle_result: duration_ms=%d, duration_api_ms=%d",
-            msg.duration_ms, msg.duration_api_ms,
+            msg.duration_ms,
+            msg.duration_api_ms,
         )
         logger.debug("_handle_result: session_id=%r, uuid=%r", msg.session_id, msg.uuid)
         if msg.total_cost_usd is not None:
@@ -485,7 +494,8 @@ class _MessageDispatcher:
             self._print(f"  {icon} Task failed: {msg.summary}")
         logger.debug(
             "_handle_task_notification: output_file=%r, status=%s",
-            msg.output_file, msg.status,
+            msg.output_file,
+            msg.status,
         )
         self.task_notification_status = msg.status
         self.task_notification_summary = msg.summary
@@ -624,9 +634,7 @@ class _MessageDispatcher:
             else current.bgm_duration_ms
         )
         current.bgm_volume = (
-            incoming.bgm_volume
-            if incoming.bgm_volume is not None
-            else current.bgm_volume
+            incoming.bgm_volume if incoming.bgm_volume is not None else current.bgm_volume
         )
         current.audio_mix_mode = incoming.audio_mix_mode or current.audio_mix_mode
         current.subtitle_path = incoming.subtitle_path or current.subtitle_path
@@ -648,9 +656,7 @@ class _MessageDispatcher:
             else current.tts_usage_characters
         )
         current.run_turns = (
-            incoming.run_turns
-            if incoming.run_turns is not None
-            else current.run_turns
+            incoming.run_turns if incoming.run_turns is not None else current.run_turns
         )
         current.run_tool_use_count = (
             incoming.run_tool_use_count
@@ -665,9 +671,7 @@ class _MessageDispatcher:
             else current.run_duration_ms
         )
         current.run_cost_usd = (
-            incoming.run_cost_usd
-            if incoming.run_cost_usd is not None
-            else current.run_cost_usd
+            incoming.run_cost_usd if incoming.run_cost_usd is not None else current.run_cost_usd
         )
         current.target_duration_seconds = (
             incoming.target_duration_seconds
@@ -698,10 +702,7 @@ class _MessageDispatcher:
         text_candidate = self._extract_video_path_from_text()
         if text_candidate:
             return text_candidate
-        if (
-            not self._saw_completed_task_notification
-            and not hasattr(self, "_result_message")
-        ):
+        if not self._saw_completed_task_notification and not hasattr(self, "_result_message"):
             logger.debug(
                 "_discover_rendered_video_path: skip filesystem scan before completion signal/result"
             )
@@ -749,16 +750,15 @@ class _MessageDispatcher:
             )
 
         if not candidates:
-            logger.debug(
-                "_discover_rendered_video_path: no mp4 found under %s", self.output_cwd
-            )
+            logger.debug("_discover_rendered_video_path: no mp4 found under %s", self.output_cwd)
             return None
 
         best = max(candidates, key=lambda p: p.stat().st_mtime)
         best_str = str(best)
         logger.debug(
             "_discover_rendered_video_path: selected %r from %d candidate(s)",
-            best_str, len(candidates),
+            best_str,
+            len(candidates),
         )
         return best_str
 
@@ -908,10 +908,7 @@ class _MessageDispatcher:
             candidate.scene_file = self._infer_scene_file()
         if candidate.scene_file:
             candidate.scene_file = normalize_path_string(candidate.scene_file)
-        if (
-            candidate.scene_file
-            and candidate.scene_file in self._hook_state.captured_source_code
-        ):
+        if candidate.scene_file and candidate.scene_file in self._hook_state.captured_source_code:
             candidate.source_code = self._hook_state.captured_source_code[candidate.scene_file]
         if not candidate.scene_class:
             candidate.scene_class = self._infer_scene_class()
@@ -954,14 +951,10 @@ class _MessageDispatcher:
         if self.scene_file:
             return normalize_path_string(self.scene_file)
         captured_paths = [
-            Path(normalize_path_string(p)).resolve()
-            for p in self._hook_state.captured_source_code
+            Path(normalize_path_string(p)).resolve() for p in self._hook_state.captured_source_code
         ]
         if self.output_cwd is not None:
-            scoped_paths = [
-                p for p in captured_paths
-                if self.output_cwd in p.parents
-            ]
+            scoped_paths = [p for p in captured_paths if self.output_cwd in p.parents]
             if len(scoped_paths) == 1:
                 return str(scoped_paths[0])
         if len(captured_paths) == 1:
@@ -1108,7 +1101,9 @@ class _MessageDispatcher:
                 if len(full_content) > 500:
                     logger.debug(
                         "_log_tool_result: tool_use_id=%s, is_error=%s, content_length=%d",
-                        block.tool_use_id, block.is_error, len(content),
+                        block.tool_use_id,
+                        block.is_error,
+                        len(content),
                     )
                     logger.debug(
                         "_log_tool_result: FULL CONTENT (first 1000):\n%s",
@@ -1121,29 +1116,37 @@ class _MessageDispatcher:
                 else:
                     logger.debug(
                         "_log_tool_result: tool_use_id=%s, is_error=%s, content=%r",
-                        block.tool_use_id, block.is_error, full_content,
+                        block.tool_use_id,
+                        block.is_error,
+                        full_content,
                     )
             elif isinstance(content, list):
                 logger.debug(
                     "_log_tool_result: tool_use_id=%s, is_error=%s, content_parts=%d",
-                    block.tool_use_id, block.is_error, len(content),
+                    block.tool_use_id,
+                    block.is_error,
+                    len(content),
                 )
                 for i, part in enumerate(content):
                     part_str = str(part)
                     preview = part_str[:300].replace("\n", "\\n")
                     logger.debug(
                         "_log_tool_result:   part[%d] type=%s, preview=%r",
-                        i, type(part).__name__, preview,
+                        i,
+                        type(part).__name__,
+                        preview,
                     )
                     if len(part_str) > 300:
                         logger.debug(
                             "_log_tool_result:   part[%d] ... (total %d chars)",
-                            i, len(part_str),
+                            i,
+                            len(part_str),
                         )
         else:
             logger.debug(
                 "_log_tool_result: tool_use_id=%s, is_error=%s, content=None/empty",
-                block.tool_use_id, block.is_error,
+                block.tool_use_id,
+                block.is_error,
             )
 
         if block.is_error:

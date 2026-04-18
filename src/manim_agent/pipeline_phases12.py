@@ -8,7 +8,7 @@ from typing import Any
 
 from claude_agent_sdk import query
 
-from .build_spec_schema import ScenePlanOutput
+from .schemas import Phase1PlanningOutput as ScenePlanOutput
 from .dispatcher import _MessageDispatcher
 from .pipeline_config import emit_status, resolve_plugin_dir
 from .pipeline_events import PipelineEvent

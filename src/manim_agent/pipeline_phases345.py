@@ -23,7 +23,7 @@ from .pipeline_gates import (
 )
 from .prompt_builder import format_target_duration
 from .render_review import extract_review_frames
-from .review_schema import RenderReviewOutput
+from .schemas import Phase3RenderReviewOutput as RenderReviewOutput
 from .segment_renderer import (
     build_segment_render_plan,
     discover_segment_video_paths,
@@ -42,9 +42,7 @@ def _require_real_segment_outputs(*, po: Any, render_mode: str) -> None:
         return
 
     segment_video_paths = [
-        str(path)
-        for path in (getattr(po, "segment_video_paths", None) or [])
-        if path
+        str(path) for path in (getattr(po, "segment_video_paths", None) or []) if path
     ]
     if segment_video_paths and all(Path(path).exists() for path in segment_video_paths):
         return
@@ -249,8 +247,7 @@ async def run_phase3_render(
             po.segment_video_paths = existing_segments
             po.segment_render_complete = render_mode == "segments"
             dispatcher._print(
-                "  [RENDER] Discovered pre-rendered segment videos: "
-                f"{len(existing_segments)}"
+                f"  [RENDER] Discovered pre-rendered segment videos: {len(existing_segments)}"
             )
         segment_visual_track = await _resolve_segment_review_video(
             po=po,
@@ -272,11 +269,11 @@ async def run_phase3_render(
 
     needs_build_summary = not has_structured_build_summary(po)
     needs_narration_summary = not has_narration_sync_summary(po)
-    segment_paths_for_repair = [
-        str(path)
-        for path in (getattr(po, "segment_video_paths", None) or [])
-        if path
-    ] if po is not None else []
+    segment_paths_for_repair = (
+        [str(path) for path in (getattr(po, "segment_video_paths", None) or []) if path]
+        if po is not None
+        else []
+    )
     has_segment_render_artifacts = bool(
         render_mode == "segments"
         and segment_paths_for_repair
@@ -497,9 +494,7 @@ async def _resolve_segment_review_video(
         return None
 
     segment_video_paths = [
-        str(path)
-        for path in (getattr(po, "segment_video_paths", None) or [])
-        if path
+        str(path) for path in (getattr(po, "segment_video_paths", None) or []) if path
     ]
     if not segment_video_paths:
         return None
@@ -623,8 +618,7 @@ async def run_phase4_tts(
         )
     dispatcher._print(f"  [TTS] Beat segments: {len(audio_result.beats)}")
     dispatcher._print(
-        "  [TTS] Timeline duration: "
-        f"{audio_result.timeline.total_duration_seconds:.2f}s"
+        f"  [TTS] Timeline duration: {audio_result.timeline.total_duration_seconds:.2f}s"
     )
     dispatcher._print(
         "  [TTS] Output mode: "
@@ -733,9 +727,7 @@ async def _resolve_mux_video_source(
 
     if getattr(po, "render_mode", None) == "segments":
         segment_video_paths = [
-            str(path)
-            for path in (getattr(po, "segment_video_paths", None) or [])
-            if path
+            str(path) for path in (getattr(po, "segment_video_paths", None) or []) if path
         ]
         if not segment_video_paths or not all(Path(path).exists() for path in segment_video_paths):
             raise RuntimeError(
@@ -744,9 +736,7 @@ async def _resolve_mux_video_source(
             )
 
     segment_video_paths = [
-        str(path)
-        for path in (getattr(po, "segment_video_paths", None) or [])
-        if path
+        str(path) for path in (getattr(po, "segment_video_paths", None) or []) if path
     ]
     if not segment_video_paths:
         return video_output, False

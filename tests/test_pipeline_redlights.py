@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from manim_agent import pipeline as main_module
-from manim_agent.review_schema import RenderReviewOutput
+from manim_agent.schemas import Phase3RenderReviewOutput as RenderReviewOutput
 from ._test_main_dispatcher_helpers import _make_two_stage_query_side_effect
 
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from claude_agent_sdk import query
 
 from .dispatcher import _MessageDispatcher
-from .output_schema import PipelineOutput
+from .schemas import PipelineOutput
 from .pipeline_config import build_options
 from .prompt_builder import build_narration_generation_prompt
 

@@ -14,7 +14,7 @@ from claude_agent_sdk import query
 
 from . import prompts
 from . import music_client, render_review, tts_client, video_builder
-from .build_spec_schema import ScenePlanOutput
+from .schemas import Phase1PlanningOutput as ScenePlanOutput
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 from .hooks import activate_hook_state, create_hook_state, reset_hook_state
 from .pipeline_config import build_options as _build_options
@@ -224,8 +224,7 @@ async def run_pipeline(
         )
         if phase2_issue is not None:
             raise RuntimeError(
-                "Phase 2 implementation output is incomplete. "
-                f"Blocking issue: {phase2_issue}"
+                f"Phase 2 implementation output is incomplete. Blocking issue: {phase2_issue}"
             )
 
         result_summary = merge_result_summaries(

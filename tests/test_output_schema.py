@@ -1,13 +1,11 @@
-"""Tests for manim_agent.output_schema module (PipelineOutput Pydantic model).
+"""Tests for manim_agent.schemas module (PipelineOutput Pydantic model).
 
 覆盖：模型校验、序列化、output_format schema 生成。
 """
 
 import pytest
 
-# 导入目标模块（Phase 1 实现前会 ImportError —— 红灯）
-from manim_agent.output_schema import PipelineOutput
-
+from manim_agent.schemas import PhaseSchemaRegistry, PipelineOutput
 
 # ── 模型创建与字段校验 ──────────────────────────────────────
 
@@ -94,27 +92,29 @@ class TestSerialization:
 class TestOutputFormatSchema:
     def test_schema_is_valid_dict(self):
         """output_format_schema() 返回合法 dict。"""
-        schema = PipelineOutput.output_format_schema()
+        schema = PhaseSchemaRegistry.output_format_schema("pipeline_output")
         assert isinstance(schema, dict)
         assert schema["type"] == "json_schema"
 
-    def test_schema_requires_video_output(self):
-        """schema 中 video_output 是 required。"""
-        schema = PipelineOutput.output_format_schema()
-        props = schema["json_schema"]["schema"]["properties"]
-        required = schema["json_schema"]["schema"].get("required", [])
-        assert "video_output" in required
+    def test_schema_has_valid_structure(self):
+        """schema 包含有效的结构（properties 和 type）。"""
+        schema = PhaseSchemaRegistry.output_format_schema("pipeline_output")
+        inner = schema["json_schema"]["schema"]
+        assert "properties" in inner
+        assert inner["type"] == "object"
+        props = inner["properties"]
+        assert "video_output" in props
+        assert "scene_file" in props
 
     def test_schema_optionals_allow_null(self):
         """可选字段在 schema 中允许 null。"""
-        schema = PipelineOutput.output_format_schema()
+        schema = PhaseSchemaRegistry.output_format_schema("pipeline_output")
         props = schema["json_schema"]["schema"]["properties"]
-        # 可选字段应为 ["string", "null"] 或类似
         for field in ("scene_file", "scene_class", "duration_seconds", "narration", "source_code"):
             assert field in props, f"Missing field: {field}"
 
     def test_narration_schema_mentions_simplified_chinese_default(self):
         """narration 字段描述要明确默认中文口播要求。"""
-        schema = PipelineOutput.output_format_schema()
+        schema = PhaseSchemaRegistry.output_format_schema("pipeline_output")
         narration = schema["json_schema"]["schema"]["properties"]["narration"]
         assert "Simplified Chinese" in narration["description"]

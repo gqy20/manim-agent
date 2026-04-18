@@ -14,7 +14,7 @@ from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
 
 from . import prompts
 from .hooks import _on_post_tool_use, _on_pre_tool_use
-from .output_schema import PipelineOutput
+from .schemas import PipelineOutput
 from .repo_paths import resolve_plugin_dir, resolve_repo_root
 
 logger = logging.getLogger(__name__)

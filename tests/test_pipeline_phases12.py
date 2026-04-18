@@ -272,7 +272,7 @@ class TestPhase1ValidationLogic:
 
     @pytest.mark.asyncio
     async def test_phase1_accepts_valid_structured_build_spec(self):
-        from manim_agent.build_spec_schema import ScenePlanOutput
+        from manim_agent.schemas import Phase1PlanningOutput as ScenePlanOutput
         from manim_agent.pipeline_phases12 import run_phase1_planning
 
         plan_text = (

@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from manim_agent.review_schema import RenderReviewOutput
+from manim_agent.schemas import Phase3RenderReviewOutput as RenderReviewOutput
 
 from ._test_main_dispatcher_helpers import (
     TaskNotificationMessage,
@@ -37,10 +37,18 @@ class TestTTSNarrationFlow:
 
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            patch("manim_agent.pipeline.generate_narration", new_callable=AsyncMock, return_value=expected_narration),
+            patch(
+                "manim_agent.pipeline.generate_narration",
+                new_callable=AsyncMock,
+                return_value=expected_narration,
+            ),
             patch("manim_agent.pipeline.tts_client.synthesize", side_effect=capture_tts),
-            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
-            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch(
+                "manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock
+            ) as mock_vid,
+            patch(
+                "manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock
+            ) as mock_frames,
             patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
@@ -80,10 +88,18 @@ class TestTTSNarrationFlow:
 
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            patch("manim_agent.pipeline.generate_narration", new_callable=AsyncMock, return_value=expected_narration),
+            patch(
+                "manim_agent.pipeline.generate_narration",
+                new_callable=AsyncMock,
+                return_value=expected_narration,
+            ),
             patch("manim_agent.pipeline.tts_client.synthesize", side_effect=capture_tts),
-            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
-            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch(
+                "manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock
+            ) as mock_vid,
+            patch(
+                "manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock
+            ) as mock_frames,
             patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
@@ -135,10 +151,18 @@ class TestTTSNarrationFlow:
 
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            patch("manim_agent.pipeline.generate_narration", new_callable=AsyncMock, return_value=expected_narration),
+            patch(
+                "manim_agent.pipeline.generate_narration",
+                new_callable=AsyncMock,
+                return_value=expected_narration,
+            ),
             patch("manim_agent.pipeline.tts_client.synthesize", side_effect=capture_tts),
-            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_vid,
-            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
+            patch(
+                "manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock
+            ) as mock_vid,
+            patch(
+                "manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock
+            ) as mock_frames,
             patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)

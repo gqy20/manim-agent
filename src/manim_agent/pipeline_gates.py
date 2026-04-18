@@ -5,8 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from .build_spec_schema import BuildSpec
-from .output_schema import PipelineOutput
+from .schemas import BuildSpec, PipelineOutput
 from .segment_renderer import discover_segment_video_paths
 
 PLAN_SECTION_HEADINGS = (
@@ -271,7 +270,9 @@ def apply_phase2_build_spec_defaults(
         )
         if discovered_segments:
             po.segment_video_paths = discovered_segments
-            if po.segment_render_complete is None and len(discovered_segments) == len(expected_paths):
+            if po.segment_render_complete is None and len(discovered_segments) == len(
+                expected_paths
+            ):
                 po.segment_render_complete = True
 
     return po
