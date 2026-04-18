@@ -56,6 +56,55 @@ def build_segment_render_plan(
     )
 
 
+def build_provisional_segment_render_plan(
+    *,
+    beat_titles: list[str],
+    total_duration_seconds: float,
+    output_dir: str,
+    scene_file: str | None,
+    scene_class: str | None,
+) -> SegmentRenderPlan:
+    """Build an even-split segment plan when only a full render exists.
+
+    This is a fallback for `render_mode="segments"` runs where the agent
+    produced a single full-length video but did not emit per-beat clips.
+    """
+    normalized_titles = [title.strip() for title in beat_titles if title and title.strip()]
+    if not normalized_titles:
+        normalized_titles = ["Main narration"]
+
+    total_duration_seconds = max(0.0, float(total_duration_seconds))
+    root = Path(output_dir) / "segments"
+    count = len(normalized_titles)
+    slice_duration = total_duration_seconds / count if count > 0 else 0.0
+
+    segments: list[SegmentRenderSpec] = []
+    cursor = 0.0
+    for index, title in enumerate(normalized_titles, start=1):
+        start = cursor
+        end = total_duration_seconds if index == count else cursor + slice_duration
+        cursor = end
+        segments.append(
+            SegmentRenderSpec(
+                beat_id=f"beat_{index:03d}",
+                title=title,
+                target_duration_seconds=max(0.0, end - start),
+                start_seconds=start,
+                end_seconds=end,
+                output_path=str(root / f"beat_{index:03d}.mp4"),
+                scene_file=scene_file,
+                scene_class=scene_class,
+            )
+        )
+
+    return SegmentRenderPlan(
+        scene_file=scene_file,
+        scene_class=scene_class,
+        total_duration_seconds=total_duration_seconds,
+        segments=segments,
+    )
+
+
 def write_segment_render_plan(plan: SegmentRenderPlan, output_path: str) -> str:
     """Persist a segment render plan as JSON."""
     target = Path(output_path)

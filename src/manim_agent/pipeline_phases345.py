@@ -26,6 +26,7 @@ from .render_review import extract_review_frames
 from .review_schema import RenderReviewOutput
 from .segment_renderer import (
     build_segment_render_plan,
+    build_provisional_segment_render_plan,
     discover_segment_video_paths,
     extract_video_segments,
     read_segment_render_plan,
@@ -325,6 +326,15 @@ async def run_phase3_render(
             logger.debug(
                 "run_pipeline: unable to probe render duration for %r: %s", video_output, exc
             )
+
+    if po is not None:
+        await _materialize_segment_outputs_from_full_render(
+            po=po,
+            render_mode=render_mode,
+            video_output=video_output,
+            output_dir=resolved_cwd,
+            dispatcher=dispatcher,
+        )
 
     if not video_output:
         dispatcher._print("")
@@ -764,6 +774,65 @@ def _populate_po_metadata(
     dispatcher.partial_narration_coverage_complete = po.narration_coverage_complete
     dispatcher.partial_estimated_narration_duration_seconds = (
         po.estimated_narration_duration_seconds
+    )
+
+
+async def _materialize_segment_outputs_from_full_render(
+    *,
+    po: Any,
+    render_mode: str,
+    video_output: str | None,
+    output_dir: str,
+    dispatcher: _MessageDispatcher,
+) -> None:
+    """Fallback: derive beat clips from a full render when segment mode lacks them."""
+    if po is None or render_mode != "segments" or not video_output:
+        return
+
+    existing_segment_paths = [
+        str(path)
+        for path in (getattr(po, "segment_video_paths", None) or [])
+        if path
+    ]
+    if existing_segment_paths and all(Path(path).exists() for path in existing_segment_paths):
+        po.segment_render_complete = True
+        return
+
+    total_duration = float(getattr(po, "duration_seconds", 0.0) or 0.0)
+    if total_duration <= 0:
+        return
+
+    beat_titles = list(getattr(po, "implemented_beats", None) or [])
+    plan = build_provisional_segment_render_plan(
+        beat_titles=beat_titles,
+        total_duration_seconds=total_duration,
+        output_dir=output_dir,
+        scene_file=getattr(po, "scene_file", None),
+        scene_class=getattr(po, "scene_class", None),
+    )
+    if not plan.segments:
+        return
+
+    try:
+        extracted_paths = await extract_video_segments(video_output, plan)
+    except Exception as exc:
+        logger.warning(
+            "run_phase3_render: unable to materialize beat segments from full render: %s",
+            exc,
+        )
+        return
+
+    po.segment_render_plan_path = write_segment_render_plan(
+        plan,
+        str(Path(output_dir) / "segment_render_plan.json"),
+    )
+    po.segment_video_paths = extracted_paths
+    po.segment_render_complete = True
+    dispatcher.partial_render_mode = "segments"
+    dispatcher.partial_segment_render_complete = True
+    dispatcher._print(
+        "  [RENDER] Materialized beat segment videos from full render fallback: "
+        f"{len(extracted_paths)}"
     )
 
 

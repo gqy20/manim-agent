@@ -6,6 +6,7 @@ from manim_agent.beat_schema import BeatSpec, TimelineSpec
 from manim_agent.segment_renderer import (
     SegmentRenderPlan,
     build_segment_render_plan,
+    build_provisional_segment_render_plan,
     discover_segment_video_paths,
     extract_video_segments,
     write_segment_render_plan,
@@ -70,6 +71,24 @@ class TestBuildSegmentRenderPlan:
         )
 
         assert [segment.beat_id for segment in plan.segments] == ["beat_002"]
+
+
+class TestBuildProvisionalSegmentRenderPlan:
+    def test_evenly_splits_duration_across_beats(self, tmp_path):
+        plan = build_provisional_segment_render_plan(
+            beat_titles=["Opening", "Main idea", "Wrap up"],
+            total_duration_seconds=9.0,
+            output_dir=str(tmp_path),
+            scene_file="scene.py",
+            scene_class="GeneratedScene",
+        )
+
+        assert len(plan.segments) == 3
+        assert plan.segments[0].start_seconds == 0.0
+        assert plan.segments[0].end_seconds == 3.0
+        assert plan.segments[1].start_seconds == 3.0
+        assert plan.segments[2].end_seconds == 9.0
+        assert plan.segments[2].output_path.endswith("segments\\beat_003.mp4")
 
 
 class TestWriteSegmentRenderPlan:

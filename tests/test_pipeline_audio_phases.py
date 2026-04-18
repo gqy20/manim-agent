@@ -277,6 +277,84 @@ class TestPipelineAudioPhases:
         assert mock_query.called
 
     @pytest.mark.asyncio
+    async def test_run_phase3_render_materializes_segments_from_full_render_fallback(
+        self, tmp_path
+    ):
+        dispatcher = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
+        po = SimpleNamespace(
+            video_output="media/out.mp4",
+            duration_seconds=6.0,
+            implemented_beats=["Opening", "Main idea", "Wrap up"],
+            beat_to_narration_map=["Opening -> intro", "Main idea -> explain", "Wrap up -> close"],
+            build_summary="Built three beats.",
+            deviations_from_plan=[],
+            narration_coverage_complete=True,
+            estimated_narration_duration_seconds=6.0,
+            segment_video_paths=[],
+            segment_render_plan_path=None,
+            scene_file="scene.py",
+            scene_class="GeneratedScene",
+            render_mode="segments",
+            segment_render_complete=False,
+        )
+        review_result = SimpleNamespace(
+            summary="Looks good.",
+            approved=True,
+            blocking_issues=[],
+            suggested_edits=[],
+            frame_analyses=[],
+            vision_analysis_used=False,
+        )
+        extracted_segments = [
+            str(tmp_path / "segments" / "beat_001.mp4"),
+            str(tmp_path / "segments" / "beat_002.mp4"),
+            str(tmp_path / "segments" / "beat_003.mp4"),
+        ]
+
+        with (
+            patch.object(dispatcher, "get_pipeline_output", return_value=po),
+            patch(
+                "manim_agent.pipeline_phases345.extract_video_segments",
+                new_callable=AsyncMock,
+                return_value=extracted_segments,
+            ) as mock_extract_segments,
+            patch(
+                "manim_agent.pipeline_phases345.extract_review_frames",
+                new_callable=AsyncMock,
+                return_value=["frame_1.png"],
+            ),
+            patch(
+                "manim_agent.pipeline_phases345.run_render_review",
+                new_callable=AsyncMock,
+                return_value=review_result,
+            ),
+        ):
+            result_po, video_output, review_frames = await run_phase3_render(
+                dispatcher=dispatcher,
+                hook_state=SimpleNamespace(captured_source_code={}),
+                user_text="Explain a concept",
+                plan_text="Plan",
+                result_summary=None,
+                target_duration_seconds=30,
+                resolved_cwd=str(tmp_path),
+                system_prompt="system",
+                quality="high",
+                prompt_file=None,
+                log_callback=None,
+                event_callback=None,
+                cli_stderr_lines=[],
+                render_mode="segments",
+            )
+
+        assert result_po is po
+        assert video_output == "media/out.mp4"
+        assert review_frames == ["frame_1.png"]
+        assert po.segment_video_paths == extracted_segments
+        assert po.segment_render_complete is True
+        assert po.segment_render_plan_path.endswith("segment_render_plan.json")
+        mock_extract_segments.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_run_phase4_tts_updates_pipeline_output_with_audio_orchestration(self, tmp_path):
         dispatcher = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
         po = SimpleNamespace(
