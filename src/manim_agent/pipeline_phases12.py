@@ -51,11 +51,26 @@ def build_implementation_prompt(
     target_duration_seconds: int,
     plan_text: str,
     cwd: str | None = None,
+    render_mode: str = "full",
 ) -> str:
     """Build the implementation prompt after a planning pass has been accepted."""
     normalized = user_text.strip()
     target_duration = format_target_duration(target_duration_seconds)
     plugin_dir = resolve_plugin_dir(cwd)
+    render_mode = render_mode.strip().lower() or "full"
+    render_guidance = (
+        "- Render mode: full.\n"
+        "- The primary visual deliverable is one full-length `video_output` MP4.\n"
+        "- You may create helper clips during debugging, but the final structured output must center on the single main render.\n"
+    )
+    if render_mode == "segments":
+        render_guidance = (
+            "- Render mode: segments.\n"
+            "- The primary visual deliverables are beat-level MP4 files such as `segments/beat_001.mp4`, `segments/beat_002.mp4`, in beat order.\n"
+            "- In structured_output, include `segment_video_paths` with the ordered segment paths that were actually rendered.\n"
+            "- In structured_output, include `render_mode` as `segments` and `segment_render_complete` as true only when every planned beat segment exists.\n"
+            "- Do not treat a single full-length `video_output` as the primary deliverable in this mode; if you also produce one, treat it as a convenience artifact.\n"
+        )
     guidance = (
         "\n\nImplementation pass:\n"
         f"- Target final video duration: about {target_duration}.\n"
@@ -70,6 +85,7 @@ def build_implementation_prompt(
         "- Do not use shell or filesystem probes to verify plugin files during implementation.\n"
         "- Preserve the planned beat order unless debugging requires a very small fix.\n"
         "- Do not begin with a fresh planning pass; begin implementation from the approved plan.\n"
+        f"{render_guidance}"
         "- In structured_output, include `implemented_beats` as the ordered "
         "beat titles that were actually built.\n"
         "- In structured_output, include `build_summary` as a short summary "

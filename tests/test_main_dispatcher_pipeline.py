@@ -91,6 +91,63 @@ class TestSessionIsolation:
 
 class TestRunPipeline:
     @pytest.mark.asyncio
+    async def test_segments_render_mode_marks_pipeline_output_state(self, tmp_path):
+        mock_messages = [
+            _make_assistant_message(_make_text_block("render complete")),
+            _make_result_message(
+                num_turns=1,
+                **{
+                    "structured_output": {
+                        "video_output": "media/out.mp4",
+                        "narration": "segment-aware narration",
+                    }
+                },
+            ),
+        ]
+        dispatcher_refs: list[object] = []
+
+        with (
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch(
+                "manim_agent.pipeline.render_review.extract_review_frames",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "manim_agent.pipeline._run_render_review",
+                new_callable=AsyncMock,
+                return_value=_approved_review_result(),
+            ),
+            patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch(
+                "manim_agent.pipeline.video_builder.build_final_video",
+                new_callable=AsyncMock,
+                return_value="output/final.mp4",
+            ),
+        ):
+            mock_query.side_effect = _make_staged_query(mock_messages)
+            mock_tts.return_value = MagicMock(
+                audio_path="out/audio.mp3",
+                subtitle_path="out/sub.srt",
+                duration_ms=30000,
+            )
+
+            result = await main_module.run_pipeline(
+                user_text="test content",
+                output_path="output/final.mp4",
+                no_tts=False,
+                render_mode="segments",
+                _dispatcher_ref=dispatcher_refs,
+                cwd=str(tmp_path),
+            )
+
+        assert result == "output/final.mp4"
+        dispatcher = dispatcher_refs[0]
+        po = dispatcher.get_pipeline_output()
+        assert po.render_mode == "segments"
+        assert po.segment_render_complete is False
+
+    @pytest.mark.asyncio
     async def test_full_flow_with_tts(self, tmp_path):
         mock_messages = [
             _make_assistant_message(

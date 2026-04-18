@@ -20,6 +20,9 @@ class TestDispatcherPipelineOutput:
                         "scene_file": "scene.py",
                         "scene_class": "MyScene",
                         "duration_seconds": 25,
+                        "render_mode": "segments",
+                        "segment_render_complete": True,
+                        "segment_video_paths": ["/media/segments/beat_001.mp4"],
                     }
                 },
             )
@@ -31,6 +34,9 @@ class TestDispatcherPipelineOutput:
         assert po.scene_file == str(Path("scene.py").resolve())
         assert po.scene_class == "MyScene"
         assert po.duration_seconds == 25
+        assert po.render_mode == "segments"
+        assert po.segment_render_complete is True
+        assert po.segment_video_paths == ["/media/segments/beat_001.mp4"]
 
     def test_get_pipeline_output_none_when_no_result_signal(self):
         d = _MessageDispatcher(verbose=False)

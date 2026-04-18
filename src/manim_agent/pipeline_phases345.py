@@ -157,6 +157,7 @@ async def run_phase3_render(
     log_callback: Callable[[str], None] | None,
     event_callback: Callable[[PipelineEvent], None] | None,
     cli_stderr_lines: list[str],
+    render_mode: str = "full",
 ) -> tuple[Any, str | None, list[str]]:
     """Execute Phase 3: resolve render output, optional repair, frame review.
 
@@ -177,6 +178,7 @@ async def run_phase3_render(
     po = dispatcher.get_pipeline_output()
     logger.debug("run_pipeline: PipelineOutput after get_pipeline_output: %r", po)
     video_output = po.video_output if po else None
+    render_mode = render_mode.strip().lower() or "full"
 
     render_status_message = (
         "Resolving render output (pipeline_result -> structured output -> task_notification -> "
@@ -202,6 +204,12 @@ async def run_phase3_render(
     logger.debug("run_pipeline: video_output = %r", video_output)
 
     if po is not None:
+        po.render_mode = render_mode
+        po.segment_render_complete = bool(
+            render_mode == "segments"
+            and getattr(po, "segment_video_paths", None)
+            and all(Path(path).exists() for path in getattr(po, "segment_video_paths", []))
+        )
         _populate_po_metadata(po, dispatcher, result_summary, target_duration_seconds, plan_text)
         existing_segments = discover_segment_video_paths(
             output_dir=resolved_cwd,
@@ -209,9 +217,27 @@ async def run_phase3_render(
         )
         if existing_segments:
             po.segment_video_paths = existing_segments
+            po.segment_render_complete = render_mode == "segments"
             dispatcher._print(
                 "  [RENDER] Discovered pre-rendered segment videos: "
                 f"{len(existing_segments)}"
+            )
+        segment_visual_track = await _resolve_segment_review_video(
+            po=po,
+            render_mode=render_mode,
+            output_dir=resolved_cwd,
+        )
+        if segment_visual_track is not None:
+            video_output = segment_visual_track
+            po.video_output = segment_visual_track
+            render_status_message = (
+                "Render output resolved from beat segment videos. Proceeding in segment mode."
+            )
+            emit_status(
+                event_callback,
+                task_status="running",
+                phase="render",
+                message=render_status_message,
             )
 
     needs_build_summary = not has_structured_build_summary(po)
@@ -411,6 +437,39 @@ async def run_phase3_render(
     return po, video_output, review_frames
 
 
+async def _resolve_segment_review_video(
+    *,
+    po: Any,
+    render_mode: str,
+    output_dir: str,
+) -> str | None:
+    """Build a temporary reviewable video when segment mode has no full render."""
+    if po is None or render_mode != "segments":
+        return None
+    if getattr(po, "video_output", None):
+        return None
+
+    segment_video_paths = [
+        str(path)
+        for path in (getattr(po, "segment_video_paths", None) or [])
+        if path
+    ]
+    if not segment_video_paths:
+        return None
+    if not all(Path(path).exists() for path in segment_video_paths):
+        return None
+
+    review_track_path = str(Path(output_dir) / "review_visual_track.mp4")
+    logger.info(
+        "run_phase3_render: composing %d segment videos into review track",
+        len(segment_video_paths),
+    )
+    return await concat_videos(
+        video_paths=segment_video_paths,
+        output_path=review_track_path,
+    )
+
+
 # ── Phase 4: TTS Synthesis ───────────────────────────────────────
 
 
@@ -492,15 +551,25 @@ async def run_phase4_tts(
         po.bgm_prompt = audio_result.bgm_prompt
         po.bgm_volume = 0.12 if audio_result.bgm_path else None
         po.audio_mix_mode = "voice_with_bgm" if audio_result.bgm_path else "voice_only"
+        po.render_mode = getattr(po, "render_mode", None) or "full"
         if audio_result.timeline.total_duration_seconds > 0:
             po.tts_duration_ms = int(audio_result.timeline.total_duration_seconds * 1000)
+        existing_segment_paths = discover_segment_video_paths(
+            output_dir=str(Path(output_path).parent),
+            expected_paths=getattr(po, "segment_video_paths", None),
+        )
         segment_plan = build_segment_render_plan(
             timeline=audio_result.timeline,
             output_dir=str(Path(output_path).parent),
             scene_file=getattr(po, "scene_file", None),
             scene_class=getattr(po, "scene_class", None),
         )
-        po.segment_video_paths = [segment.output_path for segment in segment_plan.segments]
+        po.segment_video_paths = existing_segment_paths or [
+            segment.output_path for segment in segment_plan.segments
+        ]
+        po.segment_render_complete = bool(
+            getattr(po, "render_mode", None) == "segments" and existing_segment_paths
+        )
         po.segment_render_plan_path = write_segment_render_plan(
             segment_plan,
             str(Path(output_path).parent / "segment_render_plan.json"),
@@ -658,6 +727,8 @@ def _populate_po_metadata(
     po.run_tool_stats = dict(dispatcher.tool_stats)
     po.target_duration_seconds = target_duration_seconds
     po.plan_text = plan_text
+    dispatcher.partial_render_mode = getattr(po, "render_mode", None)
+    dispatcher.partial_segment_render_complete = getattr(po, "segment_render_complete", None)
     dispatcher.partial_build_summary = po.build_summary
     dispatcher.partial_deviations_from_plan = list(po.deviations_from_plan)
     dispatcher.partial_beat_to_narration_map = list(po.beat_to_narration_map)

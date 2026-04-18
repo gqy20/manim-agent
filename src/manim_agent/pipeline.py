@@ -67,6 +67,7 @@ async def run_pipeline(
     max_turns: int = 50,
     log_callback: Callable[[str], None] | None = None,
     preset: str = "default",
+    render_mode: str = "full",
     intro_outro: bool = False,
     intro_outro_backend: str = "revideo",
     _dispatcher_ref: list[Any] | None = None,
@@ -75,6 +76,7 @@ async def run_pipeline(
     """Run the full Claude -> TTS -> mux pipeline."""
     resolved_cwd = str(Path(cwd).resolve())
     bgm_volume = min(max(bgm_volume, 0.0), 1.0)
+    render_mode = render_mode.strip().lower() or "full"
     full_system_prompt = prompts.get_prompt(
         user_text="",
         preset=preset,
@@ -173,6 +175,8 @@ async def run_pipeline(
         )
 
         plan_text = dispatcher.partial_plan_text
+        dispatcher.partial_render_mode = render_mode
+        dispatcher.partial_segment_render_complete = False
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2/5: implementation pass")
         if build_opts.allowed_tools:
             dispatcher._print(f"  [SYS] Allowed tools: {', '.join(build_opts.allowed_tools)}")
@@ -185,6 +189,7 @@ async def run_pipeline(
             target_duration_seconds,
             plan_text,
             resolved_cwd,
+            render_mode=render_mode,
         )
         implementation_result_summary = await run_phase2_implementation(
             implementation_prompt=implementation_prompt,
@@ -225,6 +230,7 @@ async def run_pipeline(
             log_callback=log_callback,
             event_callback=event_callback,
             cli_stderr_lines=_cli_stderr_lines,
+            render_mode=render_mode,
         )
 
         # ══════════════════════════════════════════════

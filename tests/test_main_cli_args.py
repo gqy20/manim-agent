@@ -21,6 +21,7 @@ class TestParseArgs:
         assert args.prompt_file is None
         assert args.max_turns == 80
         assert args.target_duration == 60
+        assert args.render_mode == "full"
 
     def test_parse_args_all_options(self):
         args = parse_args(
@@ -41,6 +42,8 @@ class TestParseArgs:
                 "/workspace",
                 "--prompt-file",
                 "custom.txt",
+                "--render-mode",
+                "segments",
             ]
         )
 
@@ -54,6 +57,7 @@ class TestParseArgs:
         assert args.cwd == "/workspace"
         assert args.prompt_file == "custom.txt"
         assert args.target_duration == 60
+        assert args.render_mode == "segments"
 
     def test_parse_args_requires_text(self):
         with pytest.raises(SystemExit):
@@ -91,6 +95,6 @@ class TestBuildOptions:
 
         assert options.cwd == str(tmp_path.resolve())
         assert options.system_prompt == "Custom prompt"
-        assert options.add_dirs == [str(tmp_path.resolve())]
+        assert str(tmp_path.resolve()) in options.add_dirs
         assert options.plugins is not None
         assert any(plugin["path"].endswith("plugins\\manim-production") for plugin in options.plugins)

@@ -61,6 +61,14 @@ class PipelineOutput(BaseModel):
         description="Estimated spoken duration of the narration in seconds.",
         ge=0,
     )
+    render_mode: str | None = Field(
+        default=None,
+        description="Visual render delivery mode, such as full or segments.",
+    )
+    segment_render_complete: bool | None = Field(
+        default=None,
+        description="Whether beat-level segment rendering completed for every planned beat.",
+    )
     beats: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Structured beat records used for audio orchestration and future timeline-driven rendering.",
@@ -310,6 +318,46 @@ class PipelineOutput(BaseModel):
                             "type": ["number", "null"],
                             "description": "Estimated spoken duration of the narration in seconds.",
                             "minimum": 0,
+                        },
+                        "render_mode": {
+                            "type": ["string", "null"],
+                            "description": "Visual render delivery mode, such as full or segments.",
+                        },
+                        "segment_render_complete": {
+                            "type": ["boolean", "null"],
+                            "description": "Whether beat-level segment rendering completed for every planned beat.",
+                        },
+                        "beats": {
+                            "type": "array",
+                            "description": "Structured beat records used for audio orchestration and future timeline-driven rendering.",
+                            "items": {"type": "object"},
+                        },
+                        "audio_segments": {
+                            "type": "array",
+                            "description": "Structured per-beat audio assets generated during audio orchestration.",
+                            "items": {"type": "object"},
+                        },
+                        "timeline_path": {
+                            "type": ["string", "null"],
+                            "description": "Path to the resolved beat timeline JSON file, if generated.",
+                        },
+                        "timeline_total_duration_seconds": {
+                            "type": ["number", "null"],
+                            "description": "Resolved duration of the concatenated beat timeline in seconds.",
+                            "minimum": 0,
+                        },
+                        "segment_render_plan_path": {
+                            "type": ["string", "null"],
+                            "description": "Path to the generated segment render plan JSON file, if prepared.",
+                        },
+                        "segment_video_paths": {
+                            "type": "array",
+                            "description": "Reserved output paths for future beat-level rendered video segments.",
+                            "items": {"type": "string"},
+                        },
+                        "audio_concat_path": {
+                            "type": ["string", "null"],
+                            "description": "Path to the concatenated narration master audio file, if generated.",
                         },
                         "source_code": {
                             "type": ["string", "null"],

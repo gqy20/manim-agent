@@ -99,6 +99,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Target final video duration in seconds (default: 60)",
     )
     parser.add_argument(
+        "--render-mode",
+        choices=["full", "segments"],
+        default="full",
+        help="Render delivery mode: full single video or beat segments (default: full).",
+    )
+    parser.add_argument(
         "--intro-outro",
         action="store_true",
         help="Generate branded intro and/or outro segments.",
@@ -132,6 +138,7 @@ async def main() -> None:
             cwd=args.cwd,
             prompt_file=args.prompt_file,
             max_turns=args.max_turns,
+            render_mode=args.render_mode,
             intro_outro=args.intro_outro,
             intro_outro_backend=args.intro_outro_backend,
         )

@@ -199,6 +199,15 @@ class _MessageDispatcher:
                 "partial_estimated_narration_duration_seconds",
                 None,
             ),
+            "render_mode": getattr(self, "partial_render_mode", None),
+            "segment_render_complete": getattr(self, "partial_segment_render_complete", None),
+            "beats": [],
+            "audio_segments": [],
+            "timeline_path": None,
+            "timeline_total_duration_seconds": None,
+            "segment_render_plan_path": None,
+            "segment_video_paths": [],
+            "audio_concat_path": None,
             "source_code": None,
             "audio_path": None,
             "bgm_path": None,
@@ -535,6 +544,28 @@ class _MessageDispatcher:
             if incoming.estimated_narration_duration_seconds is not None
             else current.estimated_narration_duration_seconds
         )
+        current.render_mode = incoming.render_mode or current.render_mode
+        current.segment_render_complete = (
+            incoming.segment_render_complete
+            if incoming.segment_render_complete is not None
+            else current.segment_render_complete
+        )
+        if incoming.beats:
+            current.beats = incoming.beats
+        if incoming.audio_segments:
+            current.audio_segments = incoming.audio_segments
+        current.timeline_path = incoming.timeline_path or current.timeline_path
+        current.timeline_total_duration_seconds = (
+            incoming.timeline_total_duration_seconds
+            if incoming.timeline_total_duration_seconds is not None
+            else current.timeline_total_duration_seconds
+        )
+        current.segment_render_plan_path = (
+            incoming.segment_render_plan_path or current.segment_render_plan_path
+        )
+        if incoming.segment_video_paths:
+            current.segment_video_paths = incoming.segment_video_paths
+        current.audio_concat_path = incoming.audio_concat_path or current.audio_concat_path
         current.source_code = incoming.source_code or current.source_code
         current.audio_path = incoming.audio_path or current.audio_path
         current.bgm_path = incoming.bgm_path or current.bgm_path
