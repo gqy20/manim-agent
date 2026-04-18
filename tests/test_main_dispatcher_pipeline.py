@@ -153,6 +153,162 @@ class TestRunPipeline:
         mock_phase3.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_phase2_accepts_build_spec_derived_narration_bookkeeping(self, tmp_path):
+        mock_messages = [
+            _make_assistant_message(_make_text_block("render complete")),
+            _make_result_message(
+                num_turns=1,
+                **{
+                    "structured_output": {
+                        "video_output": "media/out.mp4",
+                        "implemented_beats": ["Introduce the circle", "Transform into a square"],
+                        "build_summary": "Implemented the approved two-beat transformation.",
+                    }
+                },
+            ),
+        ]
+
+        with (
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.run_phase3_render", new_callable=AsyncMock) as mock_phase3,
+        ):
+            mock_query.side_effect = _make_staged_query(mock_messages)
+            mock_phase3.return_value = (
+                MagicMock(
+                    narration="测试解说",
+                    duration_seconds=30.0,
+                    scene_file=None,
+                    scene_class=None,
+                    implemented_beats=["Introduce the circle", "Transform into a square"],
+                    build_summary="Implemented the approved two-beat transformation.",
+                    beat_to_narration_map=[
+                        "Introduce the circle -> Introduce the initial circle.",
+                        "Transform into a square -> Explain the transformation clearly.",
+                    ],
+                    narration_coverage_complete=True,
+                    estimated_narration_duration_seconds=30.0,
+                ),
+                "media/out.mp4",
+                [],
+            )
+
+            with patch(
+                "manim_agent.pipeline.generate_narration",
+                new_callable=AsyncMock,
+                return_value="这是用于验证 build_spec 推导字段的中文解说。",
+            ), patch(
+                "manim_agent.pipeline.video_builder.build_final_video",
+                new_callable=AsyncMock,
+                return_value="output/final.mp4",
+            ), patch(
+                "manim_agent.pipeline.tts_client.synthesize",
+                new_callable=AsyncMock,
+                return_value=MagicMock(
+                    audio_path="out/audio.mp3",
+                    subtitle_path="out/sub.srt",
+                    duration_ms=30000,
+                ),
+            ), patch(
+                "manim_agent.audio_orchestrator.video_builder.concat_audios",
+                new_callable=AsyncMock,
+                return_value="out/audio_track.mp3",
+            ):
+                result = await main_module.run_pipeline(
+                    user_text="test content",
+                    output_path="output/final.mp4",
+                    cwd=str(tmp_path),
+                )
+
+        assert result == "output/final.mp4"
+        mock_phase3.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_phase2_discovers_real_segments_from_build_spec_when_agent_omits_paths(
+        self, tmp_path
+    ):
+        segment_a = tmp_path / "segments" / "beat_001_intro_circle.mp4"
+        segment_b = tmp_path / "segments" / "beat_002_transform_square.mp4"
+        segment_a.parent.mkdir(parents=True, exist_ok=True)
+        segment_a.write_bytes(b"a")
+        segment_b.write_bytes(b"b")
+        mock_messages = [
+            _make_assistant_message(_make_text_block("segment render complete")),
+            _make_result_message(
+                num_turns=1,
+                **{
+                    "structured_output": {
+                        "video_output": None,
+                        "render_mode": "segments",
+                        "implemented_beats": ["Introduce the circle", "Transform into a square"],
+                        "build_summary": "Implemented both planned segments.",
+                    }
+                },
+            ),
+        ]
+
+        with (
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.run_phase3_render", new_callable=AsyncMock) as mock_phase3,
+        ):
+            mock_query.side_effect = _make_staged_query(mock_messages)
+            mock_phase3.return_value = (
+                MagicMock(
+                    narration="测试解说",
+                    duration_seconds=30.0,
+                    scene_file=None,
+                    scene_class=None,
+                    implemented_beats=["Introduce the circle", "Transform into a square"],
+                    build_summary="Implemented both planned segments.",
+                    beat_to_narration_map=[
+                        "Introduce the circle -> Introduce the initial circle.",
+                        "Transform into a square -> Explain the transformation clearly.",
+                    ],
+                    narration_coverage_complete=True,
+                    estimated_narration_duration_seconds=30.0,
+                    segment_video_paths=[str(segment_a), str(segment_b)],
+                    segment_render_complete=True,
+                    render_mode="segments",
+                ),
+                str(tmp_path / "review_visual_track.mp4"),
+                [],
+            )
+
+            with patch(
+                "manim_agent.pipeline.generate_narration",
+                new_callable=AsyncMock,
+                return_value="这是用于验证 segments 推导字段的中文解说。",
+            ), patch(
+                "manim_agent.pipeline.video_builder.concat_videos",
+                new_callable=AsyncMock,
+                return_value="output/segment_visual_track.mp4",
+            ), patch(
+                "manim_agent.pipeline.video_builder.build_final_video",
+                new_callable=AsyncMock,
+                return_value="output/final.mp4",
+            ), patch(
+                "manim_agent.pipeline.tts_client.synthesize",
+                new_callable=AsyncMock,
+                return_value=MagicMock(
+                    audio_path="out/audio.mp3",
+                    subtitle_path="out/sub.srt",
+                    duration_ms=30000,
+                ),
+            ), patch(
+                "manim_agent.audio_orchestrator.video_builder.concat_audios",
+                new_callable=AsyncMock,
+                return_value="out/audio_track.mp3",
+            ):
+                result = await main_module.run_pipeline(
+                    user_text="test content",
+                    output_path="output/final.mp4",
+                    render_mode="segments",
+                    cwd=str(tmp_path),
+                )
+
+        assert result == "output/final.mp4"
+        mock_phase3.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_segments_render_mode_marks_pipeline_output_state(self, tmp_path):
         segment_a = tmp_path / "segments" / "beat_001.mp4"
         segment_b = tmp_path / "segments" / "beat_002.mp4"

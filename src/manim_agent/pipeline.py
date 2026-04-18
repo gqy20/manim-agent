@@ -20,7 +20,11 @@ from .hooks import activate_hook_state, create_hook_state, reset_hook_state
 from .pipeline_config import build_options as _build_options
 from .pipeline_config import emit_status as _emit_status
 from .pipeline_config import stderr_handler as _stderr_handler
-from .pipeline_gates import implementation_contract_issue, merge_result_summaries
+from .pipeline_gates import (
+    apply_phase2_build_spec_defaults,
+    implementation_contract_issue,
+    merge_result_summaries,
+)
 from .pipeline_narration import generate_narration
 from . import pipeline_narration as _pipeline_narration_module
 from .pipeline_phases12 import (
@@ -207,6 +211,12 @@ async def run_pipeline(
             _dispatcher_ref.append(dispatcher)
 
         phase2_po = dispatcher.get_pipeline_output()
+        phase2_po = apply_phase2_build_spec_defaults(
+            phase2_po,
+            build_spec=build_spec,
+            cwd=resolved_cwd,
+            render_mode=render_mode,
+        )
         phase2_issue = implementation_contract_issue(
             phase2_po,
             render_mode=render_mode,

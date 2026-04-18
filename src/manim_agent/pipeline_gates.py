@@ -5,7 +5,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .build_spec_schema import BuildSpec
 from .output_schema import PipelineOutput
+from .segment_renderer import discover_segment_video_paths
 
 PLAN_SECTION_HEADINGS = (
     "Mode",
@@ -207,3 +209,69 @@ def implementation_contract_issue(
             return "segment_video_paths does not point to real files."
 
     return None
+
+
+def apply_phase2_build_spec_defaults(
+    po: PipelineOutput | None,
+    *,
+    build_spec: dict | BuildSpec | None,
+    cwd: str,
+    render_mode: str,
+) -> PipelineOutput | None:
+    """Backfill deterministic Phase 2 fields from BuildSpec and real artifacts.
+
+    This deliberately does not invent agent-owned fields such as
+    `implemented_beats` or `build_summary`. It only fills fields that are pure
+    projections of the approved build spec or the filesystem.
+    """
+    if po is None or build_spec is None:
+        return po
+
+    spec = build_spec if isinstance(build_spec, BuildSpec) else BuildSpec.model_validate(build_spec)
+    ordered_beats = list(spec.beats)
+
+    if not po.beats:
+        po.beats = [
+            {
+                "id": beat.id,
+                "title": beat.title,
+                "narration_hint": beat.narration_intent,
+                "target_duration_seconds": beat.target_duration_seconds,
+                "required_elements": list(beat.required_elements),
+                "segment_required": beat.segment_required,
+            }
+            for beat in ordered_beats
+        ]
+
+    if not po.beat_to_narration_map:
+        po.beat_to_narration_map = [
+            f"{beat.title} -> {beat.narration_intent}" for beat in ordered_beats
+        ]
+
+    if po.narration_coverage_complete is None:
+        po.narration_coverage_complete = (
+            len(po.beat_to_narration_map) == len(ordered_beats) and len(ordered_beats) > 0
+        )
+
+    if po.estimated_narration_duration_seconds is None:
+        po.estimated_narration_duration_seconds = sum(
+            beat.target_duration_seconds for beat in ordered_beats
+        )
+
+    normalized_mode = (render_mode or po.render_mode or "full").strip().lower() or "full"
+    if normalized_mode == "segments":
+        expected_paths = [
+            str((Path(cwd) / "segments" / f"{beat.id}.mp4").resolve())
+            for beat in ordered_beats
+            if beat.segment_required
+        ]
+        discovered_segments = discover_segment_video_paths(
+            output_dir=cwd,
+            expected_paths=po.segment_video_paths or expected_paths,
+        )
+        if discovered_segments:
+            po.segment_video_paths = discovered_segments
+            if po.segment_render_complete is None and len(discovered_segments) == len(expected_paths):
+                po.segment_render_complete = True
+
+    return po

@@ -124,7 +124,8 @@ educational
 
         assert "If you cannot produce the real beat-level MP4 files" in result
         assert "Do not mark `segment_render_complete` true as a placeholder" in result
-        assert "Do not leave `implemented_beats` or `beat_to_narration_map` empty" in result
+        assert "Do not leave `implemented_beats` empty" in result
+        assert "pipeline can discover those files automatically" in result
 
     def test_includes_structured_build_spec_when_provided(self):
         from manim_agent.pipeline_phases12 import build_implementation_prompt
