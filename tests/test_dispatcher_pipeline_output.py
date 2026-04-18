@@ -135,6 +135,36 @@ class TestDispatcherPipelineOutput:
         assert po is not None
         assert po.video_output == str(video_path.resolve())
 
+    def test_get_pipeline_output_falls_back_to_segment_videos_after_completion(
+        self, tmp_path: Path
+    ):
+        segment_a = tmp_path / "segments" / "beat_001.mp4"
+        segment_b = tmp_path / "segments" / "beat_002.mp4"
+        segment_a.parent.mkdir(parents=True, exist_ok=True)
+        segment_a.write_bytes(b"fake-a")
+        segment_b.write_bytes(b"fake-b")
+
+        d = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
+        d.dispatch(
+            TaskNotificationMessage(
+                subtype="task_notification",
+                task_id="t1",
+                status="completed",
+                output_file=None,
+                summary="done",
+                uuid="u1",
+                session_id="s1",
+                data={},
+            )
+        )
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output is None
+        assert po.render_mode == "segments"
+        assert po.segment_render_complete is True
+        assert po.segment_video_paths == [str(segment_a.resolve()), str(segment_b.resolve())]
+
     def test_structured_output_merges_into_existing_pipeline_output(self):
         d = _MessageDispatcher(verbose=False)
         d.dispatch(

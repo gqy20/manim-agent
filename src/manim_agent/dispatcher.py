@@ -30,6 +30,7 @@ from .pipeline_events import (
     ToolResultPayload,
     ToolStartPayload,
 )
+from .segment_renderer import discover_segment_video_paths
 
 logger = logging.getLogger(__name__)
 
@@ -154,19 +155,35 @@ class _MessageDispatcher:
             )
         # fallback：文件系统扫描已渲染的 mp4
         discovered_video = self._discover_rendered_video_path()
-        if not discovered_video:
-            logger.debug("get_pipeline_output: unable to discover rendered video")
-            return None
-        self.pipeline_output = PipelineOutput(
-            video_output=discovered_video,
-            scene_file=self._infer_scene_file(),
-            scene_class=self._infer_scene_class(),
-        )
-        logger.debug(
-            "get_pipeline_output: built PipelineOutput from filesystem scan, "
-            "video_output=%r",
-            discovered_video,
-        )
+        if discovered_video:
+            self.pipeline_output = PipelineOutput(
+                video_output=discovered_video,
+                scene_file=self._infer_scene_file(),
+                scene_class=self._infer_scene_class(),
+            )
+            logger.debug(
+                "get_pipeline_output: built PipelineOutput from filesystem scan, "
+                "video_output=%r",
+                discovered_video,
+            )
+        else:
+            discovered_segments = self._discover_rendered_segment_paths()
+            if not discovered_segments:
+                logger.debug("get_pipeline_output: unable to discover rendered video or segments")
+                return None
+            self.pipeline_output = PipelineOutput(
+                video_output=None,
+                scene_file=self._infer_scene_file(),
+                scene_class=self._infer_scene_class(),
+                render_mode="segments",
+                segment_render_complete=True,
+                segment_video_paths=discovered_segments,
+            )
+            logger.debug(
+                "get_pipeline_output: built segment-first PipelineOutput from filesystem scan, "
+                "segments=%r",
+                discovered_segments,
+            )
         self._attach_captured_source_code("get_pipeline_output")
         self._sync_compat_attrs()
         return self.pipeline_output
@@ -182,8 +199,10 @@ class _MessageDispatcher:
         if po is not None:
             return po.model_dump()
 
+        discovered_video = self._discover_rendered_video_path()
+        discovered_segments = self._discover_rendered_segment_paths()
         payload: dict[str, Any] = {
-            "video_output": self._discover_rendered_video_path(),
+            "video_output": discovered_video,
             "final_video_output": None,
             "scene_file": self._infer_scene_file(),
             "scene_class": self._infer_scene_class(),
@@ -199,14 +218,17 @@ class _MessageDispatcher:
                 "partial_estimated_narration_duration_seconds",
                 None,
             ),
-            "render_mode": getattr(self, "partial_render_mode", None),
-            "segment_render_complete": getattr(self, "partial_segment_render_complete", None),
+            "render_mode": getattr(self, "partial_render_mode", None)
+            or ("segments" if discovered_segments and not discovered_video else None),
+            "segment_render_complete": getattr(self, "partial_segment_render_complete", None)
+            if getattr(self, "partial_segment_render_complete", None) is not None
+            else (True if discovered_segments and not discovered_video else None),
             "beats": [],
             "audio_segments": [],
             "timeline_path": None,
             "timeline_total_duration_seconds": None,
             "segment_render_plan_path": None,
-            "segment_video_paths": [],
+            "segment_video_paths": discovered_segments,
             "audio_concat_path": None,
             "source_code": None,
             "audio_path": None,
@@ -679,6 +701,13 @@ class _MessageDispatcher:
             for path in base_dir.rglob("*.mp4"):
                 if "partial_movie_files" in path.parts:
                     continue
+                if self.output_cwd is not None:
+                    segment_root = (self.output_cwd / "segments").resolve()
+                    try:
+                        if path.resolve().is_relative_to(segment_root):
+                            continue
+                    except ValueError:
+                        pass
                 if path.stat().st_size == 0:
                     continue
                 resolved = path.resolve()
@@ -706,6 +735,17 @@ class _MessageDispatcher:
             best_str, len(candidates),
         )
         return best_str
+
+    def _discover_rendered_segment_paths(self) -> list[str]:
+        """Discover beat segment video assets under the task output directory."""
+        if not self.output_cwd:
+            return []
+        discovered = discover_segment_video_paths(output_dir=str(self.output_cwd))
+        logger.debug(
+            "_discover_rendered_segment_paths: discovered %d segment(s)",
+            len(discovered),
+        )
+        return discovered
 
     def _build_pipeline_output_from_raw(
         self,
