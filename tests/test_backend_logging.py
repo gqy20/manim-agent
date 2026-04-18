@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -20,9 +21,11 @@ from backend.log_config import (
 from backend.models import ContentClarifyData, ContentClarifyRequest, TaskStatus
 from backend.routes import (
     clarify_content_route,
+    create_task,
     get_task,
     get_video,
     list_tasks,
+    receive_frontend_logs,
     set_store,
 )
 
@@ -139,6 +142,59 @@ class TestContentClarifierLogging:
 
 class TestRouteLogging:
     @pytest.mark.asyncio
+    async def test_create_task_logs_request_and_creation(self, caplog):
+        req = SimpleNamespace(
+            user_text="讲解圆周率",
+            voice_id="female-tianmei",
+            model="speech-2.8-hd",
+            quality="high",
+            preset="default",
+            no_tts=False,
+            bgm_enabled=False,
+            bgm_volume=0.12,
+            target_duration_seconds=60,
+            bgm_prompt=None,
+        )
+        task_payload = {
+            "id": "task-123",
+            "user_text": req.user_text,
+            "status": TaskStatus.PENDING,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "completed_at": None,
+            "video_path": None,
+            "error": None,
+            "options": {},
+            "pipeline_output": None,
+        }
+        store = SimpleNamespace(
+            create=AsyncMock(return_value=task_payload),
+            append_log=AsyncMock(),
+            to_response=lambda item: item,
+        )
+        set_store(store)
+
+        created_coroutines: list[object] = []
+
+        def _capture_task(coro):
+            created_coroutines.append(coro)
+            coro.close()
+            return SimpleNamespace()
+
+        with (
+            patch("backend.routes._USE_PIPELINE_THREAD", False),
+            patch("backend.routes.asyncio.create_task", side_effect=_capture_task),
+            caplog.at_level(logging.INFO),
+        ):
+            response = await create_task(req)
+
+        assert response["id"] == "task-123"
+        requested = next(record for record in caplog.records if record.msg == "task_create_requested")
+        assert requested.text_len == len(req.user_text)
+        created = next(record for record in caplog.records if record.msg == "task_created")
+        assert created.task_id == "task-123"
+        assert created_coroutines
+
+    @pytest.mark.asyncio
     async def test_clarify_content_route_logs_success(self, caplog):
         req = ContentClarifyRequest(user_text="傅里叶变换")
         clarification = ContentClarifyData(
@@ -222,3 +278,21 @@ class TestRouteLogging:
         assert record.limit == 10
         completed = next(record for record in caplog.records if record.msg == "task_list_succeeded")
         assert completed.count == 1
+
+    @pytest.mark.asyncio
+    async def test_frontend_logs_route_logs_batch_stats(self, caplog):
+        class _FakeRequest:
+            async def json(self):
+                return [
+                    {"sessionId": "s1", "level": "info", "message": "a"},
+                    {"sessionId": "s1", "level": "warn", "message": "b"},
+                    {"sessionId": "s2", "level": "error", "message": "c"},
+                ]
+
+        with caplog.at_level(logging.INFO):
+            response = await receive_frontend_logs(_FakeRequest())
+
+        assert response.status_code == 204
+        record = next(record for record in caplog.records if record.msg == "frontend_logs_received")
+        assert record.entries_count == 3
+        assert record.session_count == 2

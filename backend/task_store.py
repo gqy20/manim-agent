@@ -16,6 +16,7 @@ from typing import Any
 
 import asyncpg
 
+from .log_config import log_event
 from .models import TaskCreateRequest, TaskStatus, TaskResponse
 
 
@@ -54,6 +55,13 @@ class TaskStore:
             min_size=2,
             max_size=10,
         )
+        log_event(
+            logger,
+            logging.INFO,
+            "task_store_pool_started",
+            min_size=2,
+            max_size=10,
+        )
 
     async def save(self) -> None:
         """No-op for PostgreSQL — writes are already transactional."""
@@ -64,6 +72,7 @@ class TaskStore:
         if self._pool:
             await self._pool.close()
             self._pool = None
+            log_event(logger, logging.INFO, "task_store_pool_closed")
 
     @property
     def pool(self) -> asyncpg.Pool:
@@ -93,17 +102,27 @@ class TaskStore:
                 if attempt >= attempts:
                     break
                 delay = base_delay * attempt
-                logger.warning(
-                    "TaskStore %s attempt %d/%d failed: %s; retrying in %.2fs",
-                    operation,
-                    attempt,
-                    attempts,
-                    exc,
-                    delay,
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "task_store_retry",
+                    operation=operation,
+                    attempt=attempt,
+                    attempts=attempts,
+                    delay_seconds=delay,
+                    error_type=type(exc).__name__,
                 )
                 await asyncio.sleep(delay)
 
         assert last_error is not None
+        log_event(
+            logger,
+            logging.ERROR,
+            "task_store_retry_exhausted",
+            operation=operation,
+            attempts=attempts,
+            error_type=type(last_error).__name__,
+        )
         raise last_error
 
     async def create(self, req: TaskCreateRequest) -> dict[str, Any]:

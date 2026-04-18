@@ -287,21 +287,31 @@ def _cleanup_output_dir(output_dir: Path, *, keep_mp4: bool = True) -> None:
 @router.post("", response_model=TaskResponse, status_code=201)
 async def create_task(req: TaskCreateRequest) -> TaskResponse:
     """Create a task & start the pipeline in background."""
-    logger.info(
-        "POST /api/tasks received: text_len=%d voice=%s model=%s quality=%s preset=%s no_tts=%s bgm_enabled=%s bgm_volume=%s target_duration_seconds=%s",
-        len(req.user_text),
-        req.voice_id,
-        req.model,
-        req.quality,
-        req.preset,
-        req.no_tts,
-        req.bgm_enabled,
-        req.bgm_volume,
-        req.target_duration_seconds,
+    log_event(
+        logger,
+        logging.INFO,
+        "task_create_requested",
+        route="/api/tasks",
+        text_len=len(req.user_text),
+        voice_id=req.voice_id,
+        model=req.model,
+        quality=req.quality,
+        preset=req.preset,
+        no_tts=req.no_tts,
+        bgm_enabled=req.bgm_enabled,
+        bgm_volume=req.bgm_volume,
+        target_duration_seconds=req.target_duration_seconds,
     )
     task = await _store.create(req)
     task_id = task["id"]
-    logger.info("Task created: task_id=%s", task_id)
+    log_event(
+        logger,
+        logging.INFO,
+        "task_created",
+        route="/api/tasks",
+        task_id=task_id,
+        task_status=task.get("status"),
+    )
 
     output_dir = Path("backend/output") / task_id
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -342,7 +352,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
 
     def _run_pipeline_thread() -> None:
         """Execute pipeline in a separate thread with its own event loop."""
-        logger.info("Task %s pipeline thread started", task_id)
+        log_event(logger, logging.INFO, "pipeline_thread_started", task_id=task_id)
         import asyncio as _asyncio
 
         log_callback("[SYS] Connecting to Claude Agent SDK...")
@@ -430,8 +440,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             _enforce_local_video_retention()
 
     async def _run_pipeline_inline() -> None:
-        """Inline async pipeline — test mode only."""
-        logger.info("Task %s pipeline inline started", task_id)
+        """Inline async pipeline – test mode only."""
+        log_event(logger, logging.INFO, "pipeline_inline_started", task_id=task_id)
         msg = "[SYS] Connecting to Claude Agent SDK..."
         _sse_mgr.push(task_id, msg)
         await _store.append_log(task_id, msg)
@@ -801,6 +811,12 @@ async def receive_frontend_logs(request: Request):
             for entry in group:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    logger.debug("Received %d frontend log entries across %d sessions",
-                 len(entries), len(by_session))
+    log_event(
+        logger,
+        logging.INFO,
+        "frontend_logs_received",
+        route="/api/tasks/frontend-logs",
+        entries_count=len(entries),
+        session_count=len(by_session),
+    )
     return Response(status_code=204)
