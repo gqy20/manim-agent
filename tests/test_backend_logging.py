@@ -111,6 +111,11 @@ class TestLogContext:
         root = logging.getLogger()
         assert len(root.handlers) == 2
 
+    def test_configure_logging_quiets_httpx_loggers(self, tmp_path):
+        configure_logging(log_dir=tmp_path)
+        assert logging.getLogger("httpx").level == logging.WARNING
+        assert logging.getLogger("httpcore").level == logging.WARNING
+
 
 class TestMainRouteLogging:
     @pytest.mark.asyncio

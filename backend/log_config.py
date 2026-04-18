@@ -145,6 +145,11 @@ def configure_logging(
         handler.setFormatter(formatter)
         root.addHandler(handler)
 
+    # Third-party client libraries can be extremely chatty on successful
+    # requests; keep them visible only when they emit warnings/errors.
+    for logger_name in ("httpx", "httpcore"):
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+
 
 def install_request_logging_middleware(app: Any) -> None:
     """Attach request lifecycle logging to a FastAPI/Starlette app."""
