@@ -38,6 +38,36 @@ class TestDispatcherPipelineOutput:
         assert po.segment_render_complete is True
         assert po.segment_video_paths == ["/media/segments/beat_001.mp4"]
 
+    def test_get_pipeline_output_accepts_segment_mode_without_video_output(self):
+        d = _MessageDispatcher(verbose=False)
+        d.dispatch(
+            _make_result_message(
+                num_turns=1,
+                **{
+                    "structured_output": {
+                        "video_output": None,
+                        "render_mode": "segments",
+                        "segment_render_complete": True,
+                        "segment_video_paths": ["/media/segments/beat_001.mp4"],
+                        "implemented_beats": ["Opening"],
+                        "deviations_from_plan": [],
+                        "beat_to_narration_map": [],
+                        "run_tool_stats": {},
+                        "review_blocking_issues": [],
+                        "review_suggested_edits": [],
+                        "review_frame_paths": [],
+                    }
+                },
+            )
+        )
+
+        po = d.get_pipeline_output()
+        assert po is not None
+        assert po.video_output is None
+        assert po.render_mode == "segments"
+        assert po.segment_render_complete is True
+        assert po.segment_video_paths == ["/media/segments/beat_001.mp4"]
+
     def test_get_pipeline_output_none_when_no_result_signal(self):
         d = _MessageDispatcher(verbose=False)
         d.dispatch(_make_result_message(num_turns=1))

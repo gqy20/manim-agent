@@ -10,10 +10,9 @@ from pydantic import BaseModel, Field, field_validator
 class PipelineOutput(BaseModel):
     """Structured pipeline output shared between Claude, backend, and UI."""
 
-    video_output: str = Field(
-        ...,
+    video_output: str | None = Field(
+        default=None,
         description="Path to the rendered scene video before final mux.",
-        min_length=1,
     )
     final_video_output: str | None = Field(
         default=None,
@@ -249,7 +248,9 @@ class PipelineOutput(BaseModel):
 
     @field_validator("video_output")
     @classmethod
-    def _video_output_must_not_be_blank(cls, value: str) -> str:
+    def _video_output_must_not_be_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if not value.strip():
             raise ValueError("video_output must not be blank")
         return value
@@ -266,9 +267,8 @@ class PipelineOutput(BaseModel):
                     "type": "object",
                     "properties": {
                         "video_output": {
-                            "type": "string",
+                            "type": ["string", "null"],
                             "description": "Path to the rendered scene video before final mux.",
-                            "minLength": 1,
                         },
                         "final_video_output": {
                             "type": ["string", "null"],
@@ -513,7 +513,6 @@ class PipelineOutput(BaseModel):
                         },
                     },
                     "required": [
-                        "video_output",
                         "implemented_beats",
                         "deviations_from_plan",
                         "beat_to_narration_map",

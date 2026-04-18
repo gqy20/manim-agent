@@ -724,7 +724,8 @@ class _MessageDispatcher:
         if not isinstance(raw, dict):
             raise ValueError(f"{source} unexpected type: {type(raw).__name__}")
         validated_output = PipelineOutput.model_validate(raw)
-        validated_output.video_output = normalize_path_string(validated_output.video_output)
+        if validated_output.video_output:
+            validated_output.video_output = normalize_path_string(validated_output.video_output)
         if validated_output.scene_file:
             validated_output.scene_file = normalize_path_string(validated_output.scene_file)
         return validated_output
