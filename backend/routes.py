@@ -380,6 +380,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
     main_loop = asyncio.get_event_loop()
 
     def log_callback(line: str) -> None:
+        if runtime.cancel_requested:
+            return
         logger.debug("task=%s log_callback line=%r", task_id, line)
         _safe_schedule(
             main_loop, lambda ln=line: _store.append_log(task_id, ln),
@@ -395,6 +397,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
 
     def event_callback(event: Any) -> None:
         """将 Dispatcher 结构化事件推送到 SSE 队列。"""
+        if runtime.cancel_requested:
+            return
         try:
             logger.debug("task=%s event_callback type=%s", task_id, type(event).__name__)
             main_loop.call_soon_threadsafe(_sse_mgr.push, task_id, event)

@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import HTTPException
 
 from backend.models import TaskStatus
 from backend.routes import set_store, terminate_task
-from backend.task_runtime import clear_task_runtimes, register_task_runtime
+from backend.task_runtime import TaskRuntime, clear_task_runtimes, register_task_runtime
 
 
 class _FakeRuntime:
@@ -89,3 +89,15 @@ async def test_terminate_task_is_idempotent_for_terminal_tasks() -> None:
 
     assert response["status"] == TaskStatus.STOPPED.value
     store.update_status.assert_not_awaited()
+
+
+def test_task_runtime_marks_cancel_requested_for_inline_tasks() -> None:
+    runtime = TaskRuntime(task_id="task-3", mode="inline")
+    async_task = SimpleNamespace(cancel=Mock())
+    runtime.set_async_task(async_task)
+
+    terminated = runtime.request_termination()
+
+    assert terminated is True
+    assert runtime.cancel_requested is True
+    async_task.cancel.assert_called_once_with()
