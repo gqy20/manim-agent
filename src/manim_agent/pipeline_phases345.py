@@ -242,16 +242,38 @@ async def run_phase3_render(
 
     needs_build_summary = not has_structured_build_summary(po)
     needs_narration_summary = not has_narration_sync_summary(po)
-    if video_output and (needs_build_summary or needs_narration_summary):
+    segment_paths_for_repair = [
+        str(path)
+        for path in (getattr(po, "segment_video_paths", None) or [])
+        if path
+    ] if po is not None else []
+    has_segment_render_artifacts = bool(
+        render_mode == "segments"
+        and segment_paths_for_repair
+        and all(Path(path).exists() for path in segment_paths_for_repair)
+    )
+    if (video_output or has_segment_render_artifacts) and (
+        needs_build_summary or needs_narration_summary
+    ):
         dispatcher._print(
             "  [REPAIR] Structured output is incomplete. Running a no-tools repair pass."
         )
+        repair_visual_reference = video_output
+        try:
+            partial_output = dispatcher.get_persistable_pipeline_output()
+        except AttributeError:
+            if po is not None and hasattr(po, "__dict__"):
+                partial_output = dict(vars(po))
+            else:
+                partial_output = None
         repair_prompt = prompt_builder.build_output_repair_prompt(
             user_text,
             target_duration_seconds,
             plan_text=plan_text,
-            partial_output=dispatcher.get_persistable_pipeline_output(),
-            video_output=video_output,
+            partial_output=partial_output,
+            video_output=None if render_mode == "segments" else repair_visual_reference,
+            segment_video_paths=segment_paths_for_repair,
+            render_mode=render_mode,
         )
         repair_opts = build_options(
             cwd=resolved_cwd,
@@ -272,6 +294,13 @@ async def run_phase3_render(
             _populate_po_metadata(
                 po, dispatcher, result_summary, target_duration_seconds, plan_text
             )
+            if (
+                render_mode == "segments"
+                and not getattr(po, "video_output", None)
+                and repair_visual_reference
+            ):
+                po.video_output = repair_visual_reference
+                video_output = repair_visual_reference
 
     if not has_structured_build_summary(po):
         warning = (

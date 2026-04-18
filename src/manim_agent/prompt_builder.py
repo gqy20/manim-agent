@@ -142,16 +142,35 @@ def build_output_repair_prompt(
     *,
     plan_text: str,
     partial_output: dict[str, object] | None,
-    video_output: str,
+    video_output: str | None,
+    segment_video_paths: list[str] | None = None,
+    render_mode: str = "full",
 ) -> str:
     """Build a no-tools repair prompt for missing structured output fields."""
     normalized = user_text.strip()
     target_duration = format_target_duration(target_duration_seconds)
+    render_mode = render_mode.strip().lower() or "full"
+    segment_video_paths = [path for path in (segment_video_paths or []) if path]
     partial_output_json = json.dumps(
         partial_output or {},
         ensure_ascii=False,
         indent=2,
     )
+    render_artifact_guidance = (
+        f"- Keep `video_output` set to `{video_output}`.\n"
+        "- Preserve the existing render artifact path exactly as-is.\n"
+    )
+    if render_mode == "segments" and not video_output:
+        render_artifact_guidance = (
+            "- Keep `video_output` as null. Do not invent a synthetic full-length render path.\n"
+            "- Preserve `segment_video_paths` as the ordered beat-level deliverables.\n"
+        )
+        if segment_video_paths:
+            segment_paths_json = json.dumps(segment_video_paths, ensure_ascii=False, indent=2)
+            render_artifact_guidance += (
+                "- Keep `segment_video_paths` exactly aligned to these existing files:\n"
+                f"{segment_paths_json}\n"
+            )
     guidance = (
         "\n\nStructured output repair pass:\n"
         f"- Target final video duration: about {target_duration}.\n"
@@ -159,7 +178,8 @@ def build_output_repair_prompt(
         "- Do not write, edit, render, probe, or inspect files.\n"
         "- The render already exists and should be preserved.\n"
         "- Your only job is to return a corrected structured_output object.\n"
-        f"- Keep `video_output` set to `{video_output}`.\n"
+        f"- `render_mode` remains `{render_mode}`.\n"
+        f"{render_artifact_guidance}"
         "- Fill in the missing build bookkeeping from the approved plan and the work you already completed.\n"
         "- `implemented_beats` must be the ordered beat titles actually implemented.\n"
         "- `build_summary` must briefly summarize what the animation build accomplished.\n"

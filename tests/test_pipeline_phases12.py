@@ -101,6 +101,25 @@ educational
         assert "scene-build" in result.lower() or "implementation" in result.lower()
 
 
+class TestBuildOutputRepairPrompt:
+    def test_segment_mode_without_video_output_mentions_segment_paths(self):
+        from manim_agent.prompt_builder import build_output_repair_prompt
+
+        result = build_output_repair_prompt(
+            user_text="test",
+            target_duration_seconds=60,
+            plan_text="## Beat List\n1. Opening",
+            partial_output={"render_mode": "segments"},
+            video_output=None,
+            segment_video_paths=["segments/beat_001.mp4", "segments/beat_002.mp4"],
+            render_mode="segments",
+        )
+
+        assert "segment_video_paths" in result
+        assert "segments/beat_001.mp4" in result
+        assert "Keep `video_output` as null" in result
+
+
 class TestPhase1ValidationLogic:
     """Tests for Phase 1 validation logic in run_phase1_planning.
 
