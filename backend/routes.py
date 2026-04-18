@@ -405,6 +405,14 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     pipeline_output=po_data,
                 ),
             )
+            log_event(
+                logger,
+                logging.INFO,
+                "task_completed",
+                task_id=task_id,
+                task_status=TaskStatus.COMPLETED.value,
+                video_path=_video_url,
+            )
             event_callback(
                 _status_event(
                     TaskStatus.COMPLETED,
@@ -426,6 +434,14 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     error=error_message,
                     pipeline_output=po_data,
                 ),
+            )
+            log_event(
+                logger,
+                logging.ERROR,
+                "task_failed",
+                task_id=task_id,
+                task_status=TaskStatus.FAILED.value,
+                error_type=type(exc).__name__,
             )
             event_callback(
                 _status_event(
@@ -489,6 +505,14 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 video_path=_video_url,
                 pipeline_output=po_data,
             )
+            log_event(
+                logger,
+                logging.INFO,
+                "task_completed",
+                task_id=task_id,
+                task_status=TaskStatus.COMPLETED.value,
+                video_path=_video_url,
+            )
             event_callback(
                 _status_event(
                     TaskStatus.COMPLETED,
@@ -507,6 +531,14 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 TaskStatus.FAILED,
                 error=error_message,
                 pipeline_output=po_data,
+            )
+            log_event(
+                logger,
+                logging.ERROR,
+                "task_failed",
+                task_id=task_id,
+                task_status=TaskStatus.FAILED.value,
+                error_type=type(exc).__name__,
             )
             event_callback(
                 _status_event(
