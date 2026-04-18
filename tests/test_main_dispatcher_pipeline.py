@@ -92,13 +92,26 @@ class TestSessionIsolation:
 class TestRunPipeline:
     @pytest.mark.asyncio
     async def test_segments_render_mode_marks_pipeline_output_state(self, tmp_path):
+        segment_a = tmp_path / "segments" / "beat_001.mp4"
+        segment_b = tmp_path / "segments" / "beat_002.mp4"
+        segment_a.parent.mkdir(parents=True, exist_ok=True)
+        segment_a.write_bytes(b"a")
+        segment_b.write_bytes(b"b")
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
                 num_turns=1,
                 **{
                     "structured_output": {
-                        "video_output": "media/out.mp4",
+                        "video_output": None,
+                        "render_mode": "segments",
+                        "segment_render_complete": True,
+                        "segment_video_paths": [str(segment_a), str(segment_b)],
+                        "implemented_beats": ["Opening", "Main"],
+                        "build_summary": "Built two beat-level segments.",
+                        "beat_to_narration_map": ["Opening -> intro", "Main -> explain"],
+                        "narration_coverage_complete": True,
+                        "estimated_narration_duration_seconds": 30.0,
                         "narration": "segment-aware narration",
                     }
                 },
@@ -119,6 +132,16 @@ class TestRunPipeline:
                 return_value=_approved_review_result(),
             ),
             patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch(
+                "manim_agent.pipeline.video_builder.concat_videos",
+                new_callable=AsyncMock,
+                return_value="output/segment_visual_track.mp4",
+            ),
+            patch(
+                "manim_agent.audio_orchestrator.video_builder.concat_audios",
+                new_callable=AsyncMock,
+                return_value="out/audio_track.mp3",
+            ),
             patch(
                 "manim_agent.pipeline.video_builder.build_final_video",
                 new_callable=AsyncMock,
@@ -145,7 +168,7 @@ class TestRunPipeline:
         dispatcher = dispatcher_refs[0]
         po = dispatcher.get_pipeline_output()
         assert po.render_mode == "segments"
-        assert po.segment_render_complete is False
+        assert po.segment_render_complete is True
 
     @pytest.mark.asyncio
     async def test_segments_render_mode_runs_without_full_video_output(self, tmp_path):
@@ -165,8 +188,11 @@ class TestRunPipeline:
                         "segment_render_complete": True,
                         "segment_video_paths": [str(segment_a), str(segment_b)],
                         "implemented_beats": ["Opening", "Main"],
+                        "build_summary": "Built two beat-level segments.",
                         "deviations_from_plan": [],
                         "beat_to_narration_map": ["Opening -> intro", "Main -> explain"],
+                        "narration_coverage_complete": True,
+                        "estimated_narration_duration_seconds": 30.0,
                         "run_tool_stats": {},
                         "review_blocking_issues": [],
                         "review_suggested_edits": [],
@@ -231,7 +257,7 @@ class TestRunPipeline:
         mock_video.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_segments_render_mode_materializes_segments_from_full_render(self, tmp_path):
+    async def test_segments_render_mode_rejects_full_render_without_real_segments(self, tmp_path):
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
@@ -242,8 +268,11 @@ class TestRunPipeline:
                         "duration_seconds": 6.0,
                         "render_mode": "segments",
                         "implemented_beats": ["Opening", "Main"],
+                        "build_summary": "Built the planned beats.",
                         "deviations_from_plan": [],
                         "beat_to_narration_map": ["Opening -> intro", "Main -> explain"],
+                        "narration_coverage_complete": True,
+                        "estimated_narration_duration_seconds": 6.0,
                         "run_tool_stats": {},
                         "review_blocking_issues": [],
                         "review_suggested_edits": [],
@@ -252,47 +281,19 @@ class TestRunPipeline:
                 },
             ),
         ]
-        dispatcher_refs: list[object] = []
-        extracted_segments = [
-            str(tmp_path / "segments" / "beat_001.mp4"),
-            str(tmp_path / "segments" / "beat_002.mp4"),
-        ]
-
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            patch(
-                "manim_agent.pipeline_phases345.extract_video_segments",
-                new_callable=AsyncMock,
-                return_value=extracted_segments,
-            ) as mock_extract_segments,
-            patch(
-                "manim_agent.pipeline.render_review.extract_review_frames",
-                new_callable=AsyncMock,
-                return_value=[],
-            ),
-            patch(
-                "manim_agent.pipeline._run_render_review",
-                new_callable=AsyncMock,
-                return_value=_approved_review_result(),
-            ),
+            pytest.raises(RuntimeError, match="segment render outputs are required"),
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
 
-            result = await main_module.run_pipeline(
+            await main_module.run_pipeline(
                 user_text="test content",
                 output_path="output/final.mp4",
                 no_tts=True,
                 render_mode="segments",
-                _dispatcher_ref=dispatcher_refs,
                 cwd=str(tmp_path),
             )
-
-        assert result == str(Path("media/out.mp4").resolve())
-        dispatcher = dispatcher_refs[0]
-        po = dispatcher.get_pipeline_output()
-        assert po.segment_video_paths == extracted_segments
-        assert po.segment_render_complete is True
-        mock_extract_segments.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_full_flow_with_tts(self, tmp_path):
@@ -309,6 +310,14 @@ class TestRunPipeline:
                         "video_output": "media/out.mp4",
                         "scene_file": "scene.py",
                         "scene_class": "GeneratedScene",
+                        "implemented_beats": ["Opening", "Transformation"],
+                        "build_summary": "Built the planned transformation beats.",
+                        "beat_to_narration_map": [
+                            "Opening -> Introduce the circle",
+                            "Transformation -> Explain the square transformation",
+                        ],
+                        "narration_coverage_complete": True,
+                        "estimated_narration_duration_seconds": 30.0,
                         "narration": "这是一个圆形变成正方形的中文讲解。",
                     }
                 },
@@ -320,6 +329,11 @@ class TestRunPipeline:
             patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
             patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
             patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch(
+                "manim_agent.audio_orchestrator.video_builder.concat_audios",
+                new_callable=AsyncMock,
+                return_value="out/audio_track.mp3",
+            ),
             patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
@@ -339,7 +353,7 @@ class TestRunPipeline:
             )
 
             assert result == "output/final.mp4"
-            mock_tts.assert_awaited_once()
+            assert mock_tts.await_count == 2
             mock_video.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -357,6 +371,11 @@ class TestRunPipeline:
             patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
             patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
             patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch(
+                "manim_agent.audio_orchestrator.video_builder.concat_audios",
+                new_callable=AsyncMock,
+                return_value="out/audio_track.mp3",
+            ),
             patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
@@ -470,6 +489,11 @@ class TestRunPipeline:
                 **{
                     "structured_output": {
                         "video_output": "media/out.mp4",
+                        "implemented_beats": ["Opening", "Main"],
+                        "build_summary": "Built the planned main beats.",
+                        "beat_to_narration_map": ["Opening -> intro", "Main -> explain"],
+                        "narration_coverage_complete": True,
+                        "estimated_narration_duration_seconds": 30.0,
                         "narration": "这是用于主流程测试的中文解说。",
                     }
                 },
@@ -481,6 +505,11 @@ class TestRunPipeline:
             patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
             patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
             patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch(
+                "manim_agent.audio_orchestrator.video_builder.concat_audios",
+                new_callable=AsyncMock,
+                return_value="out/audio_track.mp3",
+            ),
             patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
@@ -613,6 +642,11 @@ class TestBackgroundMusic:
                 **{
                     "structured_output": {
                         "video_output": "media/out.mp4",
+                        "implemented_beats": ["Opening", "Main"],
+                        "build_summary": "Built the planned main beats.",
+                        "beat_to_narration_map": ["Opening -> intro", "Main -> explain"],
+                        "narration_coverage_complete": True,
+                        "estimated_narration_duration_seconds": 30.0,
                         "narration": "Fallback-safe narration for the BGM error path.",
                     }
                 },
@@ -629,6 +663,11 @@ class TestBackgroundMusic:
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("bgm unavailable"),
             ) as mock_bgm,
+            patch(
+                "manim_agent.audio_orchestrator.video_builder.concat_audios",
+                new_callable=AsyncMock,
+                return_value="out/audio_track.mp3",
+            ),
             patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
@@ -649,12 +688,12 @@ class TestBackgroundMusic:
             )
 
         assert result == "output/final.mp4"
-        mock_tts.assert_awaited_once()
+        assert mock_tts.await_count == 2
         mock_bgm.assert_awaited_once()
         mock_video.assert_awaited_once_with(
             video_path=str(Path("media/out.mp4").resolve()),
-            audio_path="out/audio.mp3",
-            subtitle_path="out/sub.srt",
+            audio_path="out/audio_track.mp3",
+            subtitle_path=None,
             output_path="output/final.mp4",
             bgm_path=None,
             bgm_volume=0.12,

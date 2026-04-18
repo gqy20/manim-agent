@@ -70,6 +70,8 @@ def build_implementation_prompt(
             "- In structured_output, include `segment_video_paths` with the ordered segment paths that were actually rendered.\n"
             "- In structured_output, include `render_mode` as `segments` and `segment_render_complete` as true only when every planned beat segment exists.\n"
             "- Do not treat a single full-length `video_output` as the primary deliverable in this mode; if you also produce one, treat it as a convenience artifact.\n"
+            "- If you cannot produce the real beat-level MP4 files, stop and fail instead of silently returning a degraded full-render result.\n"
+            "- Do not mark `segment_render_complete` true as a placeholder.\n"
         )
     guidance = (
         "\n\nImplementation pass:\n"
@@ -95,6 +97,8 @@ def build_implementation_prompt(
         "one short narration mapping line per beat.\n"
         "- In structured_output, include `narration_coverage_complete` and "
         "`estimated_narration_duration_seconds`.\n"
+        "- Do not leave `implemented_beats` or `beat_to_narration_map` empty.\n"
+        "- Do not omit `build_summary`, `narration_coverage_complete`, or `estimated_narration_duration_seconds`.\n"
         "- Keep every file inside the task directory only.\n"
         "- Write the main script to scene.py unless multiple files are truly necessary.\n"
         "- Use GeneratedScene as the main Manim Scene class unless "

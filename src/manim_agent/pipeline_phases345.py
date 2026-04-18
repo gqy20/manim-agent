@@ -26,7 +26,6 @@ from .render_review import extract_review_frames
 from .review_schema import RenderReviewOutput
 from .segment_renderer import (
     build_segment_render_plan,
-    build_provisional_segment_render_plan,
     discover_segment_video_paths,
     extract_video_segments,
     read_segment_render_plan,
@@ -35,6 +34,36 @@ from .segment_renderer import (
 from .video_builder import _get_duration, build_final_video, concat_videos
 
 logger = logging.getLogger(__name__)
+
+
+def _require_real_segment_outputs(*, po: Any, render_mode: str) -> None:
+    """Fail fast when segment mode lacks real segment render artifacts."""
+    if po is None or render_mode != "segments":
+        return
+
+    segment_video_paths = [
+        str(path)
+        for path in (getattr(po, "segment_video_paths", None) or [])
+        if path
+    ]
+    if segment_video_paths and all(Path(path).exists() for path in segment_video_paths):
+        return
+
+    raise RuntimeError(
+        "High-quality segment render outputs are required in segments mode. "
+        "No real segment render outputs were produced."
+    )
+
+
+def _require_structured_build_bookkeeping(po: Any) -> None:
+    """Fail fast when the implementation pass skipped required bookkeeping."""
+    if has_structured_build_summary(po) and has_narration_sync_summary(po):
+        return
+
+    raise RuntimeError(
+        "Structured build bookkeeping is required. "
+        "Missing implemented beat bookkeeping, build summary, or narration sync metadata."
+    )
 
 
 # ── Frame labeling ──────────────────────────────────────────────────
@@ -303,21 +332,7 @@ async def run_phase3_render(
                 po.video_output = repair_visual_reference
                 video_output = repair_visual_reference
 
-    if not has_structured_build_summary(po):
-        warning = (
-            "Claude skipped the scene-build summary. "
-            "Continuing with partial structured output because a render exists."
-        )
-        dispatcher._print(f"  [WARN] {warning}")
-        logger.warning("run_pipeline: %s", warning)
-
-    if not has_narration_sync_summary(po):
-        warning = (
-            "Claude skipped the narration-sync summary. "
-            "Continuing because narration metadata can be incomplete without blocking delivery."
-        )
-        dispatcher._print(f"  [WARN] {warning}")
-        logger.warning("run_pipeline: %s", warning)
+    _require_structured_build_bookkeeping(po)
 
     if po is not None and video_output and po.duration_seconds is None:
         try:
@@ -327,14 +342,7 @@ async def run_phase3_render(
                 "run_pipeline: unable to probe render duration for %r: %s", video_output, exc
             )
 
-    if po is not None:
-        await _materialize_segment_outputs_from_full_render(
-            po=po,
-            render_mode=render_mode,
-            video_output=video_output,
-            output_dir=resolved_cwd,
-            dispatcher=dispatcher,
-        )
+    _require_real_segment_outputs(po=po, render_mode=render_mode)
 
     if not video_output:
         dispatcher._print("")
@@ -723,6 +731,18 @@ async def _resolve_mux_video_source(
     if po is None:
         return video_output, False
 
+    if getattr(po, "render_mode", None) == "segments":
+        segment_video_paths = [
+            str(path)
+            for path in (getattr(po, "segment_video_paths", None) or [])
+            if path
+        ]
+        if not segment_video_paths or not all(Path(path).exists() for path in segment_video_paths):
+            raise RuntimeError(
+                "High-quality segment render outputs are required in segments mode. "
+                "No real segment render outputs were produced."
+            )
+
     segment_video_paths = [
         str(path)
         for path in (getattr(po, "segment_video_paths", None) or [])
@@ -774,65 +794,6 @@ def _populate_po_metadata(
     dispatcher.partial_narration_coverage_complete = po.narration_coverage_complete
     dispatcher.partial_estimated_narration_duration_seconds = (
         po.estimated_narration_duration_seconds
-    )
-
-
-async def _materialize_segment_outputs_from_full_render(
-    *,
-    po: Any,
-    render_mode: str,
-    video_output: str | None,
-    output_dir: str,
-    dispatcher: _MessageDispatcher,
-) -> None:
-    """Fallback: derive beat clips from a full render when segment mode lacks them."""
-    if po is None or render_mode != "segments" or not video_output:
-        return
-
-    existing_segment_paths = [
-        str(path)
-        for path in (getattr(po, "segment_video_paths", None) or [])
-        if path
-    ]
-    if existing_segment_paths and all(Path(path).exists() for path in existing_segment_paths):
-        po.segment_render_complete = True
-        return
-
-    total_duration = float(getattr(po, "duration_seconds", 0.0) or 0.0)
-    if total_duration <= 0:
-        return
-
-    beat_titles = list(getattr(po, "implemented_beats", None) or [])
-    plan = build_provisional_segment_render_plan(
-        beat_titles=beat_titles,
-        total_duration_seconds=total_duration,
-        output_dir=output_dir,
-        scene_file=getattr(po, "scene_file", None),
-        scene_class=getattr(po, "scene_class", None),
-    )
-    if not plan.segments:
-        return
-
-    try:
-        extracted_paths = await extract_video_segments(video_output, plan)
-    except Exception as exc:
-        logger.warning(
-            "run_phase3_render: unable to materialize beat segments from full render: %s",
-            exc,
-        )
-        return
-
-    po.segment_render_plan_path = write_segment_render_plan(
-        plan,
-        str(Path(output_dir) / "segment_render_plan.json"),
-    )
-    po.segment_video_paths = extracted_paths
-    po.segment_render_complete = True
-    dispatcher.partial_render_mode = "segments"
-    dispatcher.partial_segment_render_complete = True
-    dispatcher._print(
-        "  [RENDER] Materialized beat segment videos from full render fallback: "
-        f"{len(extracted_paths)}"
     )
 
 

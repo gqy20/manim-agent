@@ -75,15 +75,10 @@ def build_beats_from_pipeline_output(
             )
         return beats
 
-    title = "Main narration"
-    return [
-        BeatSpec(
-            id="beat_001",
-            title=title,
-            narration_hint=hints[0] if hints else None,
-            narration_text=(fallback_narration or "").strip() or None,
-        )
-    ]
+    raise RuntimeError(
+        "Beat structure is required for audio orchestration. "
+        "Pipeline output did not provide implemented_beats."
+    )
 
 
 async def generate_beat_narrations(

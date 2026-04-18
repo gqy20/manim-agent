@@ -100,6 +100,21 @@ educational
         )
         assert "scene-build" in result.lower() or "implementation" in result.lower()
 
+    def test_segments_mode_requires_real_segment_delivery_and_no_placeholder_success(self):
+        from manim_agent.pipeline_phases12 import build_implementation_prompt
+
+        result = build_implementation_prompt(
+            user_text="测试",
+            target_duration_seconds=60,
+            plan_text="## Beat List\n1. Opening\n2. Main",
+            cwd=".",
+            render_mode="segments",
+        )
+
+        assert "If you cannot produce the real beat-level MP4 files" in result
+        assert "Do not mark `segment_render_complete` true as a placeholder" in result
+        assert "Do not leave `implemented_beats` or `beat_to_narration_map` empty" in result
+
 
 class TestBuildOutputRepairPrompt:
     def test_segment_mode_without_video_output_mentions_segment_paths(self):
@@ -118,6 +133,7 @@ class TestBuildOutputRepairPrompt:
         assert "segment_video_paths" in result
         assert "segments/beat_001.mp4" in result
         assert "Keep `video_output` as null" in result
+        assert "Do not leave `implemented_beats` empty" in result
 
 
 class TestPhase1ValidationLogic:

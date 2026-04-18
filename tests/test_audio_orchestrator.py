@@ -23,17 +23,13 @@ class TestBuildBeatsFromPipelineOutput:
         assert beats[0].narration_hint == "Introduce the problem"
         assert beats[1].narration_hint == "Explain the core transformation"
 
-    def test_falls_back_to_single_beat_when_pipeline_output_is_sparse(self):
-        beats = build_beats_from_pipeline_output(
-            implemented_beats=[],
-            beat_to_narration_map=[],
-            fallback_narration="Fallback narration from the user request.",
-        )
-
-        assert len(beats) == 1
-        assert beats[0].id == "beat_001"
-        assert beats[0].title == "Main narration"
-        assert beats[0].narration_text == "Fallback narration from the user request."
+    def test_raises_when_pipeline_output_is_sparse(self):
+        with pytest.raises(RuntimeError, match="Beat structure is required"):
+            build_beats_from_pipeline_output(
+                implemented_beats=[],
+                beat_to_narration_map=[],
+                fallback_narration="Fallback narration from the user request.",
+            )
 
 
 class TestOrchestrateAudioAssets:

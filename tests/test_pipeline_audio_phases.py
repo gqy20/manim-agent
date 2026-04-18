@@ -277,7 +277,7 @@ class TestPipelineAudioPhases:
         assert mock_query.called
 
     @pytest.mark.asyncio
-    async def test_run_phase3_render_materializes_segments_from_full_render_fallback(
+    async def test_run_phase3_render_rejects_segments_mode_without_real_segment_outputs(
         self, tmp_path
     ):
         dispatcher = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
@@ -297,62 +297,59 @@ class TestPipelineAudioPhases:
             render_mode="segments",
             segment_render_complete=False,
         )
-        review_result = SimpleNamespace(
-            summary="Looks good.",
-            approved=True,
-            blocking_issues=[],
-            suggested_edits=[],
-            frame_analyses=[],
-            vision_analysis_used=False,
+        with patch.object(dispatcher, "get_pipeline_output", return_value=po):
+            with pytest.raises(RuntimeError, match="segment render outputs are required"):
+                await run_phase3_render(
+                    dispatcher=dispatcher,
+                    hook_state=SimpleNamespace(captured_source_code={}),
+                    user_text="Explain a concept",
+                    plan_text="Plan",
+                    result_summary=None,
+                    target_duration_seconds=30,
+                    resolved_cwd=str(tmp_path),
+                    system_prompt="system",
+                    quality="high",
+                    prompt_file=None,
+                    log_callback=None,
+                    event_callback=None,
+                    cli_stderr_lines=[],
+                    render_mode="segments",
+                )
+
+    @pytest.mark.asyncio
+    async def test_run_phase3_render_rejects_missing_structured_build_bookkeeping(self, tmp_path):
+        dispatcher = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
+        po = SimpleNamespace(
+            video_output="media/out.mp4",
+            duration_seconds=6.0,
+            implemented_beats=["Opening", "Main idea"],
+            beat_to_narration_map=[],
+            build_summary=None,
+            deviations_from_plan=[],
+            narration_coverage_complete=None,
+            estimated_narration_duration_seconds=None,
+            segment_video_paths=[],
+            scene_file="scene.py",
+            scene_class="GeneratedScene",
         )
-        extracted_segments = [
-            str(tmp_path / "segments" / "beat_001.mp4"),
-            str(tmp_path / "segments" / "beat_002.mp4"),
-            str(tmp_path / "segments" / "beat_003.mp4"),
-        ]
 
-        with (
-            patch.object(dispatcher, "get_pipeline_output", return_value=po),
-            patch(
-                "manim_agent.pipeline_phases345.extract_video_segments",
-                new_callable=AsyncMock,
-                return_value=extracted_segments,
-            ) as mock_extract_segments,
-            patch(
-                "manim_agent.pipeline_phases345.extract_review_frames",
-                new_callable=AsyncMock,
-                return_value=["frame_1.png"],
-            ),
-            patch(
-                "manim_agent.pipeline_phases345.run_render_review",
-                new_callable=AsyncMock,
-                return_value=review_result,
-            ),
-        ):
-            result_po, video_output, review_frames = await run_phase3_render(
-                dispatcher=dispatcher,
-                hook_state=SimpleNamespace(captured_source_code={}),
-                user_text="Explain a concept",
-                plan_text="Plan",
-                result_summary=None,
-                target_duration_seconds=30,
-                resolved_cwd=str(tmp_path),
-                system_prompt="system",
-                quality="high",
-                prompt_file=None,
-                log_callback=None,
-                event_callback=None,
-                cli_stderr_lines=[],
-                render_mode="segments",
-            )
-
-        assert result_po is po
-        assert video_output == "media/out.mp4"
-        assert review_frames == ["frame_1.png"]
-        assert po.segment_video_paths == extracted_segments
-        assert po.segment_render_complete is True
-        assert po.segment_render_plan_path.endswith("segment_render_plan.json")
-        mock_extract_segments.assert_awaited_once()
+        with patch.object(dispatcher, "get_pipeline_output", return_value=po):
+            with pytest.raises(RuntimeError, match="Structured build bookkeeping is required"):
+                await run_phase3_render(
+                    dispatcher=dispatcher,
+                    hook_state=SimpleNamespace(captured_source_code={}),
+                    user_text="Explain a concept",
+                    plan_text="Plan",
+                    result_summary=None,
+                    target_duration_seconds=30,
+                    resolved_cwd=str(tmp_path),
+                    system_prompt="system",
+                    quality="high",
+                    prompt_file=None,
+                    log_callback=None,
+                    event_callback=None,
+                    cli_stderr_lines=[],
+                )
 
     @pytest.mark.asyncio
     async def test_run_phase4_tts_updates_pipeline_output_with_audio_orchestration(self, tmp_path):
@@ -651,7 +648,7 @@ class TestPipelineAudioPhases:
         mock_extract.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_run_phase5_mux_falls_back_when_segment_video_missing(self, tmp_path):
+    async def test_run_phase5_mux_rejects_segments_mode_when_segment_video_missing(self, tmp_path):
         dispatcher = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
         po = SimpleNamespace(
             final_video_output=None,
@@ -659,6 +656,7 @@ class TestPipelineAudioPhases:
             outro_video_path=None,
             segment_render_plan_path=None,
             segment_video_paths=[str(tmp_path / "segments" / "missing.mp4")],
+            render_mode="segments",
         )
         audio_result = AudioOrchestrationResult(
             beats=[],
@@ -668,18 +666,8 @@ class TestPipelineAudioPhases:
             bgm_path=None,
         )
 
-        with (
-            patch(
-                "manim_agent.pipeline_phases345.concat_videos",
-                new_callable=AsyncMock,
-            ) as mock_concat,
-            patch(
-                "manim_agent.pipeline_phases345.build_final_video",
-                new_callable=AsyncMock,
-                return_value="out/final.mp4",
-            ) as mock_build,
-        ):
-            result = await run_phase5_mux(
+        with pytest.raises(RuntimeError, match="segment render outputs are required"):
+            await run_phase5_mux(
                 dispatcher=dispatcher,
                 video_output="media/out.mp4",
                 audio_result=audio_result,
@@ -689,14 +677,3 @@ class TestPipelineAudioPhases:
                 intro_outro=False,
                 event_callback=None,
             )
-
-        assert result == "out/final.mp4"
-        mock_concat.assert_not_awaited()
-        mock_build.assert_awaited_once_with(
-            video_path="media/out.mp4",
-            audio_path="out/audio_track.mp3",
-            subtitle_path=None,
-            output_path="out/final.mp4",
-            bgm_path=None,
-            bgm_volume=0.2,
-        )
