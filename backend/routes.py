@@ -21,7 +21,7 @@ except ImportError:
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
 from .pipeline_runner import PipelineExecutionError, _pipeline_body
 from .content_clarifier import ContentClarifyError, clarify_content
-from .log_config import log_event
+from .log_config import bind_log_context, get_log_context, log_event, set_log_context
 
 from manim_agent.pipeline_events import EventType, PipelineEvent, StatusPayload
 
@@ -304,6 +304,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
     )
     task = await _store.create(req)
     task_id = task["id"]
+    bind_log_context(task_id=task_id)
+    execution_log_context = get_log_context()
     log_event(
         logger,
         logging.INFO,
@@ -352,6 +354,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
 
     def _run_pipeline_thread() -> None:
         """Execute pipeline in a separate thread with its own event loop."""
+        previous_log_context = get_log_context()
+        set_log_context(execution_log_context)
         log_event(logger, logging.INFO, "pipeline_thread_started", task_id=task_id)
         import asyncio as _asyncio
 
@@ -438,9 +442,12 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 pass
             _cleanup_output_dir(output_dir, keep_mp4=(_r2_client is None))
             _enforce_local_video_retention()
+            set_log_context(previous_log_context)
 
     async def _run_pipeline_inline() -> None:
         """Inline async pipeline – test mode only."""
+        previous_log_context = get_log_context()
+        set_log_context(execution_log_context)
         log_event(logger, logging.INFO, "pipeline_inline_started", task_id=task_id)
         msg = "[SYS] Connecting to Claude Agent SDK..."
         _sse_mgr.push(task_id, msg)
@@ -513,6 +520,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             _sse_mgr.done(task_id)
             _cleanup_output_dir(output_dir, keep_mp4=(_r2_client is None))
             _enforce_local_video_retention()
+            set_log_context(previous_log_context)
 
     if _USE_PIPELINE_THREAD:
         # Production: dedicated thread with its own asyncio loop.

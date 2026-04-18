@@ -54,6 +54,11 @@ def bind_log_context(**fields: Any) -> None:
     _LOG_CONTEXT.set(current)
 
 
+def set_log_context(fields: dict[str, Any] | None) -> None:
+    """Replace the full logging context."""
+    _LOG_CONTEXT.set({key: value for key, value in (fields or {}).items() if value is not None})
+
+
 def clear_log_context(*keys: str) -> None:
     """Clear specific context keys or reset the whole context."""
     if not keys:

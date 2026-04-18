@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import logging
+import threading
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -15,6 +15,7 @@ from backend.log_config import (
     bind_log_context,
     clear_log_context,
     configure_logging,
+    get_log_context,
     install_request_logging_middleware,
     log_event,
 )
@@ -143,6 +144,8 @@ class TestContentClarifierLogging:
 class TestRouteLogging:
     @pytest.mark.asyncio
     async def test_create_task_logs_request_and_creation(self, caplog):
+        clear_log_context()
+        bind_log_context(request_id="req-123")
         req = SimpleNamespace(
             user_text="讲解圆周率",
             voice_id="female-tianmei",
@@ -190,9 +193,78 @@ class TestRouteLogging:
         assert response["id"] == "task-123"
         requested = next(record for record in caplog.records if record.msg == "task_create_requested")
         assert requested.text_len == len(req.user_text)
+        assert requested.request_id == "req-123"
         created = next(record for record in caplog.records if record.msg == "task_created")
         assert created.task_id == "task-123"
+        assert created.request_id == "req-123"
         assert created_coroutines
+        clear_log_context()
+
+    @pytest.mark.asyncio
+    async def test_create_task_propagates_request_context_into_thread_pipeline(self, caplog):
+        clear_log_context()
+        bind_log_context(request_id="req-thread")
+        req = SimpleNamespace(
+            user_text="讲解圆周率",
+            voice_id="female-tianmei",
+            model="speech-2.8-hd",
+            quality="high",
+            preset="default",
+            no_tts=False,
+            bgm_enabled=False,
+            bgm_volume=0.12,
+            target_duration_seconds=60,
+            bgm_prompt=None,
+        )
+        task_payload = {
+            "id": "task-thread",
+            "user_text": req.user_text,
+            "status": TaskStatus.PENDING,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "completed_at": None,
+            "video_path": None,
+            "error": None,
+            "options": {},
+            "pipeline_output": None,
+        }
+        store = SimpleNamespace(
+            create=AsyncMock(return_value=task_payload),
+            append_log=AsyncMock(),
+            update_status=AsyncMock(),
+            to_response=lambda item: item,
+        )
+        set_store(store)
+
+        captured_context: dict[str, object] = {}
+        real_thread = threading.Thread
+
+        async def _fake_pipeline_body(**kwargs):
+            captured_context.update(get_log_context())
+            return ("video.mp4", None)
+
+        class _ImmediateThread:
+            def __init__(self, *, target, daemon):
+                self._target = target
+
+            def start(self):
+                thread = real_thread(target=self._target, daemon=True)
+                thread.start()
+                thread.join()
+
+        with (
+            patch("backend.routes._pipeline_body", side_effect=_fake_pipeline_body),
+            patch("backend.routes.threading.Thread", side_effect=lambda **kwargs: _ImmediateThread(**kwargs)),
+            caplog.at_level(logging.INFO),
+        ):
+            response = await create_task(req)
+
+        assert response["id"] == "task-thread"
+        started = next(record for record in caplog.records if record.msg == "pipeline_thread_started")
+        assert started.request_id == "req-thread"
+        assert started.task_id == "task-thread"
+        assert captured_context["request_id"] == "req-thread"
+        assert captured_context["task_id"] == "task-thread"
+        clear_log_context()
 
     @pytest.mark.asyncio
     async def test_clarify_content_route_logs_success(self, caplog):
