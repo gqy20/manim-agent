@@ -7,12 +7,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from backend.log_config import bind_log_context, clear_log_context
 from backend.pipeline_runner import PipelineExecutionError, _pipeline_body
 
 
 class TestPipelineRunnerLogging:
     @pytest.mark.asyncio
     async def test_pipeline_body_logs_success(self, caplog, tmp_path):
+        clear_log_context()
+        bind_log_context(request_id="req-pipeline")
         req = SimpleNamespace(
             user_text="讲解圆周率",
             voice_id="female-tianmei",
@@ -51,12 +54,18 @@ class TestPipelineRunnerLogging:
             )
 
         assert result == (str(Path("out/final.mp4").resolve()), None)
-        events = [record.msg for record in caplog.records]
-        assert "pipeline_started" in events
-        assert "pipeline_completed" in events
+        started = next(record for record in caplog.records if record.msg == "pipeline_started")
+        completed = next(record for record in caplog.records if record.msg == "pipeline_completed")
+        assert started.request_id == "req-pipeline"
+        assert started.task_id == "task-1"
+        assert completed.request_id == "req-pipeline"
+        assert completed.task_id == "task-1"
+        clear_log_context()
 
     @pytest.mark.asyncio
     async def test_pipeline_body_logs_failure(self, caplog, tmp_path):
+        clear_log_context()
+        bind_log_context(request_id="req-pipeline-fail")
         req = SimpleNamespace(
             user_text="讲解圆周率",
             voice_id="female-tianmei",
@@ -97,4 +106,6 @@ class TestPipelineRunnerLogging:
 
         failure = next(record for record in caplog.records if record.msg == "pipeline_failed")
         assert failure.task_id == "task-1"
+        assert failure.request_id == "req-pipeline-fail"
         assert failure.error_type == "RuntimeError"
+        clear_log_context()
