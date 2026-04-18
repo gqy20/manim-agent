@@ -619,10 +619,22 @@ async def get_task(task_id: str) -> TaskResponse:
 @router.get("/{task_id}/events", response_class=EventSourceResponse)
 async def task_events(task_id: str):
     """SSE endpoint: stream real-time logs for a task with deduplicated replay."""
-    logger.debug("SSE events requested for task_id=%r", task_id)
+    log_event(
+        logger,
+        logging.DEBUG,
+        "sse_events_requested",
+        route="/api/tasks/{task_id}/events",
+        task_id=task_id,
+    )
     task = await _store.get(task_id)
     if not task:
-        logger.warning("SSE events request for missing task_id=%r", task_id)
+        log_event(
+            logger,
+            logging.INFO,
+            "sse_task_not_found",
+            route="/api/tasks/{task_id}/events",
+            task_id=task_id,
+        )
         raise HTTPException(status_code=404, detail="Task not found")
 
     now = datetime.now(UTC).isoformat()
@@ -657,12 +669,15 @@ async def task_events(task_id: str):
             yield _make_sse_event("log", {"type": "log", "data": raw_text, "timestamp": now})
 
     status = task["status"]
-    logger.debug(
-        "SSE task=%s initial status=%s history_logs=%d buffered=%d",
-        task_id,
-        status,
-        len(task.get("logs", [])),
-        len(_sse_mgr.get_buffer(task_id)),
+    log_event(
+        logger,
+        logging.DEBUG,
+        "sse_stream_replaying",
+        route="/api/tasks/{task_id}/events",
+        task_id=task_id,
+        task_status=status,
+        history_logs=len(task.get("logs", [])),
+        buffered_count=len(_sse_mgr.get_buffer(task_id)),
     )
     if status in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value):
         payload = _terminal_status_payload(task)
@@ -678,13 +693,25 @@ async def task_events(task_id: str):
             )
         return
 
-    logger.debug("SSE task=%s waiting for queue subscription", task_id)
+    log_event(
+        logger,
+        logging.DEBUG,
+        "sse_queue_subscribed",
+        route="/api/tasks/{task_id}/events",
+        task_id=task_id,
+    )
     queue = _sse_mgr.subscribe(task_id, replay=False)
     try:
         while True:
             item = await queue.get()
             if item is None:
-                logger.debug("SSE task=%s queue received done sentinel", task_id)
+                log_event(
+                    logger,
+                    logging.DEBUG,
+                    "sse_queue_closed",
+                    route="/api/tasks/{task_id}/events",
+                    task_id=task_id,
+                )
                 break
 
             event_ts = datetime.now(UTC).isoformat()
@@ -727,7 +754,13 @@ async def task_events(task_id: str):
                     },
                 )
     finally:
-        logger.debug("SSE task=%s unsubscribe queue", task_id)
+        log_event(
+            logger,
+            logging.DEBUG,
+            "sse_queue_unsubscribed",
+            route="/api/tasks/{task_id}/events",
+            task_id=task_id,
+        )
         _sse_mgr.unsubscribe(task_id, queue)
 
 
@@ -858,5 +891,6 @@ async def receive_frontend_logs(request: Request):
         route="/api/tasks/frontend-logs",
         entries_count=len(entries),
         session_count=len(by_session),
+        session_ids_sample=sorted(by_session)[:3],
     )
     return Response(status_code=204)

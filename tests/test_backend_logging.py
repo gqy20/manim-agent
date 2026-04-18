@@ -9,6 +9,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi import HTTPException
+from starlette.requests import Request
 
 from backend.content_clarifier import ContentClarifyError, clarify_content
 from backend.log_config import (
@@ -19,6 +20,7 @@ from backend.log_config import (
     install_request_logging_middleware,
     log_event,
 )
+from backend.main import health_check, proxy_to_nextjs
 from backend.models import ContentClarifyData, ContentClarifyRequest, TaskStatus
 from backend.routes import (
     clarify_content_route,
@@ -28,6 +30,7 @@ from backend.routes import (
     list_tasks,
     receive_frontend_logs,
     set_store,
+    task_events,
 )
 
 
@@ -43,6 +46,26 @@ class _FakeAsyncClient:
 
     async def post(self, *args, **kwargs) -> httpx.Response:
         return self._response
+
+
+def _build_request(path: str, method: str = "GET") -> Request:
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": method,
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode("utf-8"),
+        "query_string": b"",
+        "headers": [],
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+    }
+    return Request(scope, _receive)
 
 
 class TestLogContext:
@@ -87,6 +110,51 @@ class TestLogContext:
         configure_logging(log_dir=tmp_path)
         root = logging.getLogger()
         assert len(root.handlers) == 2
+
+
+class TestMainRouteLogging:
+    @pytest.mark.asyncio
+    async def test_health_check_logs_debug(self, caplog):
+        with caplog.at_level(logging.DEBUG):
+            response = await health_check()
+
+        assert response == {"status": "ok"}
+        record = next(record for record in caplog.records if record.msg == "health_check_requested")
+        assert record.route == "/api/health"
+
+    @pytest.mark.asyncio
+    async def test_proxy_logs_debug_success_response(self, caplog):
+        request = _build_request("/dashboard")
+        upstream = httpx.Response(200, content=b"ok", headers={"content-type": "text/plain"})
+
+        with (
+            patch("backend.main._proxy_client.request", new=AsyncMock(return_value=upstream)),
+            caplog.at_level(logging.DEBUG),
+        ):
+            response = await proxy_to_nextjs("dashboard", request)
+
+        assert response.status_code == 200
+        response_log = next(record for record in caplog.records if record.msg == "next_proxy_response")
+        assert response_log.route == "/dashboard"
+        assert response_log.method == "GET"
+        assert response_log.status_code == 200
+        assert response_log.duration_ms >= 0
+
+    @pytest.mark.asyncio
+    async def test_proxy_logs_connect_error_without_info_noise(self, caplog):
+        request = _build_request("/dashboard")
+
+        with (
+            patch("backend.main._proxy_client.request", new=AsyncMock(side_effect=httpx.ConnectError("down"))),
+            caplog.at_level(logging.DEBUG),
+            pytest.raises(HTTPException, match="Frontend service unavailable"),
+        ):
+            await proxy_to_nextjs("dashboard", request)
+
+        events = [record.msg for record in caplog.records]
+        assert "next_proxy_request" not in events
+        error_record = next(record for record in caplog.records if record.msg == "next_proxy_connect_error")
+        assert error_record.route == "/dashboard"
 
 
 class TestContentClarifierLogging:
@@ -492,3 +560,15 @@ class TestRouteLogging:
         record = next(record for record in caplog.records if record.msg == "frontend_logs_received")
         assert record.entries_count == 3
         assert record.session_count == 2
+        assert record.session_ids_sample == ["s1", "s2"]
+
+    @pytest.mark.asyncio
+    async def test_task_events_missing_task_logs_info(self, caplog):
+        store = SimpleNamespace(get=AsyncMock(return_value=None))
+        set_store(store)
+
+        with caplog.at_level(logging.INFO), pytest.raises(HTTPException, match="Task not found"):
+            await anext(task_events("missing-task"))
+
+        record = next(record for record in caplog.records if record.msg == "sse_task_not_found")
+        assert record.task_id == "missing-task"

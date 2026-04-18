@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from time import perf_counter
 from pathlib import Path
 
 import httpx
@@ -66,6 +67,7 @@ class _SSEDisconnectMiddleware:
                     logger,
                     logging.DEBUG,
                     "sse_disconnect_suppressed",
+                    route=scope.get("path"),
                     error_type=type(exc).__name__,
                 )
                 return
@@ -162,14 +164,8 @@ async def proxy_to_nextjs(full_path: str, request: Request):
         raise HTTPException(status_code=404)
 
     route = f"/{full_path}" if full_path else "/"
+    started_at = perf_counter()
     try:
-        log_event(
-            logger,
-            logging.INFO,
-            "next_proxy_request",
-            route=route,
-            method=request.method,
-        )
         excluded_headers = {
             "host",
             "connection",
@@ -191,6 +187,16 @@ async def proxy_to_nextjs(full_path: str, request: Request):
             headers=forward_headers,
             content=body or None,
         )
+        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        log_event(
+            logger,
+            logging.DEBUG,
+            "next_proxy_response",
+            route=route,
+            method=request.method,
+            status_code=resp.status_code,
+            duration_ms=duration_ms,
+        )
 
         response_headers = {
             key: value
@@ -210,6 +216,7 @@ async def proxy_to_nextjs(full_path: str, request: Request):
             logging.ERROR,
             "next_proxy_connect_error",
             route=route,
+            method=request.method,
             upstream=_NEXTJS_BASE,
         )
         from fastapi import HTTPException
@@ -221,6 +228,7 @@ async def proxy_to_nextjs(full_path: str, request: Request):
             logging.ERROR,
             "next_proxy_failed",
             route=route,
+            method=request.method,
             error_type=type(exc).__name__,
         )
         from fastapi import HTTPException
