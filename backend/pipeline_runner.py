@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from manim_agent.pipeline_events import EventType, PipelineEvent
+from .log_config import log_event
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
 
 logger = logging.getLogger(__name__)
@@ -144,6 +145,18 @@ async def _pipeline_body(
     task_dir = Path(cwd).resolve()
     final_output_path = Path(output_path).resolve()
     try:
+        log_event(
+            logger,
+            logging.INFO,
+            "pipeline_started",
+            task_id=task_id,
+            voice_id=voice_id,
+            model=model,
+            quality=quality,
+            no_tts=no_tts,
+            bgm_enabled=bgm_enabled,
+            target_duration_seconds=target_duration_seconds,
+        )
         final_video = await asyncio.wait_for(
             run_pipeline(
                 user_text=req.user_text,
@@ -183,12 +196,39 @@ async def _pipeline_body(
         if r2_client is not None and Path(final_video).exists():
             try:
                 obj_key = r2_object_key(task_id)
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "r2_upload_started",
+                    task_id=task_id,
+                    object_key=obj_key,
+                )
                 _video_url = r2_client.upload_file(final_video, obj_key)
                 log_callback(f"[SYS] Video uploaded to R2: {_video_url}")
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "r2_upload_completed",
+                    task_id=task_id,
+                    object_key=obj_key,
+                )
             except Exception as exc:
-                logger.warning("R2 upload failed for task %s, falling back to local: %s", task_id, exc)
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "r2_upload_failed",
+                    task_id=task_id,
+                    error_type=type(exc).__name__,
+                )
                 log_callback("[SYS] R2 upload failed, using local path")
 
+        log_event(
+            logger,
+            logging.INFO,
+            "pipeline_completed",
+            task_id=task_id,
+            final_video=_video_url,
+        )
         return _video_url, po_data
 
     except asyncio.TimeoutError:
@@ -197,7 +237,13 @@ async def _pipeline_body(
             f"Pipeline exceeded the allowed runtime ({timeout_min:.0f} min) "
             f"and was automatically terminated."
         )
-        logger.error("Task %s: %s", task_id, error_message)
+        log_event(
+            logger,
+            logging.ERROR,
+            "pipeline_timeout",
+            task_id=task_id,
+            timeout_seconds=_PIPELINE_TIMEOUT_SECONDS,
+        )
         log_callback(f"[TIMEOUT] {error_message}")
         log_callback(f"[TIMEOUT] Set MANIM_PIPELINE_TIMEOUT_SECONDS to adjust.")
         partial_po_data = None
@@ -211,7 +257,20 @@ async def _pipeline_body(
 
     except Exception as exc:
         error_message = _format_exception_message(exc)
-        logger.exception("Task %s failed: %s [type=%s args=%s]", task_id, error_message, type(exc).__name__, getattr(exc, "args", None))
+        log_event(
+            logger,
+            logging.ERROR,
+            "pipeline_failed",
+            task_id=task_id,
+            error_type=type(exc).__name__,
+        )
+        logger.exception(
+            "Task %s failed: %s [type=%s args=%s]",
+            task_id,
+            error_message,
+            type(exc).__name__,
+            getattr(exc, "args", None),
+        )
         # Push full error chain to log stream
         log_callback(f"[ERR] {error_message}")
         for line in traceback.format_exception(type(exc), exc, exc.__traceback__):

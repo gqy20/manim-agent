@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import time
 from typing import Any
 
 import httpx
 
 from .models import ContentClarifyData
+from .log_config import log_event
 
 
 DEFAULT_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").strip()
@@ -17,6 +20,7 @@ DEFAULT_MODEL = os.environ.get(
     os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
 )
 DEFAULT_MAX_TOKENS = 1400
+logger = logging.getLogger(__name__)
 
 
 def _resolve_messages_url(base_url: str) -> str:
@@ -100,6 +104,7 @@ async def clarify_content(user_text: str) -> ContentClarifyData:
         raise ContentClarifyError("ANTHROPIC_API_KEY is not set")
 
     api_url = _resolve_messages_url(DEFAULT_BASE_URL)
+    started_at = time.perf_counter()
     payload = {
         "model": DEFAULT_MODEL,
         "max_tokens": DEFAULT_MAX_TOKENS,
@@ -119,15 +124,64 @@ async def clarify_content(user_text: str) -> ContentClarifyData:
         "content-type": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=45.0) as client:
+    log_event(
+        logger,
+        logging.INFO,
+        "clarifier_request_started",
+        model=DEFAULT_MODEL,
+        api_base=DEFAULT_BASE_URL,
+        text_len=len(user_text.strip()),
+    )
+
+    async with httpx.AsyncClient(timeout=45.0, trust_env=False) as client:
         response = await client.post(api_url, headers=headers, json=payload)
 
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    log_event(
+        logger,
+        logging.INFO,
+        "clarifier_response_received",
+        model=DEFAULT_MODEL,
+        status_code=response.status_code,
+        duration_ms=duration_ms,
+    )
+
     if response.status_code >= 400:
+        log_event(
+            logger,
+            logging.ERROR,
+            "clarifier_http_error",
+            model=DEFAULT_MODEL,
+            status_code=response.status_code,
+            duration_ms=duration_ms,
+            error_type="http_error",
+        )
         raise ContentClarifyError(
             f"Clarifier API error {response.status_code}: {response.text.strip()}"
         )
 
-    response_json = response.json()
-    raw_text = _extract_text_content(response_json)
-    raw_data = _extract_json_object(raw_text)
-    return ContentClarifyData.model_validate(raw_data)
+    try:
+        response_json = response.json()
+        raw_text = _extract_text_content(response_json)
+        raw_data = _extract_json_object(raw_text)
+        result = ContentClarifyData.model_validate(raw_data)
+    except Exception as exc:
+        log_event(
+            logger,
+            logging.ERROR,
+            "clarifier_parse_failed",
+            model=DEFAULT_MODEL,
+            duration_ms=duration_ms,
+            error_type=type(exc).__name__,
+        )
+        raise
+
+    log_event(
+        logger,
+        logging.INFO,
+        "clarifier_completed",
+        model=DEFAULT_MODEL,
+        duration_ms=duration_ms,
+        core_question=result.core_question,
+    )
+    return result

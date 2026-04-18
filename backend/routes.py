@@ -21,6 +21,7 @@ except ImportError:
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
 from .pipeline_runner import PipelineExecutionError, _pipeline_body
 from .content_clarifier import ContentClarifyError, clarify_content
+from .log_config import log_event
 
 from manim_agent.pipeline_events import EventType, PipelineEvent, StatusPayload
 
@@ -55,10 +56,31 @@ _DEFAULT_KEEP_LOCAL_MP4_TASKS = 20
 @clarify_router.post("/clarify-content", response_model=ContentClarifyResponse)
 async def clarify_content_route(req: ContentClarifyRequest) -> ContentClarifyResponse:
     """Clarify a short user topic into a richer content brief."""
+    log_event(
+        logger,
+        logging.INFO,
+        "clarify_content_requested",
+        route="/api/clarify-content",
+        text_len=len(req.user_text),
+    )
     try:
         clarification = await clarify_content(req.user_text)
     except ContentClarifyError as exc:
+        log_event(
+            logger,
+            logging.ERROR,
+            "clarify_content_failed",
+            route="/api/clarify-content",
+            error_type=type(exc).__name__,
+        )
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    log_event(
+        logger,
+        logging.INFO,
+        "clarify_content_succeeded",
+        route="/api/clarify-content",
+        core_question=clarification.core_question,
+    )
 
     return ContentClarifyResponse(
         original_user_text=req.user_text,
@@ -499,7 +521,21 @@ async def list_tasks(
     limit: int = Query(default=50, le=200),
 ) -> TaskListResponse:
     """List all tasks, most recent first."""
+    log_event(
+        logger,
+        logging.INFO,
+        "task_list_requested",
+        route="/api/tasks",
+        limit=limit,
+    )
     tasks = await _store.list_all(limit)
+    log_event(
+        logger,
+        logging.INFO,
+        "task_list_succeeded",
+        route="/api/tasks",
+        count=len(tasks),
+    )
     return TaskListResponse(
         tasks=[_store.to_response(t) for t in tasks],
         total=len(tasks),
@@ -511,7 +547,22 @@ async def get_task(task_id: str) -> TaskResponse:
     """Get task status and details."""
     task = await _store.get(task_id)
     if not task:
+        log_event(
+            logger,
+            logging.INFO,
+            "task_not_found",
+            route="/api/tasks/{task_id}",
+            task_id=task_id,
+        )
         raise HTTPException(status_code=404, detail="Task not found")
+    log_event(
+        logger,
+        logging.INFO,
+        "task_fetched",
+        route="/api/tasks/{task_id}",
+        task_id=task_id,
+        task_status=task.get("status"),
+    )
     return _store.to_response(task)
 
 
@@ -669,18 +720,56 @@ async def get_video(task_id: str):
     """
     task = await _store.get(task_id)
     if not task:
+        log_event(
+            logger,
+            logging.INFO,
+            "task_not_found",
+            route="/api/tasks/{task_id}/video",
+            task_id=task_id,
+        )
         raise HTTPException(status_code=404, detail="Task not found")
     video_path = task.get("video_path")
     if not video_path:
+        log_event(
+            logger,
+            logging.INFO,
+            "task_video_not_ready",
+            route="/api/tasks/{task_id}/video",
+            task_id=task_id,
+            task_status=task.get("status"),
+        )
         raise HTTPException(status_code=404, detail="Video not ready")
 
     # R2 mode: redirect to public URL (CDN handles delivery)
     if is_r2_url(video_path):
+        log_event(
+            logger,
+            logging.INFO,
+            "task_video_redirected",
+            route="/api/tasks/{task_id}/video",
+            task_id=task_id,
+        )
         return RedirectResponse(url=video_path, status_code=302)
 
     # Local mode: serve from disk
     if not Path(video_path).exists():
+        log_event(
+            logger,
+            logging.WARNING,
+            "task_video_missing_on_disk",
+            route="/api/tasks/{task_id}/video",
+            task_id=task_id,
+            video_path=video_path,
+        )
         raise HTTPException(status_code=404, detail="Video file not found on disk")
+    log_event(
+        logger,
+        logging.INFO,
+        "task_video_served",
+        route="/api/tasks/{task_id}/video",
+        task_id=task_id,
+        video_path=video_path,
+    )
     return FileResponse(
         path=video_path,
         media_type="video/mp4",
