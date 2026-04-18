@@ -11,7 +11,7 @@ import { LogViewer } from "@/components/log-viewer";
 import { VideoPlayer } from "@/components/video-player";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { getTask, getVideoUrl } from "@/lib/api";
+import { getTask, getVideoUrl, terminateTask } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import { getDisplayPhaseForTask } from "@/lib/pipeline-phase";
 import { connectTaskEvents } from "@/lib/sse-client";
@@ -345,6 +345,7 @@ export default function TaskDetailClient() {
   const [loading, setLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [stableVideoSrc, setStableVideoSrc] = useState<string | null>(null);
+  const [terminating, setTerminating] = useState(false);
   const containerRef = useRef<HTMLElement>(null);
   const refreshInFlightRef = useRef(false);
 
@@ -364,6 +365,21 @@ export default function TaskDetailClient() {
       logger.error("task-detail", "Failed to refresh task snapshot", { taskId: currentTaskId });
     } finally {
       refreshInFlightRef.current = false;
+    }
+  }
+
+  async function handleTerminateTask() {
+    if (!task || terminating) return;
+    setTerminating(true);
+    try {
+      const latest = await terminateTask(task.id);
+      setTask((prev) => (prev ? mergeTaskState(prev, latest) : latest));
+      setEventsError(null);
+    } catch {
+      logger.error("task-detail", "Failed to terminate task", { taskId: task.id });
+      setEventsError("Failed to terminate task.");
+    } finally {
+      setTerminating(false);
     }
   }
 
@@ -554,7 +570,26 @@ export default function TaskDetailClient() {
               </div>
             </div>
           </div>
-          <StatusBadge status={task.status} size="md" className="gsap-header flex-shrink-0" />
+          <div className="flex items-center gap-3">
+            {isRunning && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleTerminateTask()}
+                disabled={terminating}
+                className="border-red-500/20 bg-red-500/[0.06] text-red-300 hover:bg-red-500/[0.12] hover:text-red-200"
+              >
+                {terminating ? (
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <XCircle className="mr-2 h-3.5 w-3.5" />
+                )}
+                Terminate
+              </Button>
+            )}
+            <StatusBadge status={task.status} size="md" className="gsap-header flex-shrink-0" />
+          </div>
         </div>
       </div>
 

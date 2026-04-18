@@ -91,6 +91,21 @@ describe("mergeTaskState", () => {
     expect(merged.video_path).toBe("https://example.com/final.mp4");
   });
 
+  it("treats stopped as a terminal status", () => {
+    const prev = buildTask({
+      status: "stopped",
+      error: "Task terminated by user.",
+    });
+
+    const merged = mergeTaskState(prev, {
+      status: "running",
+      error: null,
+    });
+
+    expect(merged.status).toBe("stopped");
+    expect(merged.error).toBe("Task terminated by user.");
+  });
+
   it("merges pipeline output without dropping known fields", () => {
     const prev = buildTask({
       pipeline_output: buildPipelineOutput({

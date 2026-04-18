@@ -22,6 +22,13 @@ from .storage.r2_client import R2Client, is_r2_url, r2_object_key
 from .pipeline_runner import PipelineExecutionError, _pipeline_body
 from .content_clarifier import ContentClarifyError, clarify_content
 from .log_config import bind_log_context, get_log_context, log_event, set_log_context
+from .task_runtime import (
+    TaskRuntime,
+    TaskTerminationRequested,
+    get_task_runtime,
+    register_task_runtime,
+    unregister_task_runtime,
+)
 
 from manim_agent.pipeline_events import EventType, PipelineEvent, StatusPayload
 
@@ -51,6 +58,11 @@ _sse_mgr: SSESubscriptionManager = SSESubscriptionManager()
 _r2_client: R2Client | None = None
 _OUTPUT_ROOT = Path("backend/output")
 _DEFAULT_KEEP_LOCAL_MP4_TASKS = 20
+_TERMINAL_TASK_STATUSES = {
+    TaskStatus.COMPLETED.value,
+    TaskStatus.FAILED.value,
+    TaskStatus.STOPPED.value,
+}
 
 
 @clarify_router.post("/clarify-content", response_model=ContentClarifyResponse)
@@ -113,10 +125,19 @@ def _status_event(
 def _terminal_status_payload(task: dict[str, Any]) -> dict[str, Any]:
     """Build the canonical terminal status payload from stored task state."""
     status = task["status"]
+    if status == TaskStatus.COMPLETED.value:
+        message = "Pipeline completed"
+        phase = "done"
+    elif status == TaskStatus.STOPPED.value:
+        message = task.get("error") or "Task terminated by user."
+        phase = None
+    else:
+        message = task.get("error")
+        phase = None
     return {
         "task_status": status,
-        "phase": "done" if status == TaskStatus.COMPLETED.value else None,
-        "message": "Pipeline completed" if status == TaskStatus.COMPLETED.value else task.get("error"),
+        "phase": phase,
+        "message": message,
         "video_path": task.get("video_path"),
         "pipeline_output": task.get("pipeline_output"),
     }
@@ -284,6 +305,33 @@ def _cleanup_output_dir(output_dir: Path, *, keep_mp4: bool = True) -> None:
         logger.debug("Cleanup skipped for %s", output_dir)
 
 
+async def _mark_task_stopped(
+    task_id: str,
+    *,
+    message: str = "Task terminated by user.",
+) -> None:
+    await _store.update_status(
+        task_id,
+        TaskStatus.STOPPED,
+        error=message,
+    )
+    log_event(
+        logger,
+        logging.INFO,
+        "task_terminated",
+        task_id=task_id,
+        task_status=TaskStatus.STOPPED.value,
+    )
+    _sse_mgr.push(
+        task_id,
+        _status_event(
+            TaskStatus.STOPPED,
+            message=message,
+        ),
+    )
+    _sse_mgr.done(task_id)
+
+
 @router.post("", response_model=TaskResponse, status_code=201)
 async def create_task(req: TaskCreateRequest) -> TaskResponse:
     """Create a task & start the pipeline in background."""
@@ -318,6 +366,10 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
     output_dir = Path("backend/output") / task_id
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = str(output_dir / "final.mp4")
+    runtime = register_task_runtime(
+        task_id,
+        TaskRuntime(task_id=task_id, mode="thread" if _USE_PIPELINE_THREAD else "inline"),
+    )
 
     # 注意：不再需要提前 subscribe() — SSESubscriptionManager v2 自动缓冲事件，
     # 前端连接时通过 subscribe() 回放所有历史事件。
@@ -356,6 +408,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         """Execute pipeline in a separate thread with its own event loop."""
         previous_log_context = get_log_context()
         set_log_context(execution_log_context)
+        runtime.set_thread_id(threading.get_ident())
         log_event(logger, logging.INFO, "pipeline_thread_started", task_id=task_id)
         import asyncio as _asyncio
 
@@ -373,6 +426,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         )
 
         try:
+            if runtime.cancel_requested:
+                raise TaskTerminationRequested
             logger.debug("Task %s calling pipeline_body", task_id)
             _video_url, po_data = _asyncio.run(
                 _pipeline_body(
@@ -396,6 +451,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 )
             )
             logger.info("Task %s pipeline body returned", task_id)
+            if runtime.cancel_requested:
+                raise TaskTerminationRequested
             _safe_schedule(
                 main_loop,
                 lambda: _store.update_status(
@@ -422,6 +479,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     pipeline_output=po_data,
                 ),
             )
+        except TaskTerminationRequested:
+            _safe_schedule(main_loop, lambda: _mark_task_stopped(task_id))
         except Exception as exc:
             error_message = _format_exception_message(exc)
             logger.exception("Task %s failed: %s", task_id, error_message)
@@ -452,12 +511,14 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             )
         finally:
             logger.debug("Task %s pipeline thread finalizing", task_id)
-            try:
-                main_loop.call_soon_threadsafe(_sse_mgr.done, task_id)
-            except RuntimeError:
-                pass
+            if not runtime.cancel_requested:
+                try:
+                    main_loop.call_soon_threadsafe(_sse_mgr.done, task_id)
+                except RuntimeError:
+                    pass
             _cleanup_output_dir(output_dir, keep_mp4=(_r2_client is None))
             _enforce_local_video_retention()
+            unregister_task_runtime(task_id)
             set_log_context(previous_log_context)
 
     async def _run_pipeline_inline() -> None:
@@ -478,6 +539,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         )
 
         try:
+            if runtime.cancel_requested:
+                raise TaskTerminationRequested
             logger.debug("Task %s calling pipeline_body inline", task_id)
             _video_url, po_data = await _pipeline_body(
                 req=req,
@@ -499,6 +562,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 r2_client=_r2_client,
             )
             logger.info("Task %s inline pipeline completed video=%s", task_id, _video_url)
+            if runtime.cancel_requested:
+                raise TaskTerminationRequested
             await _store.update_status(
                 task_id,
                 TaskStatus.COMPLETED,
@@ -522,6 +587,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     pipeline_output=po_data,
                 ),
             )
+        except (TaskTerminationRequested, asyncio.CancelledError):
+            await _mark_task_stopped(task_id)
         except Exception as exc:
             error_message = _format_exception_message(exc)
             logger.exception("Task %s failed: %s", task_id, error_message)
@@ -549,9 +616,11 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             )
         finally:
             logger.debug("Task %s pipeline inline finalizing", task_id)
-            _sse_mgr.done(task_id)
+            if not runtime.cancel_requested:
+                _sse_mgr.done(task_id)
             _cleanup_output_dir(output_dir, keep_mp4=(_r2_client is None))
             _enforce_local_video_retention()
+            unregister_task_runtime(task_id)
             set_log_context(previous_log_context)
 
     if _USE_PIPELINE_THREAD:
@@ -561,9 +630,51 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         threading.Thread(target=_run_pipeline_thread, daemon=True).start()
     else:
         # Test mode: run inline on the event loop (no subprocess needed).
-        asyncio.create_task(_run_pipeline_inline())
+        inline_task = asyncio.create_task(_run_pipeline_inline())
+        runtime.set_async_task(inline_task)
 
     return _store.to_response(task)
+
+
+@router.post("/{task_id}/terminate", response_model=TaskResponse)
+async def terminate_task(task_id: str) -> TaskResponse:
+    """Request termination for a running or pending task."""
+    task = await _store.get(task_id)
+    if not task:
+        log_event(
+            logger,
+            logging.INFO,
+            "task_not_found",
+            route="/api/tasks/{task_id}/terminate",
+            task_id=task_id,
+        )
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    status = task.get("status")
+    if status in _TERMINAL_TASK_STATUSES:
+        log_event(
+            logger,
+            logging.INFO,
+            "task_terminate_noop",
+            route="/api/tasks/{task_id}/terminate",
+            task_id=task_id,
+            task_status=status,
+        )
+        return _store.to_response(task)
+
+    runtime = get_task_runtime(task_id)
+    if runtime is not None:
+        runtime.request_termination()
+
+    await _mark_task_stopped(task_id)
+    refreshed = await _store.get(task_id)
+    if refreshed is None:
+        refreshed = {
+            **task,
+            "status": TaskStatus.STOPPED.value,
+            "error": "Task terminated by user.",
+        }
+    return _store.to_response(refreshed)
 
 
 @router.get("", response_model=TaskListResponse)
@@ -679,7 +790,7 @@ async def task_events(task_id: str):
         history_logs=len(task.get("logs", [])),
         buffered_count=len(_sse_mgr.get_buffer(task_id)),
     )
-    if status in (TaskStatus.COMPLETED.value, TaskStatus.FAILED.value):
+    if status in _TERMINAL_TASK_STATUSES:
         payload = _terminal_status_payload(task)
         payload_key = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if payload_key not in seen_status_payloads:

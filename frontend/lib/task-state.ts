@@ -2,7 +2,7 @@
 
 import type { PipelineOutputData, Task, TaskStatus } from "@/types";
 
-const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set(["completed", "failed"]);
+const TERMINAL_STATUSES: ReadonlySet<TaskStatus> = new Set(["completed", "failed", "stopped"]);
 
 function mergeNullableValue<T>(prev: T | null, next: T | null | undefined): T | null {
   if (next === undefined || next === null) {

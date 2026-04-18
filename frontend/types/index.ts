@@ -1,4 +1,4 @@
-export type TaskStatus = "pending" | "running" | "completed" | "failed";
+export type TaskStatus = "pending" | "running" | "completed" | "failed" | "stopped";
 export type TaskDurationSeconds = 30 | 60 | 180 | 300;
 
 export interface TaskCreatePayload {

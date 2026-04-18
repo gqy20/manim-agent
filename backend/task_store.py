@@ -171,7 +171,7 @@ class TaskStore:
     ) -> None:
         completed_at = (
             datetime.now(timezone.utc)
-            if status in (TaskStatus.COMPLETED, TaskStatus.FAILED)
+            if status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.STOPPED)
             else None
         )
 

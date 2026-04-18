@@ -3,6 +3,7 @@ import {
   clarifyContent,
   createTask,
   getTask,
+  terminateTask,
   getVideoUrl,
   listTasks,
 } from "./api";
@@ -105,6 +106,45 @@ describe("api client", () => {
     const result = await getTask("task-2");
     expect(result.id).toBe("task-2");
     expect(fetch).toHaveBeenCalledWith("/api/tasks/task-2");
+  });
+
+  it("terminates a running task", async () => {
+    const task = {
+      id: "task-2",
+      user_text: "abc",
+      status: "stopped",
+      created_at: "2026-04-12T00:00:00.000Z",
+      completed_at: "2026-04-12T00:02:00.000Z",
+      video_path: null,
+      error: "Task terminated by user.",
+      options: {
+        user_text: "abc",
+        voice_id: "v",
+        model: "m",
+        quality: "medium",
+        preset: "proof",
+        no_tts: false,
+        bgm_enabled: false,
+        bgm_prompt: null,
+        bgm_volume: 0.12,
+        target_duration_seconds: 180,
+      },
+      pipeline_output: null,
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(task),
+      }),
+    );
+
+    const result = await terminateTask("task-2");
+    expect(result.status).toBe("stopped");
+    expect(fetch).toHaveBeenCalledWith("/api/tasks/task-2/terminate", {
+      method: "POST",
+    });
   });
 
   it("returns all task list", async () => {
