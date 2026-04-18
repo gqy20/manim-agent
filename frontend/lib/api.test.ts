@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clarifyContent,
   createTask,
+  deleteTask,
   getTask,
   terminateTask,
   getVideoUrl,
@@ -144,6 +145,20 @@ describe("api client", () => {
     expect(result.status).toBe("stopped");
     expect(fetch).toHaveBeenCalledWith("/api/tasks/task-2/terminate", {
       method: "POST",
+    });
+  });
+
+  it("deletes a terminal task", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+      }),
+    );
+
+    await deleteTask("task-9");
+    expect(fetch).toHaveBeenCalledWith("/api/tasks/task-9", {
+      method: "DELETE",
     });
   });
 

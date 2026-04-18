@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -249,6 +250,16 @@ def _enforce_local_video_retention() -> None:
                 final_mp4.unlink()
             except OSError:
                 logger.debug("Failed to prune local final.mp4 for %s", task_dir)
+
+
+def _delete_task_output_dir(task_id: str) -> None:
+    task_dir = _OUTPUT_ROOT / task_id
+    if not task_dir.exists():
+        return
+    try:
+        shutil.rmtree(task_dir, ignore_errors=False)
+    except OSError:
+        logger.debug("Failed to delete output directory for %s", task_id)
 
 
 def _safe_schedule(loop: asyncio.AbstractEventLoop, coro_factory) -> None:
@@ -679,6 +690,51 @@ async def terminate_task(task_id: str) -> TaskResponse:
             "error": "Task terminated by user.",
         }
     return _store.to_response(refreshed)
+
+
+@router.delete("/{task_id}", status_code=204)
+async def delete_task(task_id: str) -> Response:
+    """Delete a terminal task and its persisted artifacts."""
+    task = await _store.get(task_id)
+    if not task:
+        log_event(
+            logger,
+            logging.INFO,
+            "task_not_found",
+            route="/api/tasks/{task_id}",
+            task_id=task_id,
+        )
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    status = task.get("status")
+    if status not in _TERMINAL_TASK_STATUSES:
+        log_event(
+            logger,
+            logging.WARNING,
+            "task_delete_rejected_non_terminal",
+            route="/api/tasks/{task_id}",
+            task_id=task_id,
+            task_status=status,
+        )
+        raise HTTPException(status_code=409, detail="Task must be terminated before deletion")
+
+    if _r2_client is not None and task.get("video_path") and is_r2_url(task.get("video_path")):
+        _r2_client.delete_object(r2_object_key(task_id))
+
+    _delete_task_output_dir(task_id)
+    unregister_task_runtime(task_id)
+    _sse_mgr.cleanup(task_id)
+    await _store.delete(task_id)
+
+    log_event(
+        logger,
+        logging.INFO,
+        "task_deleted",
+        route="/api/tasks/{task_id}",
+        task_id=task_id,
+        task_status=status,
+    )
+    return Response(status_code=204)
 
 
 @router.get("", response_model=TaskListResponse)

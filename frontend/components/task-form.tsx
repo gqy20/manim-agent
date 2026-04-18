@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { Loader2, Sparkles, Wand2 } from "lucide-react";
+import { Loader2, Sparkles, Wand2, Play, SkipForward } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -191,6 +191,31 @@ export function TaskForm() {
       voiceId,
     ],
   );
+
+  const handleCreateWithoutClarification = useCallback(async () => {
+    const normalized = text.trim();
+    if (!normalized || submitting || clarifying) return;
+    await runTaskCreation(normalized);
+  }, [clarifying, runTaskCreation, submitting, text]);
+
+  const handleClarifyAndRun = useCallback(async () => {
+    const normalized = text.trim();
+    if (!normalized || submitting || clarifying) return;
+
+    setClarifying(true);
+    setError(null);
+    try {
+      const result = await clarifyContent({ user_text: normalized });
+      setClarification(result.clarification);
+      setClarificationSourceText(normalized);
+      setText(result.clarification.recommended_request_cn);
+      await runTaskCreation(result.clarification.recommended_request_cn);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "鍐呭鐞嗚В澶辫触");
+    } finally {
+      setClarifying(false);
+    }
+  }, [clarifying, runTaskCreation, submitting, text]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -506,13 +531,13 @@ export function TaskForm() {
         </span>
       </label>
 
-      <div className="mb-4 rounded-xl border border-white/8 bg-white/[0.03] p-4">
-        <label className="flex items-start gap-3 cursor-pointer group select-none">
+      <div className="mb-4 overflow-hidden rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.025))]">
+        <label className="flex items-start justify-between gap-4 cursor-pointer group select-none px-4 py-4 sm:px-5">
           <div
-            className={`relative mt-0.5 h-4 w-4 rounded border transition-colors duration-200 ${
+            className={`relative mt-0.5 h-5 w-5 rounded-md border transition-colors duration-200 ${
               bgmEnabled && !noTts
-                ? "bg-primary border-primary"
-                : "border-border/60 group-hover:border-foreground/30 bg-background/30"
+                ? "bg-primary border-primary shadow-[0_0_18px_rgba(34,211,238,0.28)]"
+                : "border-white/15 group-hover:border-white/30 bg-black/20"
             }`}
           >
             <input
@@ -538,14 +563,23 @@ export function TaskForm() {
               </svg>
             )}
           </div>
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[13px] font-medium text-foreground/85">添加纯音乐背景</span>
-              <span className="rounded-full border border-cyan-400/15 bg-cyan-400/8 px-2 py-0.5 text-[10px] uppercase tracking-wider text-cyan-300/70">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[15px] font-medium text-white/90">添加纯音乐背景</span>
+              <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-cyan-300/80">
                 music-2.6
               </span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] ${
+                  bgmEnabled && !noTts
+                    ? "bg-emerald-400/12 text-emerald-300"
+                    : "bg-white/6 text-white/35"
+                }`}
+              >
+                {bgmEnabled && !noTts ? "On" : "Off"}
+              </span>
             </div>
-            <p className="text-[12px] leading-relaxed text-muted-foreground/70">
+            <p className="max-w-2xl text-[12px] leading-6 text-white/55">
               在解说下方加一层低干扰背景音乐。留空 prompt 时，系统会根据动画模式自动生成适合的配乐描述。
             </p>
             {noTts && (
@@ -557,14 +591,17 @@ export function TaskForm() {
         </label>
 
         {bgmEnabled && !noTts && (
-          <div className="mt-4 grid gap-4 md:grid-cols-[1.6fr_0.8fr]">
+          <div className="grid gap-4 border-t border-white/8 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1.45fr)_320px]">
             <div className="space-y-2">
-              <label
-                htmlFor="bgm-prompt"
-                className="text-[11px] font-medium uppercase tracking-wider text-white/45"
-              >
-                BGM Prompt
-              </label>
+              <div className="flex items-center justify-between gap-3">
+                <label
+                  htmlFor="bgm-prompt"
+                  className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/42"
+                >
+                  BGM Prompt
+                </label>
+                <span className="text-[11px] text-white/30">可选</span>
+              </div>
               <Textarea
                 id="bgm-prompt"
                 value={bgmPrompt}
@@ -572,44 +609,55 @@ export function TaskForm() {
                 rows={4}
                 disabled={submitting}
                 placeholder="例如：calm instrumental underscore, soft piano and light strings, no vocals"
-                className="min-h-[96px] resize-none bg-background/40 border-white/10 text-[13px] text-foreground/85 placeholder:text-muted-foreground/40"
+                className="min-h-[120px] resize-none rounded-2xl bg-black/20 border-white/10 text-[13px] leading-6 text-foreground/90 placeholder:text-muted-foreground/35 focus:border-cyan-400/35 focus:ring-cyan-400/20"
               />
-              <p className="text-[11px] text-muted-foreground/65">
-                可以不填。默认会生成适合教学解说视频的背景音乐，不会加入人声。
-              </p>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/38">
+                <span className="rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1">
+                  默认不加人声
+                </span>
+                <span className="rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1">
+                  教学视频优先低干扰
+                </span>
+              </div>
             </div>
 
-            <div className="space-y-3 rounded-lg border border-white/8 bg-black/15 p-3">
-              <div className="space-y-1">
-                <label
-                  htmlFor="bgm-volume"
-                  className="text-[11px] font-medium uppercase tracking-wider text-white/45"
-                >
-                  Volume
-                </label>
-                <div className="flex items-baseline justify-between">
-                  <span className="text-[12px] text-muted-foreground/70">混流音量</span>
-                  <span className="font-mono text-sm text-cyan-300">{bgmVolume.toFixed(2)}</span>
+            <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <label
+                    htmlFor="bgm-volume"
+                    className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/42"
+                  >
+                    Volume
+                  </label>
+                  <p className="mt-1 text-[12px] text-white/45">建议保持轻微存在感，不压过解说。</p>
+                </div>
+                <span className="font-mono text-base text-cyan-300">{bgmVolume.toFixed(2)}</span>
+              </div>
+
+              <div className="mt-6">
+                <input
+                  id="bgm-volume"
+                  type="range"
+                  min="0.05"
+                  max="0.30"
+                  step="0.01"
+                  value={bgmVolume}
+                  onChange={(e) => setBgmVolume(Number(e.target.value))}
+                  disabled={submitting}
+                  className="w-full accent-cyan-400"
+                />
+                <div className="mt-2 flex justify-between text-[10px] uppercase tracking-[0.16em] text-white/28">
+                  <span>Subtle</span>
+                  <span>Present</span>
                 </div>
               </div>
-              <input
-                id="bgm-volume"
-                type="range"
-                min="0.05"
-                max="0.30"
-                step="0.01"
-                value={bgmVolume}
-                onChange={(e) => setBgmVolume(Number(e.target.value))}
-                disabled={submitting}
-                className="w-full accent-cyan-400"
-              />
-              <div className="flex justify-between text-[10px] uppercase tracking-wider text-white/30">
-                <span>Subtle</span>
-                <span>Present</span>
+
+              <div className="mt-4 rounded-xl border border-cyan-400/10 bg-cyan-400/[0.05] px-3 py-2.5">
+                <p className="text-[11px] leading-5 text-white/60">
+                  推荐区间 <span className="font-mono text-cyan-300">0.10 - 0.16</span>
+                </p>
               </div>
-              <p className="text-[11px] leading-relaxed text-muted-foreground/65">
-                建议保持在 0.10 到 0.16，这样能托底但不会压过解说。
-              </p>
             </div>
           </div>
         )}
@@ -656,6 +704,50 @@ export function TaskForm() {
           )}
         </Button>
       </motion.div>
+
+      {!hasCurrentClarification && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!canSubmit}
+            onClick={handleCreateWithoutClarification}
+            className="h-11 border-white/10 bg-transparent text-white/75 hover:bg-white/10 hover:text-white"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                姝ｅ湪鍒涘缓...
+              </>
+            ) : (
+              <>
+                <SkipForward className="mr-2 h-4 w-4" />
+                跳过理解，直接生成
+              </>
+            )}
+          </Button>
+
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={!canSubmit}
+            onClick={handleClarifyAndRun}
+            className="h-11"
+          >
+            {clarifying ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                理解后直接生成中...
+              </>
+            ) : (
+              <>
+                <Play className="mr-2 h-4 w-4" />
+                理解并直接生成
+              </>
+            )}
+          </Button>
+        </div>
+      )}
     </form>
   );
 }

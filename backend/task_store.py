@@ -269,6 +269,15 @@ class TaskStore:
             )
         return [_row_to_dict(r) for r in rows]
 
+    async def delete(self, task_id: str) -> None:
+        async def _delete() -> None:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute("DELETE FROM task_logs WHERE task_id = $1", task_id)
+                    await conn.execute("DELETE FROM tasks WHERE id = $1", task_id)
+
+        await self._run_with_retry(f"delete[{task_id}]", _delete)
+
     # ── Compatibility: expose _tasks for startup banner ──────
 
     @property

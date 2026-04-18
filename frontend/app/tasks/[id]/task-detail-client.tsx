@@ -1,17 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import Link from "next/link";
-import { ArrowLeft, Check, Copy, FileCode2, Film, Loader2, Play, Terminal, XCircle } from "lucide-react";
+import { ArrowLeft, Check, Copy, FileCode2, Film, Loader2, Play, Terminal, Trash2, XCircle } from "lucide-react";
 
 import { LogViewer } from "@/components/log-viewer";
 import { VideoPlayer } from "@/components/video-player";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { getTask, getVideoUrl, terminateTask } from "@/lib/api";
+import { deleteTask, getTask, getVideoUrl, terminateTask } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import { getDisplayPhaseForTask } from "@/lib/pipeline-phase";
 import { connectTaskEvents } from "@/lib/sse-client";
@@ -338,6 +338,7 @@ function ManimScriptPanel({
 }
 
 export default function TaskDetailClient() {
+  const router = useRouter();
   const params = useParams();
   const taskId = params.id as string;
   const [task, setTask] = useState<Task | null>(null);
@@ -346,6 +347,7 @@ export default function TaskDetailClient() {
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [stableVideoSrc, setStableVideoSrc] = useState<string | null>(null);
   const [terminating, setTerminating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const containerRef = useRef<HTMLElement>(null);
   const refreshInFlightRef = useRef(false);
 
@@ -380,6 +382,22 @@ export default function TaskDetailClient() {
       setEventsError("Failed to terminate task.");
     } finally {
       setTerminating(false);
+    }
+  }
+
+  async function handleDeleteTask() {
+    if (!task || deleting || isRunning) return;
+    const confirmed = window.confirm(`Delete task ${task.id}? This removes its saved output and logs.`);
+    if (!confirmed) return;
+
+    setDeleting(true);
+    try {
+      await deleteTask(task.id);
+      router.push("/history");
+    } catch {
+      logger.error("task-detail", "Failed to delete task", { taskId: task.id });
+      setEventsError("Failed to delete task.");
+      setDeleting(false);
     }
   }
 
@@ -427,7 +445,7 @@ export default function TaskDetailClient() {
               ? mergeTaskState(prev, { status: event.data as TaskStatus })
               : prev,
           );
-          if (event.data === "completed" || event.data === "failed") {
+          if (event.data === "completed" || event.data === "failed" || event.data === "stopped") {
             void refreshTaskSnapshot(task.id);
           }
           return;
@@ -452,7 +470,11 @@ export default function TaskDetailClient() {
                   : prev.pipeline_output,
             });
           });
-          if (event.data.task_status === "completed" || event.data.task_status === "failed") {
+          if (
+            event.data.task_status === "completed" ||
+            event.data.task_status === "failed" ||
+            event.data.task_status === "stopped"
+          ) {
             void refreshTaskSnapshot(task.id);
           }
         }
@@ -538,7 +560,13 @@ export default function TaskDetailClient() {
   const isRunning = task.status === "running" || task.status === "pending";
   const showVideo = !!stableVideoSrc;
 
-  const liveBadge = isRunning ? "Live" : task.status === "completed" ? "Synced" : "Stopped";
+  const liveBadge = isRunning
+    ? "Live"
+    : task.status === "completed"
+      ? "Synced"
+      : task.status === "failed"
+        ? "Failed"
+        : "Stopped";
   const voiceSummary = task.options.no_tts
     ? "No narration"
     : `${VOICE_LABELS[task.options.voice_id] ?? task.options.voice_id} / ${task.options.model}`;
@@ -586,6 +614,23 @@ export default function TaskDetailClient() {
                   <XCircle className="mr-2 h-3.5 w-3.5" />
                 )}
                 Terminate
+              </Button>
+            )}
+            {!isRunning && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void handleDeleteTask()}
+                disabled={deleting}
+                className="border-white/12 bg-white/[0.04] text-white/75 hover:bg-white/[0.08] hover:text-white"
+              >
+                {deleting ? (
+                  <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-3.5 w-3.5" />
+                )}
+                Delete
               </Button>
             )}
             <StatusBadge status={task.status} size="md" className="gsap-header flex-shrink-0" />

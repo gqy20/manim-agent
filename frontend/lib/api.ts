@@ -58,6 +58,15 @@ export async function terminateTask(id: string): Promise<Task> {
   return res.json();
 }
 
+export async function deleteTask(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/tasks/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to delete task: ${res.statusText}`);
+  }
+}
+
 export async function listTasks(limit = 50): Promise<{ tasks: Task[]; total: number }> {
   const res = await fetch(`${API_BASE}/api/tasks?limit=${limit}`);
   if (!res.ok) throw new Error("Failed to fetch tasks");
