@@ -71,11 +71,17 @@ class TestPipelinePhaseLogsViaCallback:
         ]
 
         with (
-            patch("manim_agent.pipeline.query") as mock_query,
-            patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
-            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
-            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
-            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock) as mock_review,
+            patch("claude_agent_sdk.query") as mock_query,
+            patch("manim_agent.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch(
+                "manim_agent.video_builder.build_final_video", new_callable=AsyncMock
+            ) as mock_video,
+            patch(
+                "manim_agent.render_review.extract_review_frames", new_callable=AsyncMock
+            ) as mock_frames,
+            patch(
+                "manim_agent.pipeline_phases345.run_render_review", new_callable=AsyncMock
+            ) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_tts.return_value = MagicMock(
@@ -116,11 +122,17 @@ class TestPipelinePhaseLogsViaCallback:
         )
 
         with (
-            patch("manim_agent.pipeline.query") as mock_query,
-            patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
-            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
-            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock) as mock_frames,
-            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock) as mock_review,
+            patch("claude_agent_sdk.query") as mock_query,
+            patch("manim_agent.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
+            patch(
+                "manim_agent.video_builder.build_final_video", new_callable=AsyncMock
+            ) as mock_video,
+            patch(
+                "manim_agent.render_review.extract_review_frames", new_callable=AsyncMock
+            ) as mock_frames,
+            patch(
+                "manim_agent.pipeline_phases345.run_render_review", new_callable=AsyncMock
+            ) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_tts.return_value = mock_tts_result

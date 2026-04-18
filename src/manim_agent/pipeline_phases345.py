@@ -1,0 +1,609 @@
+"""Phase 3 (render resolve + review), Phase 4 (TTS), and Phase 5 (mux) pipeline functions."""
+
+from __future__ import annotations
+
+import json
+import logging
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any, cast
+
+from claude_agent_sdk import ResultMessage, query
+
+from .dispatcher import _EMOJI, _MessageDispatcher
+from .pipeline_config import build_options, emit_status
+from .pipeline_events import PipelineEvent
+from .pipeline_gates import (
+    duration_target_issue,
+    has_narration_sync_summary,
+    has_structured_build_summary,
+    merge_result_summaries,
+    narration_is_too_short_for_video,
+)
+from .prompt_builder import format_target_duration
+from .render_review import extract_review_frames
+from .review_schema import RenderReviewOutput
+from .tts_client import synthesize
+from .video_builder import _get_duration, build_final_video, concat_videos
+
+logger = logging.getLogger(__name__)
+
+
+# ── Frame labeling ──────────────────────────────────────────────────
+
+
+def _build_frame_labels(
+    implemented_beats: list[str] | None,
+    count: int,
+) -> list[str]:
+    """Generate beat-aligned labels for extracted review frames."""
+    if count <= 0 or not implemented_beats:
+        return [f"frame_{i + 1}" for i in range(count)]
+
+    labels: list[str] = ["opening"]
+    n_beats = len(implemented_beats)
+
+    if count > 2:
+        middle_slots = count - 2
+        for i in range(middle_slots):
+            beat_idx = min(i, n_beats - 1)
+            beat_name = implemented_beats[beat_idx].replace(" ", "_")
+            labels.append(f"beat_{beat_idx + 1}__{beat_name}")
+
+    if count >= 2:
+        last_beat = implemented_beats[-1].replace(" ", "_")
+        labels.append(f"ending__{last_beat}")
+
+    while len(labels) < count:
+        labels.append(f"frame_{len(labels) + 1}")
+    return labels[:count]
+
+
+# ── Render Review ──────────────────────────────────────────────────
+
+
+async def run_render_review(
+    *,
+    user_text: str,
+    plan_text: str,
+    video_output: str,
+    frame_paths: list[str],
+    target_duration_seconds: int,
+    actual_duration_seconds: float | None,
+    cwd: str,
+    system_prompt: str,
+    quality: str,
+    log_callback: Callable[[str], None] | None,
+    implemented_beats: list[str] | None = None,
+) -> RenderReviewOutput:
+    """Ask Claude to review sampled render frames and return a structured verdict."""
+    beat_labels = _build_frame_labels(implemented_beats, len(frame_paths))
+    labeled_frames = "\n".join(
+        f"- Frame {i + 1} [{label}]: {path}"
+        for i, (path, label) in enumerate(zip(frame_paths, beat_labels))
+    )
+    measured_duration = (
+        f"{actual_duration_seconds:.2f}s"
+        if actual_duration_seconds is not None and actual_duration_seconds > 0
+        else "unknown"
+    )
+    review_prompt = (
+        "Use the `render-review` skill to review this rendered Manim video.\n"
+        "Do not write, edit, or render anything in this pass. Only review the output.\n\n"
+        "## MANDATORY: Visual Analysis of Each Frame\n"
+        "You MUST use the Read tool to examine EVERY frame image file listed below.\n"
+        "For each frame, provide a visual assessment covering:\n"
+        "- What is visibly on screen (objects, text, formulas, labels, arrows)\n"
+        "- Visual density (sparse / balanced / crowded)\n"
+        "- Whether the focal point is clear and unambiguous\n"
+        "- Label and formula readability (clear / partially obscured / illegible)\n"
+        "- Any visual issues (overlap, cutoff, too small, wrong position, etc.)\n\n"
+        f"Original user request:\n{user_text}\n\n"
+        "Duration target:\n"
+        f"- requested runtime: about {format_target_duration(target_duration_seconds)}\n"
+        f"- measured render runtime: {measured_duration}\n\n"
+        "Visible plan / build context:\n"
+        f"{plan_text or '(no plan text available)'}\n\n"
+        f"Rendered video path:\n- {video_output}\n\n"
+        "Sampled review frames (MUST read each one):\n"
+        f"{labeled_frames}\n"
+    )
+
+    review_opts = build_options(
+        cwd=cwd,
+        system_prompt=system_prompt,
+        max_turns=16,
+        quality=quality,
+        log_callback=log_callback,
+        output_format=RenderReviewOutput.output_format_schema(),
+        allowed_tools=["Read", "Glob", "Grep"],
+    )
+
+    result_message: ResultMessage | None = None
+    async for message in query(prompt=review_prompt, options=review_opts):
+        pass
+
+    if result_message is None or result_message.structured_output is None:
+        raise RuntimeError("Render review did not produce a structured verdict.")
+
+    raw = result_message.structured_output
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    return RenderReviewOutput.model_validate(raw)
+
+
+# ── Phase 3: Render Resolve + Review ───────────────────────────────
+
+
+async def run_phase3_render(
+    *,
+    dispatcher: _MessageDispatcher,
+    hook_state: Any,
+    user_text: str,
+    plan_text: str,
+    result_summary: dict[str, Any] | None,
+    target_duration_seconds: int,
+    resolved_cwd: str,
+    system_prompt: str,
+    quality: str,
+    prompt_file: str | None,
+    log_callback: Callable[[str], None] | None,
+    event_callback: Callable[[PipelineEvent], None] | None,
+    cli_stderr_lines: list[str],
+) -> tuple[Any, str | None, list[str]]:
+    """Execute Phase 3: resolve render output, optional repair, frame review.
+
+    Returns (po, video_output, review_frames).
+    """
+    from . import prompt_builder
+
+    dispatcher._print(f"  {_EMOJI['gear']} Phase 3/5: resolve render output")
+    logger.debug(
+        "run_pipeline: phase2: dispatcher.video_output before extraction = %r",
+        dispatcher.video_output,
+    )
+    logger.debug(
+        "run_pipeline: phase2: hook captured source code keys = %s",
+        list(hook_state.captured_source_code.keys()),
+    )
+
+    po = dispatcher.get_pipeline_output()
+    logger.debug("run_pipeline: PipelineOutput after get_pipeline_output: %r", po)
+    video_output = po.video_output if po else None
+
+    render_status_message = (
+        "Resolving render output (pipeline_result -> structured output -> task_notification -> "
+        "filesystem scan)"
+    )
+    if dispatcher.task_notification_status in {"failed", "stopped"}:
+        note = (
+            f"Task ended with status={dispatcher.task_notification_status} "
+            f"before/while resolving output"
+        )
+        if dispatcher.task_notification_summary:
+            note = f"{note}: {dispatcher.task_notification_summary}"
+        render_status_message = note
+    elif video_output:
+        render_status_message = "Render output resolved. Proceeding according to pipeline mode."
+
+    emit_status(
+        event_callback,
+        task_status="running",
+        phase="render",
+        message=render_status_message,
+    )
+    logger.debug("run_pipeline: video_output = %r", video_output)
+
+    if po is not None:
+        _populate_po_metadata(po, dispatcher, result_summary, target_duration_seconds, plan_text)
+
+    needs_build_summary = not has_structured_build_summary(po)
+    needs_narration_summary = not has_narration_sync_summary(po)
+    if video_output and (needs_build_summary or needs_narration_summary):
+        dispatcher._print(
+            "  [REPAIR] Structured output is incomplete. Running a no-tools repair pass."
+        )
+        repair_prompt = prompt_builder.build_output_repair_prompt(
+            user_text,
+            target_duration_seconds,
+            plan_text=plan_text,
+            partial_output=dispatcher.get_persistable_pipeline_output(),
+            video_output=video_output,
+        )
+        repair_opts = build_options(
+            cwd=resolved_cwd,
+            system_prompt=system_prompt,
+            max_turns=6,
+            prompt_file=prompt_file,
+            quality=quality,
+            log_callback=log_callback,
+            allowed_tools=[],
+        )
+        async for message in query(prompt=repair_prompt, options=repair_opts):
+            dispatcher.dispatch(message)
+
+        repair_result_summary = dispatcher.result_summary
+        result_summary = merge_result_summaries(result_summary, repair_result_summary)
+        po = dispatcher.get_pipeline_output()
+        if po is not None:
+            _populate_po_metadata(
+                po, dispatcher, result_summary, target_duration_seconds, plan_text
+            )
+
+    if not has_structured_build_summary(po):
+        warning = (
+            "Claude skipped the scene-build summary. "
+            "Continuing with partial structured output because a render exists."
+        )
+        dispatcher._print(f"  [WARN] {warning}")
+        logger.warning("run_pipeline: %s", warning)
+
+    if not has_narration_sync_summary(po):
+        warning = (
+            "Claude skipped the narration-sync summary. "
+            "Continuing because narration metadata can be incomplete without blocking delivery."
+        )
+        dispatcher._print(f"  [WARN] {warning}")
+        logger.warning("run_pipeline: %s", warning)
+
+    if po is not None and video_output and po.duration_seconds is None:
+        try:
+            po.duration_seconds = await _get_duration(video_output)
+        except Exception as exc:
+            logger.debug(
+                "run_pipeline: unable to probe render duration for %r: %s", video_output, exc
+            )
+
+    if not video_output:
+        dispatcher._print("")
+        dispatcher._print(f"{_EMOJI['cross']} Claude did not produce a valid pipeline output.")
+        dispatcher._print("  The agent may have failed to render the scene.")
+        if dispatcher.task_notification_status:
+            dispatcher._print(f"  Task notification status: {dispatcher.task_notification_status}")
+        if dispatcher.task_notification_summary:
+            dispatcher._print(f"  Notification summary: {dispatcher.task_notification_summary}")
+        if dispatcher.task_notification_output_file:
+            dispatcher._print(
+                f"  Notification output_file: {dispatcher.task_notification_output_file}"
+            )
+        if dispatcher.result_summary:
+            s = dispatcher.result_summary
+            if s.get("is_error"):
+                dispatcher._print(f"  SDK result flagged error: stop_reason={s.get('stop_reason')}")
+        if dispatcher.task_notification_status == "stopped":
+            dispatcher._print("  Note: task status is 'stopped', so render was interrupted.")
+        elif dispatcher.task_notification_status == "failed":
+            dispatcher._print("  Note: task status is 'failed', so render likely did not finish.")
+        if dispatcher.result_summary:
+            s = dispatcher.result_summary
+            dispatcher._print(f"  Turns: {s.get('turns', '?')} | Error: {s.get('is_error', '?')}")
+        collected = "\n".join(dispatcher.collected_text)
+        if collected.strip():
+            dispatcher._print("  --- Agent text output (first 2000 chars) ---")
+            dispatcher._print(collected[:2000])
+            if len(collected) > 2000:
+                dispatcher._print(f"  ... ({len(collected)} chars total)")
+            dispatcher._print("  --- Output end ---")
+        else:
+            dispatcher._print("  (Agent produced no text output)")
+        failure_phase = dispatcher.task_notification_status or "unknown"
+        raise RuntimeError(
+            "Claude did not produce a valid pipeline output. "
+            f"Phase 3/5 outcome status={failure_phase}. "
+            "The agent may have failed to render the scene."
+        )
+
+    # Render review + duration check
+    dispatcher._print("  [REVIEW] Sampling render frames for quality review")
+    emit_status(
+        event_callback,
+        task_status="running",
+        phase="render",
+        message="Reviewing sampled frames before final success",
+    )
+    review_frames = await extract_review_frames(
+        video_output,
+        resolved_cwd,
+        implemented_beats=po.implemented_beats if po else None,
+    )
+    review_result: RenderReviewOutput | None = None
+    review_warning: str | None = None
+    try:
+        review_result = await run_render_review(
+            user_text=user_text,
+            plan_text=plan_text,
+            video_output=video_output,
+            frame_paths=review_frames,
+            target_duration_seconds=target_duration_seconds,
+            actual_duration_seconds=po.duration_seconds if po is not None else None,
+            cwd=resolved_cwd,
+            system_prompt=system_prompt,
+            quality=quality,
+            log_callback=log_callback,
+            implemented_beats=po.implemented_beats if po is not None else None,
+        )
+    except RuntimeError as exc:
+        if "structured verdict" not in str(exc):
+            raise
+        review_warning = (
+            "Render review did not produce a structured verdict. "
+            "Continuing because review formatting can be incomplete without blocking delivery."
+        )
+        dispatcher._print(f"  [WARN] {review_warning}")
+        logger.warning("run_pipeline: %s", review_warning)
+
+    if review_result is not None:
+        dispatcher._print(f"  [REVIEW] {review_result.summary}")
+        if review_result.blocking_issues:
+            for issue in review_result.blocking_issues:
+                dispatcher._print(f"  [REVIEW][BLOCK] {issue}")
+        if review_result.suggested_edits:
+            for edit in review_result.suggested_edits:
+                dispatcher._print(f"  [REVIEW][FIX] {edit}")
+        if po is not None:
+            po.review_summary = review_result.summary
+            po.review_approved = review_result.approved
+            po.review_blocking_issues = list(review_result.blocking_issues)
+            po.review_suggested_edits = list(review_result.suggested_edits)
+            po.review_frame_paths = list(review_frames)
+            po.review_frame_analyses = [
+                fa.model_dump() for fa in (review_result.frame_analyses or [])
+            ]
+            po.review_vision_analysis_used = review_result.vision_analysis_used
+        dispatcher.partial_review_summary = review_result.summary
+        dispatcher.partial_review_approved = review_result.approved
+        dispatcher.partial_review_blocking_issues = list(review_result.blocking_issues)
+        dispatcher.partial_review_suggested_edits = list(review_result.suggested_edits)
+        dispatcher.partial_review_frame_paths = list(review_frames)
+        dispatcher.partial_review_frame_analyses = [
+            fa.model_dump() for fa in (review_result.frame_analyses or [])
+        ]
+        dispatcher.partial_review_vision_analysis_used = review_result.vision_analysis_used
+        if not review_result.approved:
+            raise RuntimeError(
+                "Rendered video failed the render-review gate. "
+                + "; ".join(review_result.blocking_issues or [review_result.summary])
+            )
+    else:
+        if po is not None:
+            po.review_summary = review_warning
+            po.review_approved = None
+            po.review_blocking_issues = []
+            po.review_suggested_edits = []
+            po.review_frame_paths = list(review_frames)
+        dispatcher.partial_review_summary = review_warning
+        dispatcher.partial_review_approved = None
+        dispatcher.partial_review_blocking_issues = []
+        dispatcher.partial_review_suggested_edits = []
+        dispatcher.partial_review_frame_paths = list(review_frames)
+
+    duration_issue = duration_target_issue(
+        po.duration_seconds if po is not None else None,
+        target_duration_seconds,
+        formatter=format_target_duration,
+    )
+    if duration_issue is not None:
+        dispatcher._print(f"  [WARN] {duration_issue}")
+        logger.warning("run_pipeline: duration target miss: %s", duration_issue)
+    if duration_issue is None and po is not None and po.duration_seconds is not None:
+        dispatcher._print(
+            "  [REVIEW] Duration check passed: "
+            f"{po.duration_seconds:.1f}s vs target {target_duration_seconds}s"
+        )
+
+    return po, video_output, review_frames
+
+
+# ── Phase 4: TTS Synthesis ───────────────────────────────────────
+
+
+async def run_phase4_tts(
+    *,
+    dispatcher: _MessageDispatcher,
+    narration_text: str,
+    video_output: str,
+    voice_id: str,
+    model: str,
+    output_path: str,
+    po: Any,
+    event_callback: Callable[[PipelineEvent], None] | None,
+) -> Any:
+    """Execute Phase 4: TTS synthesis.
+
+    Returns tts_result.
+    """
+    dispatcher._print(f"  {_EMOJI['gear']} Phase 4/5: synthesize TTS")
+    emit_status(
+        event_callback,
+        task_status="running",
+        phase="tts",
+        message="Synthesizing narration",
+    )
+    if narration_is_too_short_for_video(
+        narration_text, po.duration_seconds if po is not None else None
+    ):
+        warning = (
+            "Narration is much shorter than the rendered video. "
+            "Muxing will preserve the full animation and leave trailing silence "
+            "instead of truncating it."
+        )
+        dispatcher._print(f"  [WARN] {warning}")
+        logger.warning(
+            "run_pipeline: %s video=%r narration=%r", warning, video_output, narration_text
+        )
+    dispatcher._print(f"\n{_EMOJI['tts']} TTS in progress... (voice={voice_id}, model={model})")
+    tts_result = await synthesize(
+        text=narration_text,
+        voice_id=voice_id,
+        model=model,
+        output_dir=str(Path(output_path).parent),
+    )
+    if po is not None:
+        po.audio_path = tts_result.audio_path or None
+        po.subtitle_path = tts_result.subtitle_path or None
+        po.extra_info_path = tts_result.extra_info_path or None
+        po.tts_mode = tts_result.mode
+        po.tts_duration_ms = tts_result.duration_ms
+        po.tts_word_count = tts_result.word_count
+        po.tts_usage_characters = tts_result.usage_characters
+    transport_label = "SYNC HTTP" if tts_result.mode == "sync" else "ASYNC LONG-TEXT"
+    subtitle_label = "embedded captions ready" if tts_result.subtitle_path else "audio-only mux"
+    dispatcher._print(f"  [TTS] Transport: {transport_label}")
+    dispatcher._print(f"  [TTS] Output mode: {subtitle_label}")
+    dispatcher._print(f"  TTS done: {tts_result.duration_ms}ms, {tts_result.word_count} chars")
+    return tts_result
+
+
+# ── Phase 5: Mux ──────────────────────────────────────────────────
+
+
+async def run_phase5_mux(
+    *,
+    dispatcher: _MessageDispatcher,
+    video_output: str,
+    tts_result: Any,
+    output_path: str,
+    po: Any,
+    bgm_enabled: bool = False,
+    bgm_prompt: str | None = None,
+    user_text: str = "",
+    preset: str = "default",
+    narration_text: str = "",
+    bgm_volume: float = 0.12,
+    intro_outro: bool = False,
+    event_callback: Callable[[PipelineEvent], None] | None,
+) -> str:
+    """Execute Phase 5: video mux + optional BGM + optional intro/outro.
+
+    Returns the final video path.
+    """
+    from . import music_client
+
+    resolved_bgm_prompt = None
+    bgm_result = None
+    if bgm_enabled:
+        resolved_bgm_prompt = (
+            bgm_prompt.strip()
+            if bgm_prompt and bgm_prompt.strip()
+            else _build_default_bgm_prompt(user_text, preset, narration_text)
+        )
+        dispatcher._print("  [BGM] Generating instrumental background music")
+        try:
+            bgm_result = await music_client.generate_instrumental(
+                prompt=resolved_bgm_prompt,
+                output_dir=str(Path(output_path).parent),
+                model="music-2.6",
+            )
+            dispatcher._print(f"  [BGM] Done: path={bgm_result.audio_path} volume={bgm_volume:.2f}")
+        except Exception as exc:
+            warning = (
+                "Background music generation failed. Falling back to narration-only final mux."
+            )
+            dispatcher._print(f"  [WARN] {warning}")
+            logger.warning("run_pipeline: %s error=%s", warning, exc)
+    if po is not None:
+        po.bgm_path = bgm_result.audio_path if bgm_result is not None else None
+        po.bgm_prompt = resolved_bgm_prompt
+        po.bgm_duration_ms = bgm_result.duration_ms if bgm_result is not None else None
+        po.bgm_volume = bgm_volume if bgm_result is not None else None
+        po.audio_mix_mode = "voice_with_bgm" if bgm_result is not None else "voice_only"
+
+    dispatcher._print("[MUX] Phase 5/5: mux final video")
+    mux_desc = (
+        "video + narration + bgm + subtitle"
+        if bgm_result is not None
+        else "video + audio + subtitle"
+    )
+    dispatcher._print(f"[MUX] FFmpeg in progress... ({mux_desc})")
+    emit_status(
+        event_callback,
+        task_status="running",
+        phase="mux",
+        message="Muxing final video",
+    )
+    final_video = await build_final_video(
+        video_path=video_output,
+        audio_path=tts_result.audio_path,
+        subtitle_path=tts_result.subtitle_path,
+        output_path=output_path,
+        bgm_path=bgm_result.audio_path if bgm_result is not None else None,
+        bgm_volume=bgm_volume,
+    )
+    if po is not None:
+        po.final_video_output = final_video
+
+    # Optional intro/outro concat
+    if intro_outro and po is not None:
+        concat_parts: list[str | None] = []
+        if po.intro_video_path and Path(po.intro_video_path).exists():
+            concat_parts.append(po.intro_video_path)
+        concat_parts.append(final_video)
+        if po.outro_video_path and Path(po.outro_video_path).exists():
+            concat_parts.append(po.outro_video_path)
+
+        if len(concat_parts) > 1:
+            dispatcher._print("[MUX] Phase 5b: concatenating intro/outro segments")
+            emit_status(
+                event_callback,
+                task_status="running",
+                phase="concat",
+                message="Concatenating intro/outro segments",
+            )
+            final_video = await concat_videos(
+                video_paths=cast("list[str]", concat_parts),
+                output_path=output_path,
+            )
+            if po is not None:
+                po.final_video_output = final_video
+            dispatcher._print(f"[MUX] Concatenated video: {final_video}")
+
+    dispatcher._print(f"\n{_EMOJI['check']} Video generation complete: {final_video}")
+    return final_video
+
+
+# ── PO metadata ───────────────────────────────────────────────────
+
+
+def _populate_po_metadata(
+    po: Any,
+    dispatcher: _MessageDispatcher,
+    result_summary: dict[str, Any] | None,
+    target_duration_seconds: int,
+    plan_text: str,
+) -> None:
+    """Fill standard metadata fields on PO from dispatcher + result summary."""
+    if result_summary is not None:
+        po.run_turns = result_summary.get("turns")
+        po.run_duration_ms = result_summary.get("duration_ms")
+        po.run_cost_usd = result_summary.get("cost_usd")
+    po.run_tool_use_count = dispatcher.tool_use_count
+    po.run_tool_stats = dict(dispatcher.tool_stats)
+    po.target_duration_seconds = target_duration_seconds
+    po.plan_text = plan_text
+    dispatcher.partial_build_summary = po.build_summary
+    dispatcher.partial_deviations_from_plan = list(po.deviations_from_plan)
+    dispatcher.partial_beat_to_narration_map = list(po.beat_to_narration_map)
+    dispatcher.partial_narration_coverage_complete = po.narration_coverage_complete
+    dispatcher.partial_estimated_narration_duration_seconds = (
+        po.estimated_narration_duration_seconds
+    )
+
+
+# ── BGM prompt ────────────────────────────────────────────────────
+
+
+def _build_default_bgm_prompt(user_text: str, preset: str, narration_text: str) -> str:
+    """Build a restrained instrumental BGM prompt for narrated teaching videos."""
+    preset_style = {
+        "educational": "calm educational underscore, soft piano and light strings",
+        "presentation": "clean modern underscore, light piano and gentle ambient textures",
+        "proof": "subtle thoughtful underscore, restrained piano and low strings",
+        "concept": "clear contemporary underscore, piano and marimba with light ambient texture",
+        "default": "calm instrumental underscore, soft piano and light strings",
+    }.get(preset, "calm instrumental underscore, soft piano and light strings")
+    topic_hint = user_text.strip() or narration_text.strip() or "a narrated math explainer"
+    return (
+        f"{preset_style}, background music for a narrated explainer video about {topic_hint}, "
+        "instrumental only, no vocals, non-distracting, low intensity, supportive, "
+        "steady pacing, suitable under spoken narration"
+    )

@@ -1,0 +1,159 @@
+"""Tests for pipeline_phases12 module (Phase1 planning + Phase2 implementation)."""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+
+class TestBuildScenePlanPrompt:
+    """Tests for _build_scene_plan_prompt."""
+
+    def test_returns_string(self):
+        from manim_agent.pipeline_phases12 import build_scene_plan_prompt
+
+        result = build_scene_plan_prompt(
+            user_text="解释傅里叶变换",
+            target_duration_seconds=60,
+            cwd=".",
+        )
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_includes_target_duration(self):
+        from manim_agent.pipeline_phases12 import build_scene_plan_prompt
+        from manim_agent.prompt_builder import format_target_duration
+
+        result = build_scene_plan_prompt(
+            user_text="解释傅里叶变换",
+            target_duration_seconds=60,
+            cwd=".",
+        )
+        assert format_target_duration(60) in result
+
+    def test_includes_scene_plan_skill_reference(self):
+        from manim_agent.pipeline_phases12 import build_scene_plan_prompt
+
+        result = build_scene_plan_prompt(
+            user_text="解释傅里叶变换",
+            target_duration_seconds=60,
+            cwd=".",
+        )
+        assert "scene-plan" in result.lower() or "plugin" in result.lower()
+
+    def test_empty_user_text_still_returns_prompt(self):
+        from manim_agent.pipeline_phases12 import build_scene_plan_prompt
+
+        result = build_scene_plan_prompt(
+            user_text="",
+            target_duration_seconds=30,
+            cwd=".",
+        )
+        assert isinstance(result, str)
+
+
+class TestBuildImplementationPrompt:
+    """Tests for _build_implementation_prompt."""
+
+    def test_returns_string(self):
+        from manim_agent.pipeline_phases12 import build_implementation_prompt
+
+        plan_text = """
+## Mode
+educational
+
+## Learning Goal
+理解傅里叶变换原理
+
+## Beat List
+1. 周期函数介绍
+2. 频域概念
+"""
+        result = build_implementation_prompt(
+            user_text="解释傅里叶变换",
+            target_duration_seconds=60,
+            plan_text=plan_text,
+            cwd=".",
+        )
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_includes_plan_text(self):
+        from manim_agent.pipeline_phases12 import build_implementation_prompt
+
+        plan_text = "## Beat List\n1. First beat"
+        result = build_implementation_prompt(
+            user_text="测试",
+            target_duration_seconds=60,
+            plan_text=plan_text,
+            cwd=".",
+        )
+        assert plan_text in result
+
+    def test_mentions_scene_build_skill(self):
+        from manim_agent.pipeline_phases12 import build_implementation_prompt
+
+        result = build_implementation_prompt(
+            user_text="测试",
+            target_duration_seconds=60,
+            plan_text="## Beat List\n1. Test",
+            cwd=".",
+        )
+        assert "scene-build" in result.lower() or "implementation" in result.lower()
+
+
+class TestPhase1ValidationLogic:
+    """Tests for Phase 1 validation logic in run_phase1_planning.
+
+    These tests mock query at a lower level to avoid SDK prompt-type validation.
+    """
+
+    @pytest.mark.asyncio
+    async def test_phase1_rejects_empty_collected_text(self):
+        from manim_agent.pipeline_phases12 import run_phase1_planning
+
+        dispatcher = MagicMock()
+        dispatcher.collected_text = []
+        dispatcher.result_summary = {"turns": 0}
+        dispatcher.implementation_started = False
+        dispatcher.implementation_start_reason = None
+        dispatcher._msg_count = 0
+        dispatcher._msg_type_stats = {}
+        dispatcher._assistant_msg_count = 0
+        dispatcher.tool_use_count = 0
+        dispatcher.tool_stats = {}
+        event_callback = MagicMock()
+
+        planning_options = MagicMock()
+        planning_options.session_id = "test-session"
+        planning_options.allowed_tools = []
+        planning_options.max_turns = 16
+        planning_options.plugins = []
+
+        async def empty_iter():
+            return
+            yield
+
+        with patch("manim_agent.pipeline_phases12.query") as mock_query:
+            mock_query.return_value = empty_iter()
+            with pytest.raises(RuntimeError, match="scene-plan"):
+                await run_phase1_planning(
+                    planning_prompt="test prompt",
+                    planning_options=planning_options,
+                    dispatcher=dispatcher,
+                    event_callback=event_callback,
+                )
+
+    @pytest.mark.asyncio
+    async def test_phase1_stops_iteration_on_scene_plan(self):
+        """Verify that a scene plan in collected_text satisfies the validation."""
+        from manim_agent.pipeline_phases12 import run_phase1_planning
+        from manim_agent.pipeline_gates import has_visible_scene_plan
+
+        plan_text = (
+            "# Scene Plan\n## Mode\neducational\n## Learning Goal\ntest\n"
+            "## Audience\nuniversity students\n"
+            "## Beat List\n1. Intro\n## Narration Outline\ntest\n"
+            "## Visual Risks\nnone\n## Build Handoff\nok"
+        )
+
+        assert has_visible_scene_plan([plan_text]) is True
