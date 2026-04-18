@@ -50,6 +50,17 @@ class TestBuildScenePlanPrompt:
         )
         assert isinstance(result, str)
 
+    def test_requires_structured_build_spec_output(self):
+        from manim_agent.pipeline_phases12 import build_scene_plan_prompt
+
+        result = build_scene_plan_prompt(
+            user_text="测试",
+            target_duration_seconds=60,
+            cwd=".",
+        )
+        assert "build_spec" in result
+        assert "structured_output" in result
+
 
 class TestBuildImplementationPrompt:
     """Tests for _build_implementation_prompt."""
@@ -115,6 +126,36 @@ educational
         assert "Do not mark `segment_render_complete` true as a placeholder" in result
         assert "Do not leave `implemented_beats` or `beat_to_narration_map` empty" in result
 
+    def test_includes_structured_build_spec_when_provided(self):
+        from manim_agent.pipeline_phases12 import build_implementation_prompt
+
+        result = build_implementation_prompt(
+            user_text="测试",
+            target_duration_seconds=60,
+            plan_text="## Beat List\n1. Intro",
+            build_spec={
+                "mode": "proof-walkthrough",
+                "learning_goal": "Explain the proof.",
+                "audience": "students",
+                "target_duration_seconds": 60,
+                "beats": [
+                    {
+                        "id": "beat_001_intro",
+                        "title": "Intro",
+                        "visual_goal": "Show the setup",
+                        "narration_intent": "Introduce the problem",
+                        "target_duration_seconds": 10,
+                        "required_elements": ["triangle"],
+                        "segment_required": True,
+                    }
+                ],
+            },
+            cwd=".",
+        )
+
+        assert "Approved structured build specification (JSON)" in result
+        assert '"id": "beat_001_intro"' in result
+
 
 class TestBuildOutputRepairPrompt:
     def test_segment_mode_without_video_output_mentions_segment_paths(self):
@@ -148,6 +189,7 @@ class TestPhase1ValidationLogic:
 
         dispatcher = MagicMock()
         dispatcher.collected_text = []
+        dispatcher.get_scene_plan_output.return_value = None
         dispatcher.result_summary = {"turns": 0}
         dispatcher.implementation_started = False
         dispatcher.implementation_start_reason = None
@@ -192,3 +234,96 @@ class TestPhase1ValidationLogic:
         )
 
         assert has_visible_scene_plan([plan_text]) is True
+
+    @pytest.mark.asyncio
+    async def test_phase1_requires_structured_build_spec(self):
+        from manim_agent.pipeline_phases12 import run_phase1_planning
+
+        plan_text = (
+            "# Scene Plan\n## Mode\neducational\n## Learning Goal\ntest\n"
+            "## Audience\nuniversity students\n"
+            "## Beat List\n1. Intro\n## Narration Outline\ntest\n"
+            "## Visual Risks\nnone\n## Build Handoff\nok"
+        )
+        dispatcher = MagicMock()
+        dispatcher.collected_text = [plan_text]
+        dispatcher.get_scene_plan_output.return_value = None
+        dispatcher.result_summary = {"turns": 1}
+        dispatcher._print = MagicMock()
+
+        planning_options = MagicMock()
+        planning_options.allowed_tools = []
+        planning_options.max_turns = 16
+
+        async def empty_iter():
+            return
+            yield
+
+        with patch("manim_agent.pipeline_phases12.query") as mock_query:
+            mock_query.return_value = empty_iter()
+            with pytest.raises(RuntimeError, match="structured build_spec"):
+                await run_phase1_planning(
+                    planning_prompt="test prompt",
+                    planning_options=planning_options,
+                    dispatcher=dispatcher,
+                    event_callback=None,
+                )
+
+    @pytest.mark.asyncio
+    async def test_phase1_accepts_valid_structured_build_spec(self):
+        from manim_agent.build_spec_schema import ScenePlanOutput
+        from manim_agent.pipeline_phases12 import run_phase1_planning
+
+        plan_text = (
+            "# Scene Plan\n## Mode\neducational\n## Learning Goal\ntest\n"
+            "## Audience\nuniversity students\n"
+            "## Beat List\n1. Intro\n## Narration Outline\ntest\n"
+            "## Visual Risks\nnone\n## Build Handoff\nok"
+        )
+        dispatcher = MagicMock()
+        dispatcher.collected_text = [plan_text]
+        dispatcher.get_scene_plan_output.return_value = ScenePlanOutput.model_validate(
+            {
+                "markdown_plan": plan_text,
+                "build_spec": {
+                    "mode": "proof-walkthrough",
+                    "learning_goal": "Test goal",
+                    "audience": "university students",
+                    "target_duration_seconds": 60,
+                    "beats": [
+                        {
+                            "id": "beat_001_intro",
+                            "title": "Intro",
+                            "visual_goal": "Show setup",
+                            "narration_intent": "Introduce setup",
+                            "target_duration_seconds": 12,
+                            "required_elements": ["triangle"],
+                            "segment_required": True,
+                        }
+                    ],
+                },
+            }
+        )
+        dispatcher.result_summary = {"turns": 1}
+        dispatcher._print = MagicMock()
+
+        planning_options = MagicMock()
+        planning_options.allowed_tools = []
+        planning_options.max_turns = 16
+
+        async def empty_iter():
+            return
+            yield
+
+        with patch("manim_agent.pipeline_phases12.query") as mock_query:
+            mock_query.return_value = empty_iter()
+            result = await run_phase1_planning(
+                planning_prompt="test prompt",
+                planning_options=planning_options,
+                dispatcher=dispatcher,
+                event_callback=None,
+            )
+
+        assert result == {"turns": 1}
+        assert dispatcher.partial_plan_text == plan_text
+        assert dispatcher.partial_build_spec["beats"][0]["id"] == "beat_001_intro"

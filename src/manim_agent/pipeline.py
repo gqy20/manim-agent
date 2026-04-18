@@ -14,12 +14,13 @@ from claude_agent_sdk import query
 
 from . import prompts
 from . import music_client, render_review, tts_client, video_builder
+from .build_spec_schema import ScenePlanOutput
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 from .hooks import activate_hook_state, create_hook_state, reset_hook_state
 from .pipeline_config import build_options as _build_options
 from .pipeline_config import emit_status as _emit_status
 from .pipeline_config import stderr_handler as _stderr_handler
-from .pipeline_gates import merge_result_summaries
+from .pipeline_gates import implementation_contract_issue, merge_result_summaries
 from .pipeline_narration import generate_narration
 from . import pipeline_narration as _pipeline_narration_module
 from .pipeline_phases12 import (
@@ -92,6 +93,7 @@ async def run_pipeline(
         prompt_file=prompt_file,
         quality=quality,
         log_callback=log_callback,
+        output_format=ScenePlanOutput.output_format_schema(),
         use_default_output_format=False,
         allowed_tools=["Read", "Glob", "Grep"],
     )
@@ -175,6 +177,7 @@ async def run_pipeline(
         )
 
         plan_text = dispatcher.partial_plan_text
+        build_spec = getattr(dispatcher, "partial_build_spec", None)
         dispatcher.partial_render_mode = render_mode
         dispatcher.partial_segment_render_complete = False
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2/5: implementation pass")
@@ -188,6 +191,7 @@ async def run_pipeline(
             user_text,
             target_duration_seconds,
             plan_text,
+            build_spec,
             resolved_cwd,
             render_mode=render_mode,
         )
@@ -201,6 +205,18 @@ async def run_pipeline(
 
         if _dispatcher_ref is not None:
             _dispatcher_ref.append(dispatcher)
+
+        phase2_po = dispatcher.get_pipeline_output()
+        phase2_issue = implementation_contract_issue(
+            phase2_po,
+            render_mode=render_mode,
+            cwd=resolved_cwd,
+        )
+        if phase2_issue is not None:
+            raise RuntimeError(
+                "Phase 2 implementation output is incomplete. "
+                f"Blocking issue: {phase2_issue}"
+            )
 
         result_summary = merge_result_summaries(
             planning_result_summary,

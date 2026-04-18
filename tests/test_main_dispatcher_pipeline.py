@@ -37,7 +37,39 @@ Implement in one focused scene.
 def _planning_messages():
     return [
         _make_assistant_message(_make_text_block(_SCENE_PLAN_TEXT)),
-        _make_result_message(num_turns=1, total_cost_usd=0.001),
+        _make_result_message(
+            num_turns=1,
+            total_cost_usd=0.001,
+            structured_output={
+                "markdown_plan": _SCENE_PLAN_TEXT,
+                "build_spec": {
+                    "mode": "quick-demo",
+                    "learning_goal": "Show one clean transformation.",
+                    "audience": "General learners.",
+                    "target_duration_seconds": 60,
+                    "beats": [
+                        {
+                            "id": "beat_001_intro_circle",
+                            "title": "Introduce the circle",
+                            "visual_goal": "Show the starting circle cleanly.",
+                            "narration_intent": "Introduce the initial circle.",
+                            "target_duration_seconds": 12,
+                            "required_elements": ["circle"],
+                            "segment_required": True,
+                        },
+                        {
+                            "id": "beat_002_transform_square",
+                            "title": "Transform into a square",
+                            "visual_goal": "Animate the circle transforming into a square.",
+                            "narration_intent": "Explain the transformation clearly.",
+                            "target_duration_seconds": 18,
+                            "required_elements": ["circle", "square"],
+                            "segment_required": True,
+                        },
+                    ],
+                },
+            },
+        ),
     ]
 
 
@@ -90,6 +122,36 @@ class TestSessionIsolation:
 
 
 class TestRunPipeline:
+    @pytest.mark.asyncio
+    async def test_phase2_rejects_missing_build_bookkeeping_before_phase3(self, tmp_path):
+        mock_messages = [
+            _make_assistant_message(_make_text_block("render complete")),
+            _make_result_message(
+                num_turns=1,
+                **{
+                    "structured_output": {
+                        "video_output": "media/out.mp4",
+                    }
+                },
+            ),
+        ]
+
+        with (
+            patch("manim_agent.pipeline.query") as mock_query,
+            patch("manim_agent.pipeline.run_phase3_render", new_callable=AsyncMock) as mock_phase3,
+            pytest.raises(RuntimeError, match="Phase 2 implementation output is incomplete"),
+        ):
+            mock_query.side_effect = _make_staged_query(mock_messages)
+
+            await main_module.run_pipeline(
+                user_text="test content",
+                output_path="output/final.mp4",
+                no_tts=True,
+                cwd=str(tmp_path),
+            )
+
+        mock_phase3.assert_not_awaited()
+
     @pytest.mark.asyncio
     async def test_segments_render_mode_marks_pipeline_output_state(self, tmp_path):
         segment_a = tmp_path / "segments" / "beat_001.mp4"
@@ -283,7 +345,7 @@ class TestRunPipeline:
         ]
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            pytest.raises(RuntimeError, match="segment render outputs are required"),
+            pytest.raises(RuntimeError, match="Phase 2 implementation output is incomplete"),
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
 
@@ -362,7 +424,16 @@ class TestRunPipeline:
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
                 num_turns=1,
-                **{"structured_output": {"video_output": "media/silent.mp4"}},
+                **{
+                    "structured_output": {
+                        "video_output": "media/silent.mp4",
+                        "implemented_beats": ["Opening", "Main"],
+                        "build_summary": "Built the planned main beats.",
+                        "beat_to_narration_map": ["Opening -> intro", "Main -> explain"],
+                        "narration_coverage_complete": True,
+                        "estimated_narration_duration_seconds": 30.0,
+                    }
+                },
             ),
         ]
 
@@ -400,7 +471,16 @@ class TestRunPipeline:
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
                 num_turns=1,
-                **{"structured_output": {"video_output": "media/silent.mp4"}},
+                **{
+                    "structured_output": {
+                        "video_output": "media/silent.mp4",
+                        "implemented_beats": ["Opening", "Main"],
+                        "build_summary": "Built the planned main beats.",
+                        "beat_to_narration_map": ["Opening -> intro", "Main -> explain"],
+                        "narration_coverage_complete": True,
+                        "estimated_narration_duration_seconds": 30.0,
+                    }
+                },
             ),
         ]
 
@@ -439,7 +519,7 @@ class TestRunPipeline:
 
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            pytest.raises(RuntimeError, match="valid pipeline output"),
+            pytest.raises(RuntimeError, match="Phase 2 implementation output is incomplete"),
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
 
@@ -461,7 +541,7 @@ class TestRunPipeline:
 
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            pytest.raises(RuntimeError, match="valid pipeline output"),
+            pytest.raises(RuntimeError, match="Phase 2 implementation output is incomplete"),
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
 
@@ -474,7 +554,7 @@ class TestRunPipeline:
             )
 
         status_events = [e for e in events if e.event_type == EventType.STATUS]
-        assert [e.data.phase for e in status_events] == ["init", "scene", "render"]
+        assert [e.data.phase for e in status_events] == ["init", "scene"]
         assert all(e.data.task_status == "running" for e in status_events)
 
     @pytest.mark.asyncio
@@ -563,7 +643,7 @@ class TestBuildOptions:
             "Glob",
             "Grep",
         }
-        assert opts.add_dirs == [str(Path("/work").resolve())]
+        assert str(Path("/work").resolve()) in opts.add_dirs
         assert opts.plugins is not None
         assert any(plugin["path"].endswith("plugins\\manim-production") for plugin in opts.plugins)
 

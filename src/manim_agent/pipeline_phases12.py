@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
 from typing import Any
 
 from claude_agent_sdk import query
 
+from .build_spec_schema import ScenePlanOutput
 from .dispatcher import _MessageDispatcher
 from .pipeline_config import emit_status, resolve_plugin_dir
 from .pipeline_events import PipelineEvent
@@ -41,6 +43,8 @@ def build_scene_plan_prompt(
         "- Do not write, edit, or render any code in this pass.\n"
         "- Use only lightweight reference reads if needed.\n"
         f"- Return a Markdown plan with these exact section headings: {headings}.\n"
+        "- Also return structured_output that conforms to the Phase 1 `build_spec` contract.\n"
+        "- The structured `build_spec` must include stable beat ids, per-beat visual goals, narration intents, target durations, required elements, and whether each beat requires a segment.\n"
         "- Keep the plan compact and implementation-ready.\n"
     )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
@@ -50,6 +54,7 @@ def build_implementation_prompt(
     user_text: str,
     target_duration_seconds: int,
     plan_text: str,
+    build_spec: dict[str, Any] | None = None,
     cwd: str | None = None,
     render_mode: str = "full",
 ) -> str:
@@ -78,6 +83,7 @@ def build_implementation_prompt(
         f"- Target final video duration: about {target_duration}.\n"
         "- The visible scene plan below is approved. "
         "Implement from it instead of creating a new plan.\n"
+        "- The structured build specification below is authoritative. Do not redesign the beat structure during implementation.\n"
         "- Continue using the runtime-injected `manim-production` plugin "
         f"rooted at `{plugin_dir}`.\n"
         "- Use `scene-build`, `scene-direction`, `layout-safety`, `narration-sync`, "
@@ -113,6 +119,11 @@ def build_implementation_prompt(
         "\nApproved visible scene plan:\n"
         f"{plan_text}\n"
     )
+    if build_spec is not None:
+        guidance += (
+            "\nApproved structured build specification (JSON):\n"
+            f"{json.dumps(build_spec, ensure_ascii=False, indent=2)}\n"
+        )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
 
@@ -152,6 +163,13 @@ async def run_phase1_planning(
         dispatcher._print("  Continuing because the visible plan itself is present.")
 
     plan_text = extract_visible_scene_plan_text(dispatcher.collected_text)
+    scene_plan_output = dispatcher.get_scene_plan_output()
+    if scene_plan_output is None:
+        raise RuntimeError(
+            "Phase 1 planning did not return the required structured build_spec output."
+        )
+
+    dispatcher.partial_build_spec = scene_plan_output.build_spec.model_dump()
     dispatcher.partial_target_duration_seconds = planning_options.max_turns
     dispatcher.partial_plan_text = plan_text
     dispatcher._print("  [PLAN] Visible scene plan accepted.")

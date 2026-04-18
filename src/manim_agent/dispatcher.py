@@ -20,6 +20,7 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
+from .build_spec_schema import ScenePlanOutput
 from .hooks import _HookState, get_hook_state, normalize_path_string
 from .output_schema import PipelineOutput
 from .pipeline_events import (
@@ -84,8 +85,10 @@ class _MessageDispatcher:
         self._assistant_msg_count: int = 0
         # ── PipelineOutput ──
         self.pipeline_output: PipelineOutput | None = None
+        self.scene_plan_output: ScenePlanOutput | None = None
         self._structured_output_candidate: PipelineOutput | None = None
         self._result_output_candidate: PipelineOutput | None = None
+        self._scene_plan_output_candidate: ScenePlanOutput | None = None
         self._saw_completed_task_notification = False
         self.task_notification_status: str | None = None
         self.task_notification_summary: str | None = None
@@ -187,6 +190,15 @@ class _MessageDispatcher:
         self._attach_captured_source_code("get_pipeline_output")
         self._sync_compat_attrs()
         return self.pipeline_output
+
+    def get_scene_plan_output(self) -> ScenePlanOutput | None:
+        """Return the best-known structured planning output, if any."""
+        if self.scene_plan_output is not None:
+            return self.scene_plan_output
+        if self._scene_plan_output_candidate is not None:
+            self.scene_plan_output = self._scene_plan_output_candidate
+            return self.scene_plan_output
+        return None
 
     def get_video_output(self) -> str | None:
         """返回视频输出路径，纯便捷包装（委托给 get_pipeline_output）。"""
@@ -364,6 +376,20 @@ class _MessageDispatcher:
             except Exception as e:
                 logger.warning("structured_output validation failed: %s", e)
                 logger.debug("_handle_result: validation failed: %s", e)
+            try:
+                scene_plan_output = self._build_scene_plan_output_from_raw(
+                    msg.structured_output,
+                    source="structured_output",
+                )
+                self._scene_plan_output_candidate = scene_plan_output
+                if self.scene_plan_output is None:
+                    self.scene_plan_output = scene_plan_output
+                logger.debug(
+                    "_handle_result: ScenePlanOutput validated with %d beat(s)",
+                    len(scene_plan_output.build_spec.beats),
+                )
+            except Exception as e:
+                logger.debug("_handle_result: scene plan validation failed: %s", e)
         else:
             logger.debug("_handle_result: no structured_output")
         if msg.result:
@@ -769,6 +795,28 @@ class _MessageDispatcher:
         if validated_output.scene_file:
             validated_output.scene_file = normalize_path_string(validated_output.scene_file)
         return validated_output
+
+    def _build_scene_plan_output_from_raw(
+        self,
+        raw: Any,
+        *,
+        source: str,
+    ) -> ScenePlanOutput:
+        logger.debug(
+            "_build_scene_plan_output_from_raw[%s]: raw type=%s",
+            source,
+            type(raw).__name__,
+        )
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+            logger.debug(
+                "_build_scene_plan_output_from_raw[%s]: parsed JSON, type=%s",
+                source,
+                type(raw).__name__,
+            )
+        if not isinstance(raw, dict):
+            raise ValueError(f"{source} unexpected type: {type(raw).__name__}")
+        return ScenePlanOutput.model_validate(raw)
 
     def _build_pipeline_output_from_result_text(self, raw_result: str) -> PipelineOutput | None:
         """Parse compatibility fallback output from ResultMessage.result."""

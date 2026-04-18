@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from .output_schema import PipelineOutput
 
@@ -168,3 +169,41 @@ def has_narration_sync_summary(po: PipelineOutput | None) -> bool:
     if po.narration_coverage_complete is not True:
         return False
     return po.estimated_narration_duration_seconds is not None
+
+
+def implementation_contract_issue(
+    po: PipelineOutput | None,
+    *,
+    render_mode: str,
+    cwd: str,
+) -> str | None:
+    """Return the first blocking issue in the Phase 2 implementation contract."""
+    if po is None:
+        return "Phase 2 produced no structured output."
+
+    if len(po.implemented_beats) == 0:
+        return "implemented_beats is empty."
+    if not po.build_summary or not po.build_summary.strip():
+        return "build_summary is missing."
+    if len(po.beat_to_narration_map) == 0:
+        return "beat_to_narration_map is empty."
+    if po.narration_coverage_complete is not True:
+        return "narration_coverage_complete is not true."
+    if po.estimated_narration_duration_seconds is None:
+        return "estimated_narration_duration_seconds is missing."
+
+    normalized_mode = (render_mode or "full").strip().lower() or "full"
+    if normalized_mode == "segments":
+        segment_paths = [
+            Path(path) if Path(path).is_absolute() else Path(cwd) / path
+            for path in (po.segment_video_paths or [])
+            if path
+        ]
+        if not segment_paths:
+            return "segment_video_paths is empty."
+        if po.segment_render_complete is not True:
+            return "segment_render_complete is not true."
+        if not all(path.exists() for path in segment_paths):
+            return "segment_video_paths does not point to real files."
+
+    return None
