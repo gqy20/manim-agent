@@ -179,6 +179,66 @@ async def build_final_video(
     return output_path
 
 
+async def concat_audios(
+    audio_paths: list[str],
+    output_path: str,
+) -> str:
+    """Concatenate multiple audio files in order using the FFmpeg concat demuxer."""
+    import tempfile
+
+    valid_paths: list[str] = []
+    for path in audio_paths:
+        if not path:
+            continue
+        if not Path(path).exists():
+            raise FileNotFoundError(f"Audio file not found: {path}")
+        valid_paths.append(path)
+
+    if len(valid_paths) < 2:
+        if len(valid_paths) == 1 and valid_paths[0] != output_path:
+            import shutil
+
+            shutil.copy2(valid_paths[0], output_path)
+        return output_path
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", delete=False, encoding="utf-8"
+    ) as list_file:
+        for path in valid_paths:
+            safe = path.replace("'", "'\\''")
+            list_file.write(f"file '{safe}'\n")
+        list_path = list_file.name
+
+    try:
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            list_path,
+            "-c",
+            "copy",
+            output_path,
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg audio concat failed (exit code {proc.returncode}): {stderr.decode().strip()}"
+            )
+    finally:
+        Path(list_path).unlink(missing_ok=True)
+
+    return output_path
+
+
 async def concat_videos(
     video_paths: list[str],
     output_path: str,

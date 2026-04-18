@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from claude_agent_sdk import ResultMessage, query
 
+from .audio_orchestrator import orchestrate_audio_assets
 from .dispatcher import _EMOJI, _MessageDispatcher
 from .pipeline_config import build_options, emit_status
 from .pipeline_events import PipelineEvent
@@ -23,7 +24,13 @@ from .pipeline_gates import (
 from .prompt_builder import format_target_duration
 from .render_review import extract_review_frames
 from .review_schema import RenderReviewOutput
-from .tts_client import synthesize
+from .segment_renderer import (
+    build_segment_render_plan,
+    discover_segment_video_paths,
+    extract_video_segments,
+    read_segment_render_plan,
+    write_segment_render_plan,
+)
 from .video_builder import _get_duration, build_final_video, concat_videos
 
 logger = logging.getLogger(__name__)
@@ -196,6 +203,16 @@ async def run_phase3_render(
 
     if po is not None:
         _populate_po_metadata(po, dispatcher, result_summary, target_duration_seconds, plan_text)
+        existing_segments = discover_segment_video_paths(
+            output_dir=resolved_cwd,
+            expected_paths=getattr(po, "segment_video_paths", None),
+        )
+        if existing_segments:
+            po.segment_video_paths = existing_segments
+            dispatcher._print(
+                "  [RENDER] Discovered pre-rendered segment videos: "
+                f"{len(existing_segments)}"
+            )
 
     needs_build_summary = not has_structured_build_summary(po)
     needs_narration_summary = not has_narration_sync_summary(po)
@@ -406,18 +423,24 @@ async def run_phase4_tts(
     model: str,
     output_path: str,
     po: Any,
+    user_text: str,
+    plan_text: str,
+    target_duration_seconds: int,
+    bgm_enabled: bool = False,
+    bgm_prompt: str | None = None,
+    preset: str = "default",
     event_callback: Callable[[PipelineEvent], None] | None,
 ) -> Any:
-    """Execute Phase 4: TTS synthesis.
+    """Execute Phase 4: beat-aware audio orchestration.
 
-    Returns tts_result.
+    Returns an audio orchestration result.
     """
-    dispatcher._print(f"  {_EMOJI['gear']} Phase 4/5: synthesize TTS")
+    dispatcher._print(f"  {_EMOJI['gear']} Phase 4/5: orchestrate beat audio assets")
     emit_status(
         event_callback,
         task_status="running",
         phase="tts",
-        message="Synthesizing narration",
+        message="Synthesizing beat narration and optional BGM",
     )
     if narration_is_too_short_for_video(
         narration_text, po.duration_seconds if po is not None else None
@@ -431,27 +454,69 @@ async def run_phase4_tts(
         logger.warning(
             "run_pipeline: %s video=%r narration=%r", warning, video_output, narration_text
         )
-    dispatcher._print(f"\n{_EMOJI['tts']} TTS in progress... (voice={voice_id}, model={model})")
-    tts_result = await synthesize(
-        text=narration_text,
+    dispatcher._print(
+        f"\n{_EMOJI['tts']} Audio orchestration in progress... (voice={voice_id}, model={model})"
+    )
+    audio_result = await orchestrate_audio_assets(
+        po=po,
+        user_text=user_text,
+        plan_text=plan_text,
+        target_duration_seconds=target_duration_seconds,
         voice_id=voice_id,
         model=model,
         output_dir=str(Path(output_path).parent),
+        bgm_enabled=bgm_enabled,
+        bgm_prompt=bgm_prompt,
+        preset=preset,
     )
     if po is not None:
-        po.audio_path = tts_result.audio_path or None
-        po.subtitle_path = tts_result.subtitle_path or None
-        po.extra_info_path = tts_result.extra_info_path or None
-        po.tts_mode = tts_result.mode
-        po.tts_duration_ms = tts_result.duration_ms
-        po.tts_word_count = tts_result.word_count
-        po.tts_usage_characters = tts_result.usage_characters
-    transport_label = "SYNC HTTP" if tts_result.mode == "sync" else "ASYNC LONG-TEXT"
-    subtitle_label = "embedded captions ready" if tts_result.subtitle_path else "audio-only mux"
-    dispatcher._print(f"  [TTS] Transport: {transport_label}")
-    dispatcher._print(f"  [TTS] Output mode: {subtitle_label}")
-    dispatcher._print(f"  TTS done: {tts_result.duration_ms}ms, {tts_result.word_count} chars")
-    return tts_result
+        po.beats = [beat.model_dump() for beat in audio_result.beats]
+        po.audio_segments = [
+            {
+                "beat_id": beat.id,
+                "audio_path": beat.audio_path,
+                "subtitle_path": beat.subtitle_path,
+                "extra_info_path": beat.extra_info_path,
+                "duration_seconds": beat.actual_audio_duration_seconds,
+                "tts_mode": beat.tts_mode,
+            }
+            for beat in audio_result.beats
+        ]
+        po.timeline_path = audio_result.timeline_path
+        po.timeline_total_duration_seconds = audio_result.timeline.total_duration_seconds
+        po.audio_concat_path = audio_result.concatenated_audio_path
+        po.audio_path = audio_result.concatenated_audio_path
+        po.subtitle_path = audio_result.concatenated_subtitle_path
+        po.bgm_path = audio_result.bgm_path
+        po.bgm_duration_ms = audio_result.bgm_duration_ms
+        po.bgm_prompt = audio_result.bgm_prompt
+        po.bgm_volume = 0.12 if audio_result.bgm_path else None
+        po.audio_mix_mode = "voice_with_bgm" if audio_result.bgm_path else "voice_only"
+        if audio_result.timeline.total_duration_seconds > 0:
+            po.tts_duration_ms = int(audio_result.timeline.total_duration_seconds * 1000)
+        segment_plan = build_segment_render_plan(
+            timeline=audio_result.timeline,
+            output_dir=str(Path(output_path).parent),
+            scene_file=getattr(po, "scene_file", None),
+            scene_class=getattr(po, "scene_class", None),
+        )
+        po.segment_video_paths = [segment.output_path for segment in segment_plan.segments]
+        po.segment_render_plan_path = write_segment_render_plan(
+            segment_plan,
+            str(Path(output_path).parent / "segment_render_plan.json"),
+        )
+    dispatcher._print(f"  [TTS] Beat segments: {len(audio_result.beats)}")
+    dispatcher._print(
+        "  [TTS] Timeline duration: "
+        f"{audio_result.timeline.total_duration_seconds:.2f}s"
+    )
+    dispatcher._print(
+        "  [TTS] Output mode: "
+        f"{'subtitle ready' if audio_result.concatenated_subtitle_path else 'audio-only mux'}"
+    )
+    if audio_result.bgm_path:
+        dispatcher._print(f"  [BGM] Done: path={audio_result.bgm_path}")
+    return audio_result
 
 
 # ── Phase 5: Mux ──────────────────────────────────────────────────
@@ -461,14 +526,9 @@ async def run_phase5_mux(
     *,
     dispatcher: _MessageDispatcher,
     video_output: str,
-    tts_result: Any,
+    audio_result: Any,
     output_path: str,
     po: Any,
-    bgm_enabled: bool = False,
-    bgm_prompt: str | None = None,
-    user_text: str = "",
-    preset: str = "default",
-    narration_text: str = "",
     bgm_volume: float = 0.12,
     intro_outro: bool = False,
     event_callback: Callable[[PipelineEvent], None] | None,
@@ -477,41 +537,15 @@ async def run_phase5_mux(
 
     Returns the final video path.
     """
-    from . import music_client
-
-    resolved_bgm_prompt = None
-    bgm_result = None
-    if bgm_enabled:
-        resolved_bgm_prompt = (
-            bgm_prompt.strip()
-            if bgm_prompt and bgm_prompt.strip()
-            else _build_default_bgm_prompt(user_text, preset, narration_text)
-        )
-        dispatcher._print("  [BGM] Generating instrumental background music")
-        try:
-            bgm_result = await music_client.generate_instrumental(
-                prompt=resolved_bgm_prompt,
-                output_dir=str(Path(output_path).parent),
-                model="music-2.6",
-            )
-            dispatcher._print(f"  [BGM] Done: path={bgm_result.audio_path} volume={bgm_volume:.2f}")
-        except Exception as exc:
-            warning = (
-                "Background music generation failed. Falling back to narration-only final mux."
-            )
-            dispatcher._print(f"  [WARN] {warning}")
-            logger.warning("run_pipeline: %s error=%s", warning, exc)
-    if po is not None:
-        po.bgm_path = bgm_result.audio_path if bgm_result is not None else None
-        po.bgm_prompt = resolved_bgm_prompt
-        po.bgm_duration_ms = bgm_result.duration_ms if bgm_result is not None else None
-        po.bgm_volume = bgm_volume if bgm_result is not None else None
-        po.audio_mix_mode = "voice_with_bgm" if bgm_result is not None else "voice_only"
-
+    mux_video_path, used_segment_visuals = await _resolve_mux_video_source(
+        video_output=video_output,
+        output_path=output_path,
+        po=po,
+    )
     dispatcher._print("[MUX] Phase 5/5: mux final video")
     mux_desc = (
         "video + narration + bgm + subtitle"
-        if bgm_result is not None
+        if audio_result.bgm_path is not None
         else "video + audio + subtitle"
     )
     dispatcher._print(f"[MUX] FFmpeg in progress... ({mux_desc})")
@@ -522,15 +556,21 @@ async def run_phase5_mux(
         message="Muxing final video",
     )
     final_video = await build_final_video(
-        video_path=video_output,
-        audio_path=tts_result.audio_path,
-        subtitle_path=tts_result.subtitle_path,
+        video_path=mux_video_path,
+        audio_path=audio_result.concatenated_audio_path,
+        subtitle_path=audio_result.concatenated_subtitle_path,
         output_path=output_path,
-        bgm_path=bgm_result.audio_path if bgm_result is not None else None,
+        bgm_path=audio_result.bgm_path,
         bgm_volume=bgm_volume,
     )
     if po is not None:
         po.final_video_output = final_video
+        if getattr(po, "segment_render_plan_path", None) and not used_segment_visuals:
+            try:
+                segment_plan = read_segment_render_plan(po.segment_render_plan_path)
+                po.segment_video_paths = await extract_video_segments(final_video, segment_plan)
+            except Exception as exc:
+                logger.warning("run_phase5_mux: segment extraction skipped: %s", exc)
 
     # Optional intro/outro concat
     if intro_outro and po is not None:
@@ -559,6 +599,44 @@ async def run_phase5_mux(
 
     dispatcher._print(f"\n{_EMOJI['check']} Video generation complete: {final_video}")
     return final_video
+
+
+async def _resolve_mux_video_source(
+    *,
+    video_output: str,
+    output_path: str,
+    po: Any,
+) -> tuple[str, bool]:
+    """Choose the visual source for muxing.
+
+    Prefer already-rendered beat segments when they exist on disk; otherwise
+    fall back to the single full-length render output.
+    """
+    if po is None:
+        return video_output, False
+
+    segment_video_paths = [
+        str(path)
+        for path in (getattr(po, "segment_video_paths", None) or [])
+        if path
+    ]
+    if not segment_video_paths:
+        return video_output, False
+
+    resolved_paths = [Path(path) for path in segment_video_paths]
+    if not all(path.exists() for path in resolved_paths):
+        return video_output, False
+
+    segment_track_path = str(Path(output_path).with_name("segment_visual_track.mp4"))
+    visual_track = await concat_videos(
+        video_paths=segment_video_paths,
+        output_path=segment_track_path,
+    )
+    logger.info(
+        "run_phase5_mux: using %d pre-rendered segment videos as mux source",
+        len(segment_video_paths),
+    )
+    return visual_track, True
 
 
 # ── PO metadata ───────────────────────────────────────────────────

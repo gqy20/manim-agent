@@ -4,12 +4,16 @@
 解说生成、render review、PO 元数据填充等）。
 """
 
+import asyncio
 import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from claude_agent_sdk import query
+
 from . import prompts
+from . import music_client, render_review, tts_client, video_builder
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 from .hooks import activate_hook_state, create_hook_state, reset_hook_state
 from .pipeline_config import build_options as _build_options
@@ -17,18 +21,21 @@ from .pipeline_config import emit_status as _emit_status
 from .pipeline_config import stderr_handler as _stderr_handler
 from .pipeline_gates import merge_result_summaries
 from .pipeline_narration import generate_narration
+from . import pipeline_narration as _pipeline_narration_module
 from .pipeline_phases12 import (
     build_implementation_prompt,
     build_scene_plan_prompt,
     run_phase1_planning,
     run_phase2_implementation,
 )
+from . import pipeline_phases12 as _pipeline_phases12_module
 from .pipeline_phases345 import (
     run_phase3_render,
     run_phase4_tts,
     run_phase5_mux,
     run_render_review,
 )
+from . import pipeline_phases345 as _pipeline_phases345_module
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +149,13 @@ async def run_pipeline(
     build_opts.stderr = lambda line: _counting_log_callback(line)
 
     try:
+        _pipeline_phases12_module.query = query
+        _pipeline_narration_module.query = query
+        _pipeline_phases345_module.run_render_review = _run_render_review
+        _pipeline_phases345_module.extract_review_frames = render_review.extract_review_frames
+        _pipeline_phases345_module.build_final_video = video_builder.build_final_video
+        _pipeline_phases345_module.concat_videos = video_builder.concat_videos
+        _pipeline_phases345_module._get_duration = video_builder._get_duration
         # ══════════════════════════════════════════════
         # Phase 1/5: Scene Planning Pass
         # ══════════════════════════════════════════════
@@ -268,7 +282,7 @@ async def run_pipeline(
             )
             return video_output
 
-        tts_result = await run_phase4_tts(
+        audio_result = await run_phase4_tts(
             dispatcher=dispatcher,
             narration_text=narration_text,
             video_output=video_output,
@@ -276,20 +290,21 @@ async def run_pipeline(
             model=model,
             output_path=output_path,
             po=po,
+            user_text=user_text,
+            plan_text=plan_text,
+            target_duration_seconds=target_duration_seconds,
+            bgm_enabled=bgm_enabled,
+            bgm_prompt=bgm_prompt,
+            preset=preset,
             event_callback=event_callback,
         )
 
         final_video = await run_phase5_mux(
             dispatcher=dispatcher,
             video_output=video_output,
-            tts_result=tts_result,
+            audio_result=audio_result,
             output_path=output_path,
             po=po,
-            bgm_enabled=bgm_enabled,
-            bgm_prompt=bgm_prompt,
-            user_text=user_text,
-            preset=preset,
-            narration_text=narration_text,
             bgm_volume=bgm_volume,
             intro_outro=intro_outro,
             event_callback=event_callback,

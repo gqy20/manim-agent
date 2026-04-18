@@ -61,6 +61,35 @@ class PipelineOutput(BaseModel):
         description="Estimated spoken duration of the narration in seconds.",
         ge=0,
     )
+    beats: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Structured beat records used for audio orchestration and future timeline-driven rendering.",
+    )
+    audio_segments: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Structured per-beat audio assets generated during audio orchestration.",
+    )
+    timeline_path: str | None = Field(
+        default=None,
+        description="Path to the resolved beat timeline JSON file, if generated.",
+    )
+    timeline_total_duration_seconds: float | None = Field(
+        default=None,
+        description="Resolved duration of the concatenated beat timeline in seconds.",
+        ge=0,
+    )
+    segment_render_plan_path: str | None = Field(
+        default=None,
+        description="Path to the generated segment render plan JSON file, if prepared.",
+    )
+    segment_video_paths: list[str] = Field(
+        default_factory=list,
+        description="Reserved output paths for future beat-level rendered video segments.",
+    )
+    audio_concat_path: str | None = Field(
+        default=None,
+        description="Path to the concatenated narration master audio file, if generated.",
+    )
     source_code: str | None = Field(
         default=None,
         description="Full source code of the generated scene file when captured.",
