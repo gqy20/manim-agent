@@ -91,10 +91,6 @@ function AnimatedCheckbox({ checked, onChange, disabled }: { checked: boolean; o
       onClick={() => !disabled && onChange(!checked)}
       disabled={disabled}
       className="relative h-4 w-4 shrink-0 rounded border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/32"
-      style={{
-        borderColor: checked ? undefined : undefined,
-        backgroundColor: checked ? undefined : undefined,
-      }}
     >
       <motion.div
         className="absolute inset-0 flex items-center justify-center"
@@ -291,15 +287,75 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
               描述你想讲解的数学概念。
             </p>
 
-            <Textarea
-              id="prompt"
-              placeholder='例如：用动画演示勾股定理的证明过程'
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              rows={8}
-              disabled={submitting}
-              className="min-h-[360px] flex-1 resize-none rounded-xl border-border bg-background px-4 py-3 text-[15px] leading-relaxed placeholder:text-muted-foreground/40 focus:border-primary/30 focus:ring-primary/15"
-            />
+            <div className={`flex min-h-0 flex-1 gap-4 ${bgmPanelVisible ? "grid grid-cols-2" : ""}`}>
+              <Textarea
+                id="prompt"
+                placeholder='例如：用动画演示勾股定理的证明过程'
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                rows={8}
+                disabled={submitting}
+                className="min-h-[360px] flex-1 resize-none rounded-xl border-border bg-background px-4 py-3 text-[15px] leading-relaxed placeholder:text-muted-foreground/40 focus:border-primary/30 focus:ring-primary/15"
+              />
+
+              <AnimatePresence mode="wait">
+                {bgmPanelVisible && (
+                  <motion.div
+                    key="bgm-panel"
+                    initial={{ opacity: 0, x: 16, scale: 0.97 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: 16, scale: 0.97 }}
+                    transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+                    className="flex min-w-0 flex-col gap-3 rounded-xl border border-primary/12 bg-primary/[0.02] p-4"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-primary/55">Background Music</p>
+                      <button
+                        type="button"
+                        onClick={() => setBgmEnabled(false)}
+                        className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background/50 text-foreground/35 transition-colors hover:bg-background hover:text-foreground/60"
+                        aria-label="关闭背景音乐配置"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+
+                    <div className="flex min-h-0 flex-1 flex-col gap-3">
+                      <FieldLabel label="配乐描述" />
+                      <Textarea
+                        id="bgm-prompt"
+                        value={bgmPrompt}
+                        onChange={(e) => setBgmPrompt(e.target.value)}
+                        rows={5}
+                        disabled={submitting}
+                        placeholder="冷静、极简、轻微存在感的钢琴与弦乐"
+                        className="min-h-0 flex-1 resize-none rounded-lg border-border bg-background px-3 py-2.5 text-[13px] leading-relaxed placeholder:text-muted-foreground/35 focus:border-primary/30"
+                      />
+
+                      <div className="rounded-lg border border-border bg-background/50 p-2.5">
+                        <FieldLabel label="音量" />
+                        <input
+                          id="bgm-volume"
+                          type="range"
+                          min="0.05"
+                          max="0.3"
+                          step="0.01"
+                          value={bgmVolume}
+                          onChange={(e) => setBgmVolume(Number(e.target.value))}
+                          disabled={submitting}
+                          className="mt-2 w-full accent-primary"
+                        />
+                        <div className="mt-2 flex justify-between text-[9px] uppercase tracking-wider text-foreground/24">
+                          <span>轻微</span>
+                          <span className="font-mono text-foreground/45">{bgmVolume.toFixed(2)}</span>
+                          <span>明显</span>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             <div className="flex gap-2">
               {TEMPLATES.map((template) => (
@@ -308,9 +364,9 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                   type="button"
                   onClick={() => handleTemplate(template.text)}
                   disabled={submitting || clarifying}
-                  whileHover={{ y: -1, borderColor: "rgba(255,255,255,0.15)" }}
+                  whileHover={{ y: -1 }}
                   whileTap={{ scale: 0.97 }}
-                  className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-left transition-colors hover:bg-foreground/[0.03]"
+                  className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-left transition-colors hover:border-white/15 hover:bg-foreground/[0.03]"
                 >
                   <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-foreground/[0.04] text-[10px] font-mono text-foreground/50">
                     {template.icon}
@@ -482,9 +538,8 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 type="button"
                 onClick={() => { if (submitting || noTts) return; setBgmEnabled((v) => !v); }}
                 disabled={submitting || noTts}
-                whileHover={!submitting && !noTts ? { backgroundColor: "rgba(255,255,255,0.02)" } : {}}
                 whileTap={!submitting && !noTts ? { scale: 0.99 } : {}}
-                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border bg-background/35 px-4 py-3 text-left transition-colors disabled:opacity-50"
+                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border bg-background/35 px-4 py-3 text-left transition-colors hover:bg-white/[0.02] disabled:opacity-50"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <motion.div
@@ -506,7 +561,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                       </motion.span>
                     </div>
                     <p className="mt-0.5 text-[12px] text-foreground/42">
-                      {bgmPanelVisible ? "左侧保持展开的音乐配置面板。" : "点击展开背景音乐配置。"}
+                      {bgmPanelVisible ? "右侧已展开配置面板" : "点击在输入区右侧展开配置"}
                     </p>
                   </div>
                 </div>
@@ -587,89 +642,6 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
         </aside>
       </div>
 
-      <AnimatePresence>
-        {bgmPanelVisible && (
-          <motion.div
-            key="bgm-overlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-8 backdrop-blur-sm"
-            onClick={() => setBgmEnabled(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 18, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 12, scale: 0.98 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="w-full max-w-3xl rounded-3xl border border-border bg-card/96 p-6 shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-primary/55">Background Music</p>
-                  <h3 className="mt-2 text-xl font-medium text-foreground/90">背景音乐配置</h3>
-                  <p className="mt-1 text-sm text-foreground/46">这层配置覆盖在主页面之上，不再挤压主编辑区布局。</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setBgmEnabled(false)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background/50 text-foreground/55 transition-colors hover:bg-background hover:text-foreground/85"
-                  aria-label="关闭背景音乐配置"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-start">
-                <div>
-                  <FieldLabel label="配乐描述" />
-                  <Textarea
-                    id="bgm-prompt"
-                    value={bgmPrompt}
-                    onChange={(e) => setBgmPrompt(e.target.value)}
-                    rows={6}
-                    disabled={submitting}
-                    placeholder="例如：冷静、极简、轻微存在感的钢琴与弦乐，不要人声"
-                    className="mt-2 min-h-[180px] resize-none rounded-2xl border-border bg-background px-4 py-3 text-[14px] leading-6 placeholder:text-muted-foreground/40 focus:border-primary/30"
-                  />
-                </div>
-
-                <div className="rounded-2xl border border-border bg-background/50 p-4">
-                  <FieldLabel label="音量" />
-                  <input
-                    id="bgm-volume"
-                    type="range"
-                    min="0.05"
-                    max="0.3"
-                    step="0.01"
-                    value={bgmVolume}
-                    onChange={(e) => setBgmVolume(Number(e.target.value))}
-                    disabled={submitting}
-                    className="mt-4 w-full accent-primary"
-                  />
-                  <div className="mt-3 flex justify-between text-[10px] uppercase tracking-wider text-foreground/26">
-                    <span>轻微</span>
-                    <span className="font-mono text-foreground/55">{bgmVolume.toFixed(2)}</span>
-                    <span>明显</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 flex justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setBgmEnabled(false)}
-                  className="border-border bg-background/50 text-foreground/75 hover:bg-background hover:text-foreground"
-                >
-                  关闭
-                </Button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </form>
   );
 }

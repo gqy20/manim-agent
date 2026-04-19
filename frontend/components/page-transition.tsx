@@ -6,6 +6,9 @@ import { useCallback, useMemo, useState } from "react";
 
 const EASE_DRAW = [0.16, 1, 0.3, 1] as const;
 const EASE_ERASE = [0.7, 0, 0.84, 0] as const;
+const TRANSITION_PRIMARY = "#7ab4d6";
+const TRANSITION_PRIMARY_SOFT = "rgba(122, 180, 214, 0.35)";
+const TRANSITION_PRIMARY_FAINT = "rgba(122, 180, 214, 0.12)";
 
 let prevDepthGlobal = -1;
 
@@ -168,7 +171,7 @@ function SymbolParticle({ sym, direction, index }: SymbolParticleProps) {
         left: originX,
         top: originY,
         fontSize: `clamp(${sym.size - 0.6}rem, ${sym.size}vw, ${sym.size + 0.6}rem)`,
-        color: "oklch(0.72 0.11 250)",
+        color: TRANSITION_PRIMARY,
       }}
       initial={false}
       animate={{
@@ -206,7 +209,7 @@ function DrawingCursor({ paths, direction }: DrawingCursorProps) {
       r={forward ? 0 : 2.5}
       cx={forward ? 0 : 120}
       cy={forward ? 0 : 48}
-      fill="oklch(0.72 0.11 250 / 0.35)"
+      fill={TRANSITION_PRIMARY_SOFT}
       filter="url(#trans-glow)"
       initial={false}
       animate={{
@@ -269,14 +272,14 @@ function GridReveal({ active, direction }: GridRevealProps) {
             </feMerge>
           </filter>
           <linearGradient id="grid-fade-h" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="oklch(0.72 0.11 250)" stopOpacity={0} />
-            <stop offset="50%" stopColor="oklch(0.72 0.11 250)" stopOpacity={forward ? 0.06 : 0.03} />
-            <stop offset="100%" stopColor="oklch(0.72 0.11 250)" stopOpacity={0} />
+            <stop offset="0%" stopColor={TRANSITION_PRIMARY} stopOpacity={0} />
+            <stop offset="50%" stopColor={TRANSITION_PRIMARY} stopOpacity={forward ? 0.06 : 0.03} />
+            <stop offset="100%" stopColor={TRANSITION_PRIMARY} stopOpacity={0} />
           </linearGradient>
           <linearGradient id="grid-fade-v" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="oklch(0.72 0.11 250)" stopOpacity={0} />
-            <stop offset="50%" stopColor="oklch(0.72 0.11 250)" stopOpacity={forward ? 0.06 : 0.03} />
-            <stop offset="100%" stopColor="oklch(0.72 0.11 250)" stopOpacity={0} />
+            <stop offset="0%" stopColor={TRANSITION_PRIMARY} stopOpacity={0} />
+            <stop offset="50%" stopColor={TRANSITION_PRIMARY} stopOpacity={forward ? 0.06 : 0.03} />
+            <stop offset="100%" stopColor={TRANSITION_PRIMARY} stopOpacity={0} />
           </linearGradient>
         </defs>
 
@@ -366,12 +369,12 @@ function TransitionOverlay({ active, direction }: TransitionOverlayProps) {
             </feMerge>
           </filter>
           <linearGradient id="path-grad-1" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="oklch(0.72 0.11 250)" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="oklch(0.68 0.12 260)" stopOpacity={0.05} />
+            <stop offset="0%" stopColor={TRANSITION_PRIMARY} stopOpacity={0.25} />
+            <stop offset="100%" stopColor="#8299da" stopOpacity={0.05} />
           </linearGradient>
           <linearGradient id="path-grad-2" x1="1" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="oklch(0.65 0.15 280)" stopOpacity={0.15} />
-            <stop offset="100%" stopColor="oklch(0.72 0.11 250)" stopOpacity={0.04} />
+            <stop offset="0%" stopColor="#9688dc" stopOpacity={0.15} />
+            <stop offset="100%" stopColor={TRANSITION_PRIMARY} stopOpacity={0.04} />
           </linearGradient>
         </defs>
 
@@ -405,7 +408,7 @@ function TransitionOverlay({ active, direction }: TransitionOverlayProps) {
           cy={forward ? 46 : 44}
           r={0}
           fill="none"
-          stroke="oklch(0.72 0.11 250 / 0.12)"
+          stroke={TRANSITION_PRIMARY_FAINT}
           strokeWidth={0.6}
           initial={{ pathLength: 0, scale: 0 }}
           animate={{
