@@ -14,7 +14,7 @@ from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
 
 from . import prompts
 from .hooks import _on_post_tool_use, _on_pre_tool_use
-from .schemas import PipelineOutput
+from .schemas import PhaseSchemaRegistry
 from .repo_paths import resolve_plugin_dir, resolve_repo_root
 
 logger = logging.getLogger(__name__)
@@ -141,7 +141,11 @@ def build_options(
         output_format=(
             output_format
             if output_format is not None
-            else (PipelineOutput.output_format_schema() if use_default_output_format else None)
+            else (
+                PhaseSchemaRegistry.output_format_schema("pipeline_output")
+                if use_default_output_format
+                else None
+            )
         ),
         allowed_tools=resolved_allowed_tools,
         extra_args={"bare": None},

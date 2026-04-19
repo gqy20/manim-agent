@@ -14,7 +14,7 @@ from claude_agent_sdk import query
 
 from . import prompts
 from . import music_client, render_review, tts_client, video_builder
-from .schemas import Phase1PlanningOutput as ScenePlanOutput
+from .schemas import PhaseSchemaRegistry
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 from .hooks import activate_hook_state, create_hook_state, reset_hook_state
 from .pipeline_config import build_options as _build_options
@@ -97,7 +97,7 @@ async def run_pipeline(
         prompt_file=prompt_file,
         quality=quality,
         log_callback=log_callback,
-        output_format=ScenePlanOutput.output_format_schema(),
+        output_format=PhaseSchemaRegistry.output_format_schema("phase1_planning"),
         use_default_output_format=False,
         allowed_tools=["Read", "Glob", "Grep"],
     )

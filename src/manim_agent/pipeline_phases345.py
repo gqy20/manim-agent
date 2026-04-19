@@ -23,7 +23,7 @@ from .pipeline_gates import (
 )
 from .prompt_builder import format_target_duration
 from .render_review import extract_review_frames
-from .schemas import Phase3RenderReviewOutput as RenderReviewOutput
+from .schemas import Phase3RenderReviewOutput as RenderReviewOutput, PhaseSchemaRegistry
 from .segment_renderer import (
     build_segment_render_plan,
     discover_segment_video_paths,
@@ -150,7 +150,7 @@ async def run_render_review(
         max_turns=16,
         quality=quality,
         log_callback=log_callback,
-        output_format=RenderReviewOutput.output_format_schema(),
+        output_format=PhaseSchemaRegistry.output_format_schema("phase3_render_review"),
         allowed_tools=["Read", "Glob", "Grep"],
     )
 
