@@ -348,7 +348,10 @@ export default function TaskDetailClient() {
   const [stableVideoSrc, setStableVideoSrc] = useState<string | null>(null);
   const [terminating, setTerminating] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [desktopDetailHeight, setDesktopDetailHeight] = useState<number | null>(null);
   const containerRef = useRef<HTMLElement>(null);
+  const detailLeftRef = useRef<HTMLElement>(null);
+  const detailRightRef = useRef<HTMLElement>(null);
   const refreshInFlightRef = useRef(false);
 
   const [activeTab, setActiveTab] = useState<"logs" | "script">("logs");
@@ -524,6 +527,30 @@ export default function TaskDetailClient() {
     }
   }, [task, loading]);
 
+  useEffect(() => {
+    const rightCard = detailRightRef.current;
+    if (!rightCard || typeof window === "undefined") return;
+
+    const syncHeight = () => {
+      if (window.innerWidth < 1280) {
+        setDesktopDetailHeight(null);
+        return;
+      }
+      setDesktopDetailHeight(rightCard.getBoundingClientRect().height);
+    };
+
+    syncHeight();
+
+    const resizeObserver = new ResizeObserver(() => syncHeight());
+    resizeObserver.observe(rightCard);
+    window.addEventListener("resize", syncHeight);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", syncHeight);
+    };
+  }, [activeTab, logs.length, stableVideoSrc, task?.status]);
+
   if (loading) {
     return (
       <main className="container mx-auto max-w-6xl flex-1 px-6 py-8">
@@ -576,20 +603,22 @@ export default function TaskDetailClient() {
   return (
     <main
       ref={containerRef}
-      className="container mx-auto flex h-full w-full max-w-[1800px] flex-1 flex-col space-y-2 overflow-hidden px-4 pb-2 sm:px-6 md:px-10 md:pb-3"
+      className="container mx-auto flex min-h-[var(--app-content-height)] w-full max-w-[1800px] flex-1 flex-col space-y-3 px-4 pb-4 sm:px-6 md:px-10 md:pb-6"
     >
-      <div className="gsap-header flex flex-col gap-2 pt-1.5 lg:flex-row lg:items-center lg:justify-between md:pt-2">
+      <div className="gsap-header flex flex-col gap-3 pt-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-3">
           <div className="flex-shrink-0 rounded-xl border border-primary/10 bg-primary/[0.07] p-2.5 text-primary shadow-[0_0_10px_rgba(6,182,212,0.1)]">
             <Film className="h-4.5 w-4.5" />
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate font-mono text-lg font-semibold tracking-tight">{task.id}</h1>
-            <p className="mt-0.5 line-clamp-1 max-w-2xl text-sm text-muted-foreground">
+            <div className="flex items-baseline gap-3">
+              <h1 className="truncate font-mono text-lg font-semibold tracking-tight">{task.id}</h1>
+              <span className="shrink-0 font-mono text-[11px] tracking-[0.14em] text-cyan-300/58">
+                {pipelineProfile}
+              </span>
+            </div>
+            <p className="mt-1 line-clamp-2 max-w-5xl text-sm leading-relaxed text-muted-foreground/80">
               {task.user_text}
-            </p>
-            <p className="mt-1 truncate font-mono text-[11px] tracking-[0.14em] text-cyan-300/58">
-              {pipelineProfile}
             </p>
           </div>
         </div>
@@ -645,8 +674,12 @@ export default function TaskDetailClient() {
         </div>
       )}
 
-      <div className="relative mt-2 grid min-h-0 flex-1 gap-4 lg:grid-cols-12">
-        <div className="order-2 z-10 flex min-h-0 flex-col space-y-3 rounded-xl p-3 glass-card lg:order-1 lg:col-span-4 lg:sticky lg:top-6 lg:h-[calc(100dvh-8.4rem)] lg:self-start">
+      <div className="relative mt-2 grid min-h-0 gap-4 xl:grid-cols-[300px_minmax(0,1fr)] xl:items-start">
+        <section
+          ref={detailLeftRef}
+          className="glass-card order-2 z-10 flex min-h-0 flex-col overflow-hidden rounded-xl p-3 xl:order-1"
+          style={desktopDetailHeight ? { height: `${desktopDetailHeight}px` } : undefined}
+        >
           <div className="flex shrink-0 flex-col gap-3 border-b border-white/5 pb-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex w-full overflow-x-auto rounded-lg bg-black/40 p-1 sm:w-auto">
               <button 
@@ -670,10 +703,6 @@ export default function TaskDetailClient() {
             </div>
             {activeTab === "logs" && (
               <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:pr-2">
-                <span className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-widest text-white/35">
-                   <span className={`h-1.5 w-1.5 rounded-full ${isRunning ? 'bg-cyan-500 animate-pulse drop-shadow-[0_0_6px_rgba(6,182,212,0.8)]' : task.status === 'completed' ? 'bg-emerald-500 drop-shadow-[0_0_6px_rgba(16,185,129,0.8)]' : 'bg-red-500'}`} />
-                   {liveBadge}
-                </span>
                 {logs.length > 0 && (
                   <span className="rounded bg-cyan-950/30 px-2 py-[2px] font-mono text-[9px] text-cyan-400/50">
                     {logs.length} EVTS
@@ -683,13 +712,13 @@ export default function TaskDetailClient() {
             )}
           </div>
           
-          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-hidden">
             {activeTab === "logs" ? (
-              <div className="mt-2 flex h-full min-h-0 flex-1 flex-col space-y-3">
+              <div className="flex h-full min-h-0 flex-1 flex-col">
                 <LogViewer events={logs} isRunning={isRunning} taskStatus={task.status} />
               </div>
             ) : (
-              <div className="mt-1.5 h-full min-h-0 flex-1 animate-fade-in-up">
+              <div className="h-full min-h-0 flex-1 animate-fade-in-up">
                 <ManimScriptPanel
                   sceneFile={task.pipeline_output?.scene_file ?? null}
                   sceneClass={task.pipeline_output?.scene_class ?? null}
@@ -698,28 +727,32 @@ export default function TaskDetailClient() {
               </div>
             )}
           </div>
-        </div>
+        </section>
 
-        <div className="order-1 flex min-h-0 w-full flex-col space-y-3 lg:order-2 lg:col-span-8 lg:sticky lg:top-6 lg:h-[calc(100dvh-8.4rem)] lg:self-start">
-          <div className="flex items-center justify-between shrink-0">
+        <section
+          ref={detailRightRef}
+          className="glass-card order-1 flex min-h-0 w-full flex-col overflow-hidden rounded-xl p-3 xl:order-2"
+        >
+          <div className="flex shrink-0 items-center justify-between border-b border-white/5 pb-2">
             <div className="flex items-center gap-2 text-cyan-500/58">
               <Play className="h-4 w-4" />
               <h2 className="text-[11px] font-mono uppercase tracking-widest">Output Video</h2>
             </div>
           </div>
-          {showVideo && stableVideoSrc ? (
-            <VideoPlayer src={stableVideoSrc} />
-          ) : (
-            <VideoPipelinePlaceholder
-              isRunning={isRunning}
-              taskStatus={task.status}
-              events={logs}
-              createdAt={task.created_at}
-              completedAt={task.completed_at}
-            />
-          )}
-
-        </div>
+          <div className="mt-3 flex min-h-0 flex-1 flex-col">
+            {showVideo && stableVideoSrc ? (
+              <VideoPlayer src={stableVideoSrc} />
+            ) : (
+              <VideoPipelinePlaceholder
+                isRunning={isRunning}
+                taskStatus={task.status}
+                events={logs}
+                createdAt={task.created_at}
+                completedAt={task.completed_at}
+              />
+            )}
+          </div>
+        </section>
       </div>
     </main>
   );

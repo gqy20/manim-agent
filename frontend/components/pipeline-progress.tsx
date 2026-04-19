@@ -102,22 +102,22 @@ function detectCurrentPhases(events: SSEEvent[], taskStatus: string): PhaseState
 
 function StepDot({ state }: { state: PhaseState }) {
   const baseClasses =
-    "relative z-10 flex h-7 w-7 items-center justify-center rounded-full border transition-all duration-500 bg-background/50 backdrop-blur-sm";
+    "relative z-10 flex h-5.5 w-5.5 items-center justify-center rounded-full border transition-all duration-500 bg-background/50 backdrop-blur-sm";
 
   if (state.status === "done") {
     return (
-      <div className={`${baseClasses} border-emerald-500/40 text-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.3)]`}>
-        <CheckCircle2 className="h-4 w-4" />
+        <div className={`${baseClasses} border-emerald-500/40 text-emerald-400 drop-shadow-[0_0_6px_rgba(52,211,153,0.3)]`}>
+        <CheckCircle2 className="h-3 w-3" />
       </div>
     );
   }
 
   if (state.status === "active") {
     return (
-      <div
+        <div
         className={`${baseClasses} border-cyan-500/60 text-cyan-400 drop-shadow-[0_0_12px_rgba(6,182,212,0.8)] outline outline-1 outline-cyan-500/30 outline-offset-2`}
       >
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <Loader2 className="h-2.5 w-2.5 animate-spin" />
       </div>
     );
   }
@@ -125,7 +125,7 @@ function StepDot({ state }: { state: PhaseState }) {
   if (state.status === "error") {
     return (
       <div className={`${baseClasses} border-red-500/50 text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.5)]`}>
-        <AlertTriangle className="h-3 w-3" />
+        <AlertTriangle className="h-2.5 w-2.5" />
       </div>
     );
   }
@@ -166,15 +166,16 @@ export function PipelineProgress({ events, taskStatus }: PipelineProgressProps) 
   const activeUntil = activeIndex >= 0 ? activeIndex : doneCount;
 
   return (
-    <div className="w-full relative flex items-center justify-between pb-1 gap-1">
+    <div className="relative w-full overflow-hidden pb-3">
+      <div className="flex min-w-0 items-center justify-between gap-2">
       {phases.map((state, index) => {
         const isLast = index === phases.length - 1;
         return (
-          <div key={state.phase.id} className={`flex items-center ${isLast ? "flex-none" : "flex-1"}`}>
+          <div key={state.phase.id} className={`min-w-0 flex items-center ${isLast ? "flex-none" : "flex-1"}`}>
             <div className="flex flex-col items-center relative shrink-0 group">
               <StepDot state={state} />
               <span
-                className={`absolute top-[26px] whitespace-nowrap text-[8px] uppercase tracking-[0.18em] font-mono transition-all duration-300 max-[420px]:hidden sm:text-[9px] sm:tracking-widest ${
+                className={`absolute top-[22px] whitespace-nowrap text-[7px] uppercase tracking-[0.14em] font-mono transition-all duration-300 max-[420px]:hidden sm:text-[7px] sm:tracking-[0.12em] ${
                   index === 0
                     ? "left-0 text-left"
                     : isLast
@@ -197,6 +198,7 @@ export function PipelineProgress({ events, taskStatus }: PipelineProgressProps) 
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

@@ -34,6 +34,9 @@ interface PhaseMarker {
   className: string;
 }
 
+const TIMESTAMP_COL_CLASS =
+  "w-[5.25rem] shrink-0 pt-[2px] text-[10px] font-mono text-white/20 tabular-nums whitespace-nowrap";
+
 function formatEventTime(timestamp: string): string {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) {
@@ -223,17 +226,19 @@ function classifyLog(line: string): string {
 
 function LogLine({ text, timestamp }: { text: string; timestamp: string }) {
   return (
-    <div className="my-0.5 flex items-start gap-3">
-      <span className="pt-[2px] text-[10px] font-mono text-white/20">{formatEventTime(timestamp)}</span>
-      <pre className={`${classifyLog(text)} whitespace-pre-wrap break-all`}>{text}</pre>
+    <div className="my-0.5 grid grid-cols-[5.25rem_minmax(0,1fr)] items-start gap-x-1.5">
+      <span className={TIMESTAMP_COL_CLASS}>{formatEventTime(timestamp)}</span>
+      <pre className={`${classifyLog(text)} min-w-0 whitespace-pre-wrap break-all text-left font-mono`}>
+        {text}
+      </pre>
     </div>
   );
 }
 
 function ToolStartView({ payload, timestamp }: { payload: ToolStartPayload; timestamp: string }) {
   return (
-    <div className="my-1 flex items-start gap-3 rounded-md border border-blue-500/15 bg-blue-500/[0.04] px-3 py-2">
-      <span className="pt-[2px] text-[10px] font-mono text-white/20 select-none">{formatEventTime(timestamp)}</span>
+    <div className="my-1 flex items-start gap-2 rounded-md border border-blue-500/15 bg-blue-500/[0.04] px-3 py-2">
+      <span className={`${TIMESTAMP_COL_CLASS} select-none`}>{formatEventTime(timestamp)}</span>
       <span className="mt-[3px] shrink-0 text-blue-400/80">
         <ToolIcon name={payload.name} />
       </span>
@@ -272,8 +277,8 @@ function ToolResultView({ payload, timestamp }: { payload: ToolResultPayload; ti
     : "border-green-500/10 bg-green-500/[0.04] text-green-300";
 
   return (
-    <div className={`my-0.5 ml-6 flex items-center gap-3 rounded-md border px-3 py-1.5 ${tone}`}>
-      <span className="text-[10px] font-mono text-white/20 select-none">{formatEventTime(timestamp)}</span>
+    <div className={`my-0.5 flex items-center gap-2 rounded-md border px-3 py-1.5 ${tone}`}>
+      <span className={`${TIMESTAMP_COL_CLASS} select-none`}>{formatEventTime(timestamp)}</span>
       <span className={`rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider ${payload.is_error ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}`}>
         {payload.is_error ? "ERR" : "OK"}
       </span>
@@ -294,8 +299,8 @@ function ThinkingView({ payload, timestamp }: { payload: ThinkingPayload; timest
   const preview = payload.preview ?? `${payload.thinking.slice(0, 97)}...`;
 
   return (
-    <div className="my-0.5 flex items-start gap-3 border-l-2 border-purple-500/25 py-1 pl-3">
-      <span className="pt-[2px] text-[10px] font-mono text-white/20">{formatEventTime(timestamp)}</span>
+    <div className="my-0.5 flex items-start gap-2 border-l-2 border-purple-500/25 py-1 pl-3">
+      <span className={TIMESTAMP_COL_CLASS}>{formatEventTime(timestamp)}</span>
       <div className="min-w-0 flex-1">
         <button
           type="button"
@@ -329,9 +334,9 @@ function ThinkingView({ payload, timestamp }: { payload: ThinkingPayload; timest
 
 function ProgressView({ payload, timestamp }: { payload: ProgressPayload; timestamp: string }) {
   return (
-    <div className="my-1 flex w-full max-w-full flex-col gap-2 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] text-muted-foreground/60 sm:max-w-[70%] sm:flex-row sm:items-center sm:justify-between sm:py-1.5">
+    <div className="my-1 flex w-full max-w-full flex-col gap-2 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] text-muted-foreground/60 sm:flex-row sm:items-center sm:justify-between sm:py-1.5">
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-        <span className="text-[10px] font-mono text-white/20 select-none">{formatEventTime(timestamp)}</span>
+        <span className={`${TIMESTAMP_COL_CLASS} select-none`}>{formatEventTime(timestamp)}</span>
         <span className="rounded-sm bg-white/5 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-white/40">
           STEP
         </span>
@@ -377,7 +382,7 @@ function StatusView({
             {payload.phase}
           </span>
         )}
-        <span className="ml-auto text-[10px] font-mono text-current/40">{formatEventTime(timestamp)}</span>
+        <span className={`${TIMESTAMP_COL_CLASS} ml-auto w-auto text-current/40`}>{formatEventTime(timestamp)}</span>
       </div>
       {payload.message && <p className="mt-2 text-[11px] leading-relaxed text-current/75 break-words">{payload.message}</p>}
     </div>
@@ -410,8 +415,13 @@ export function LogViewer({ events, isRunning, taskStatus }: LogViewerProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [events]);
+    if (bottomRef.current) {
+      const container = bottomRef.current.parentElement;
+      if (container && isRunning) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+  }, [events, isRunning]);
 
   const phaseMarkers = useMemo(() => {
     const hasStructuredPhaseStatus = !!getLatestStructuredStatus(events)?.phase;
@@ -432,25 +442,18 @@ export function LogViewer({ events, isRunning, taskStatus }: LogViewerProps) {
     <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300 flex-1 flex flex-col h-full min-h-0">
       <div className="pointer-events-none absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.85%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E')] opacity-[0.04] mix-blend-screen" />
 
-      <div className="relative z-10 flex shrink-0 flex-col gap-3 border-b border-white/[0.05] bg-white/[0.02] px-4 pb-3 pt-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <div className="flex items-center gap-1 sm:w-24 lg:w-32">
-          <div className="flex items-center gap-1.5 opacity-80">
-            <span className="h-3.5 w-1.5 flex-[0_0_auto] rounded-[1px] bg-cyan-500" />
-            <span className="h-3.5 w-1.5 flex-[0_0_auto] animate-pulse rounded-[1px] bg-blue-500/50" />
-          </div>
-          <span className="ml-2 font-mono text-[10px] uppercase tracking-widest text-cyan-400">
-            SYS.LOGS
-          </span>
-        </div>
-        <div className="min-w-0 flex-1 opacity-90 sm:px-2 lg:mx-auto lg:max-w-[520px] lg:px-4">
+      <div className="relative z-10 shrink-0 border-b border-white/[0.05] bg-white/[0.02] px-4 pb-3 pt-3">
+        <div className="min-w-0 overflow-hidden opacity-90">
           <PipelineProgress events={events} taskStatus={taskStatus} />
         </div>
-        <div className="hidden shrink-0 lg:block lg:w-32" />
       </div>
 
       {events.length > 0 && <span className="shrink-0"><StatsBar events={events} /></span>}
 
-      <div className="relative z-10 flex-1 w-full bg-transparent p-4 font-mono text-xs leading-5 overflow-y-auto min-h-0 custom-scrollbar">
+      <div
+        data-log-scroll-container
+        className="custom-scrollbar relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain bg-transparent p-4 font-mono text-xs leading-5"
+      >
         <div className="space-y-0">
           {events.length === 0 && (
             <div className="flex flex-col gap-2 px-1 pt-2 font-mono text-[11px] uppercase tracking-widest text-white/30">

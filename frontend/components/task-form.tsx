@@ -2,10 +2,10 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { Loader2, Music4, Play, SkipForward, Sparkles, Volume2, Wand2 } from "lucide-react";
+import { Loader2, Music4, Play, SkipForward, Sparkles, Wand2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -83,9 +83,49 @@ function FieldLabel({ label }: { label: string }) {
   );
 }
 
+function AnimatedCheckbox({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={() => !disabled && onChange(!checked)}
+      disabled={disabled}
+      className="relative h-4 w-4 shrink-0 rounded border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/32"
+      style={{
+        borderColor: checked ? undefined : undefined,
+        backgroundColor: checked ? undefined : undefined,
+      }}
+    >
+      <motion.div
+        className="absolute inset-0 flex items-center justify-center"
+        initial={false}
+        animate={checked ? { scale: 1, opacity: 1 } : { scale: 0.3, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 500, damping: 28, delay: checked ? 0.05 : 0 }}
+      >
+        <svg className="h-3 w-3 text-primary-foreground" viewBox="0 0 12 12" fill="none">
+          <motion.path
+            d="M2 6l3 3l5-5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            fill="none"
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: checked ? 1 : 0 }}
+            transition={{ duration: 0.2, ease: "easeOut", delay: checked ? 0.08 : 0 }}
+          />
+        </svg>
+      </motion.div>
+    </button>
+  );
+}
+
 export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const leftPanelRef = useRef<HTMLDivElement>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
 
   const [text, setText] = useState(initialPrompt);
   const [voiceId, setVoiceId] = useState("female-tianmei");
@@ -245,9 +285,24 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
       if (!formRef.current) return;
       gsap.fromTo(
         formRef.current,
-        { y: 24, opacity: 0, scale: 0.985 },
-        { y: 0, opacity: 1, scale: 1, duration: 0.7, ease: "power3.out", delay: 0.18 },
+        { y: 20, opacity: 0, scale: 0.988 },
+        { y: 0, opacity: 1, scale: 1, duration: 0.6, ease: "power3.out", delay: 0.2 },
       );
+
+      if (leftPanelRef.current) {
+        gsap.fromTo(
+          leftPanelRef.current,
+          { x: -18, opacity: 0 },
+          { x: 0, opacity: 1, duration: 0.55, ease: "power2.out", delay: 0.35 },
+        );
+      }
+      if (rightPanelRef.current) {
+        gsap.fromTo(
+          rightPanelRef.current,
+          { x: 18, opacity: 0 },
+          { x: 0, opacity: 1, duration: 0.55, ease: "power2.out", delay: 0.45 },
+        );
+      }
     },
     { scope: formRef },
   );
@@ -258,150 +313,118 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
       onSubmit={handleSubmit}
       className="flex h-full min-h-0 flex-col gap-4"
     >
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)] lg:items-stretch lg:content-start">
+      <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
         {/* Left — Input */}
-        <div className="flex min-h-0 flex-col gap-4">
-          <div className="flex min-h-0 flex-1 flex-col gap-4 rounded-2xl border border-border bg-card p-5">
-            <p className="text-sm text-foreground/50">
-              用一句完整描述定义这次动画任务。
+        <div ref={leftPanelRef} className="flex min-h-0 flex-col gap-4">
+          <div className="flex min-h-[calc(var(--app-content-height)-12.5rem)] flex-1 flex-col gap-4 rounded-2xl border border-border bg-card p-5">
+            <p className="text-sm text-foreground/40">
+              描述你想讲解的数学概念。
             </p>
 
             <Textarea
               id="prompt"
-              placeholder='例如："用动画演示勾股定理的证明过程"'
+              placeholder='例如：用动画演示勾股定理的证明过程'
               value={text}
               onChange={(e) => setText(e.target.value)}
               rows={8}
               disabled={submitting}
-              className="min-h-[160px] flex-1 resize-none rounded-xl border-border bg-background px-4 py-3 text-[15px] leading-relaxed placeholder:text-muted-foreground/40 focus:border-primary/30 focus:ring-primary/15"
+              className="min-h-[360px] flex-1 resize-none rounded-xl border-border bg-background px-4 py-3 text-[15px] leading-relaxed placeholder:text-muted-foreground/40 focus:border-primary/30 focus:ring-primary/15"
             />
 
             <div className="flex gap-2">
               {TEMPLATES.map((template) => (
-                <button
+                <motion.button
                   key={template.text}
                   type="button"
                   onClick={() => handleTemplate(template.text)}
                   disabled={submitting || clarifying}
-                  className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-left transition hover:border-foreground/15 hover:bg-foreground/[0.03]"
+                  whileHover={{ y: -1, borderColor: "rgba(255,255,255,0.15)" }}
+                  whileTap={{ scale: 0.97 }}
+                  className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-left transition-colors hover:bg-foreground/[0.03]"
                 >
                   <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-foreground/[0.04] text-[10px] font-mono text-foreground/50">
                     {template.icon}
                   </span>
                   <span className="line-clamp-1 text-xs text-foreground/50">{template.text}</span>
-                </button>
+                </motion.button>
               ))}
             </div>
 
-            {clarification && clarificationSourceText === text.trim() && (
-              <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-[0.16em] text-primary/60">
-                      内容理解确认
-                    </p>
-                    <p className="mt-1 text-sm text-foreground/80">
-                      系统已整理出推荐表达。可直接生成，或退回重新编辑。
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setText(clarificationSourceText);
-                      setClarification(null);
-                      setClarificationSourceText("");
-                    }}
-                    disabled={submitting || clarifying}
-                    className="border-border bg-transparent text-foreground/60 hover:bg-foreground/[0.05] hover:text-foreground/80"
-                  >
-                    重新编辑
-                  </Button>
-                </div>
+            <AnimatePresence mode="wait">
+              {clarification && clarificationSourceText === text.trim() && (
+                <motion.div
+                  key="clarification"
+                  initial={{ opacity: 0, height: 0, y: -8 }}
+                  animate={{ opacity: 1, height: "auto", y: 0 }}
+                  exit={{ opacity: 0, height: 0, y: -8 }}
+                  transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                  className="overflow-hidden"
+                >
+                  <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-primary/60">
+                          内容理解确认
+                        </p>
+                        <p className="mt-1 text-sm text-foreground/80">
+                          系统已整理出推荐表达。可直接生成，或退回重新编辑。
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setText(clarificationSourceText);
+                          setClarification(null);
+                          setClarificationSourceText("");
+                        }}
+                        disabled={submitting || clarifying}
+                        className="border-border bg-transparent text-foreground/60 hover:bg-foreground/[0.05] hover:text-foreground/80"
+                      >
+                        重新编辑
+                      </Button>
+                    </div>
 
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <div className="space-y-3">
-                    <section>
-                      <p className="text-xs font-medium text-foreground/40">主题理解</p>
-                      <p className="mt-1 text-sm leading-6 text-foreground/80">{clarification.topic_interpretation}</p>
-                    </section>
-                    <section>
-                      <p className="text-xs font-medium text-foreground/40">核心问题</p>
-                      <p className="mt-1 text-sm leading-6 text-foreground/80">{clarification.core_question}</p>
-                    </section>
-                  </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <div className="space-y-3">
+                        <section>
+                          <p className="text-xs font-medium text-foreground/40">主题理解</p>
+                          <p className="mt-1 text-sm leading-6 text-foreground/80">{clarification.topic_interpretation}</p>
+                        </section>
+                        <section>
+                          <p className="text-xs font-medium text-foreground/40">核心问题</p>
+                          <p className="mt-1 text-sm leading-6 text-foreground/80">{clarification.core_question}</p>
+                        </section>
+                      </div>
 
-                  <div className="space-y-3">
-                    <section>
-                      <p className="text-xs font-medium text-foreground/40">内容摘要</p>
-                      <p className="mt-1 text-sm leading-6 text-foreground/80">{clarification.clarified_brief_cn}</p>
-                    </section>
-                    <ClarificationList title="推荐讲解主线" items={clarification.explanation_path} />
-                  </div>
-                </div>
+                      <div className="space-y-3">
+                        <section>
+                          <p className="text-xs font-medium text-foreground/40">内容摘要</p>
+                          <p className="mt-1 text-sm leading-6 text-foreground/80">{clarification.clarified_brief_cn}</p>
+                        </section>
+                        <ClarificationList title="推荐讲解主线" items={clarification.explanation_path} />
+                      </div>
+                    </div>
 
-                <div className="mt-3 grid gap-3 md:grid-cols-3">
-                  <ClarificationList title="默认边界" items={clarification.scope_boundaries} />
-                  <ClarificationList title="可选分支" items={clarification.optional_branches} />
-                  <ClarificationList title="动画重点" items={clarification.animation_focus} />
-                </div>
-              </div>
-            )}
+                    <div className="mt-3 grid gap-3 md:grid-cols-3">
+                      <ClarificationList title="默认边界" items={clarification.scope_boundaries} />
+                      <ClarificationList title="可选分支" items={clarification.optional_branches} />
+                      <ClarificationList title="动画重点" items={clarification.animation_focus} />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
-          {/* BGM Panel */}
-          {bgmPanelVisible && (
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-foreground/85">背景音乐层</h3>
-                <p className="mt-1 text-sm text-foreground/44">为讲解铺一层低干扰背景音乐。</p>
-              </div>
-
-              <div className="gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_200px]">
-                <div>
-                  <FieldLabel label="配乐描述" />
-                  <Textarea
-                    id="bgm-prompt"
-                    value={bgmPrompt}
-                    onChange={(e) => setBgmPrompt(e.target.value)}
-                    rows={3}
-                    disabled={submitting}
-                    placeholder="例如：冷静、极简、轻微存在感的钢琴与弦乐，不要人声"
-                    className="mt-2 min-h-[100px] resize-none rounded-xl border-border bg-background px-4 py-3 text-[13px] leading-6 placeholder:text-muted-foreground/40 focus:border-primary/30"
-                  />
-                </div>
-
-                <div>
-                  <FieldLabel label="音量" />
-                  <input
-                    id="bgm-volume"
-                    type="range"
-                    min="0.05"
-                    max="0.3"
-                    step="0.01"
-                    value={bgmVolume}
-                    onChange={(e) => setBgmVolume(Number(e.target.value))}
-                    disabled={submitting}
-                    className="mt-3 w-full accent-primary"
-                  />
-                  <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wider text-foreground/26">
-                    <span>轻微</span>
-                    <span className="font-mono text-foreground/55">{bgmVolume.toFixed(2)}</span>
-                    <span>明显</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Right — Params + Actions */}
-        <aside className="flex min-h-0 flex-col gap-4">
+        <aside ref={rightPanelRef} className="flex min-h-0 flex-col gap-4">
           <div className="rounded-2xl border border-border bg-card p-4 space-y-4">
             <div>
-              <h3 className="text-sm font-medium text-foreground/82">交付参数</h3>
-              <p className="mt-0.5 text-xs text-foreground/38">决定交付风格与制作规格。</p>
+              <h3 className="text-sm font-medium text-foreground/82">输出设置</h3>
             </div>
 
             <div className="space-y-3">
@@ -474,67 +497,77 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
           </div>
 
           {/* Options & Actions */}
-          <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
-            <div className="space-y-2.5">
-              <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border px-3 py-2 select-none transition-colors hover:bg-foreground/[0.02]">
-                <div
-                  className={`relative h-4 w-4 rounded border transition-colors ${
-                    noTts ? "border-primary bg-primary" : "border-border"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={noTts}
-                    onChange={(e) => setNoTts(e.target.checked)}
-                    disabled={submitting}
-                    className="sr-only"
-                  />
-                  {noTts && (
-                    <svg className="pointer-events-none absolute inset-0 m-auto h-3 w-3 text-primary-foreground" viewBox="0 0 12 12" fill="none">
-                      <path d="M2 6l3 3l5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </div>
-                <span className="text-[13px] text-foreground/65">跳过语音合成，仅生成静音视频</span>
+          <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5">
+            <div className="space-y-3">
+              <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-background/35 px-3.5 py-3 select-none transition-colors hover:bg-foreground/[0.02]">
+                <AnimatedCheckbox
+                  checked={noTts}
+                  onChange={setNoTts}
+                  disabled={submitting}
+                />
+                <span className="text-[13px] text-foreground/70">跳过语音合成，仅生成静音视频</span>
               </label>
 
-              <button
+              <motion.button
                 type="button"
                 onClick={() => { if (submitting || noTts) return; setBgmEnabled((v) => !v); }}
                 disabled={submitting || noTts}
-                className="flex items-center gap-3 rounded-xl border border-border px-3 py-2 text-left transition-colors hover:bg-foreground/[0.02] disabled:opacity-50"
+                whileHover={!submitting && !noTts ? { backgroundColor: "rgba(255,255,255,0.02)" } : {}}
+                whileTap={!submitting && !noTts ? { scale: 0.99 } : {}}
+                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border bg-background/35 px-4 py-3 text-left transition-colors disabled:opacity-50"
               >
-                <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors ${bgmPanelVisible ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-foreground/[0.03] text-foreground/36"}`}>
-                  <Music4 className="h-3.5 w-3.5" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground/80">背景音乐</span>
-                    <span className={`rounded-full px-1.5 py-px text-[10px] ${bgmPanelVisible ? "bg-primary/10 text-primary" : "bg-foreground/[0.05] text-foreground/32"}`}>
-                      {bgmPanelVisible ? "On" : "Off"}
-                    </span>
+                <div className="flex min-w-0 items-center gap-3">
+                  <motion.div
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${bgmPanelVisible ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-foreground/[0.03] text-foreground/36"}`}
+                    animate={bgmPanelVisible ? { rotate: [0, -10, 10, 0] } : {}}
+                    transition={{ duration: 0.35 }}
+                  >
+                    <Music4 className="h-4 w-4" />
+                  </motion.div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-foreground/82">背景音乐</span>
+                      <motion.span
+                        className={`rounded-full px-2 py-0.5 text-[10px] ${bgmPanelVisible ? "bg-primary/10 text-primary" : "bg-foreground/[0.05] text-foreground/32"}`}
+                        layout
+                        transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                      >
+                        {bgmPanelVisible ? "On" : "Off"}
+                      </motion.span>
+                    </div>
+                    <p className="mt-0.5 text-[12px] text-foreground/42">
+                      {bgmPanelVisible ? "左侧保持展开的音乐配置面板。" : "点击展开背景音乐配置。"}
+                    </p>
                   </div>
-                  <p className="mt-0.5 text-[12px] text-foreground/40">
-                    {bgmPanelVisible ? "左侧已展开编辑面板。" : "点击展开背景音乐配置。"}
-                  </p>
                 </div>
-                <span className="text-[11px] font-mono text-foreground/36">{bgmVolume.toFixed(2)}</span>
-              </button>
+                <div className="shrink-0 text-right">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-foreground/26">Volume</div>
+                  <div className="mt-1 font-mono text-[12px] text-foreground/46">{bgmVolume.toFixed(2)}</div>
+                </div>
+              </motion.button>
 
-              {error && (
-                <p className="rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-sm text-destructive animate-fade-in-up">
-                  {error}
-                </p>
-              )}
+              <AnimatePresence>
+                {error && (
+                  <motion.p
+                    key="error"
+                    initial={{ opacity: 0, y: -6, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: "auto" }}
+                    exit={{ opacity: 0, y: -6, height: 0 }}
+                    className="rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-sm text-destructive overflow-hidden"
+                  >
+                    {error}
+                  </motion.p>
+                )}
+              </AnimatePresence>
             </div>
 
-            <div className="mt-auto space-y-2 pt-1">
+            <div className="mt-auto space-y-2.5 pt-1">
               <motion.div whileHover={canSubmit ? { scale: 1.005 } : {}} whileTap={canSubmit ? { scale: 0.98 } : {}}>
                 <Button
                   type="submit"
                   disabled={!canSubmit}
                   size="lg"
-                  className="w-full h-10.5 text-[14px] font-medium btn-glow"
+                  className="h-11 w-full text-[14px] font-medium btn-glow"
                 >
                   {submitting ? (
                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" />正在创建...</>
@@ -555,7 +588,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                     variant="outline"
                     disabled={!canSubmit}
                     onClick={handleCreateWithoutClarification}
-                    className="h-9 border-border bg-transparent text-foreground/70 hover:bg-foreground/[0.04] hover:text-foreground/85"
+                    className="h-10 border-border bg-transparent text-foreground/70 hover:bg-foreground/[0.04] hover:text-foreground/85"
                   >
                     {submitting ? (
                       <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />提交中...</>
@@ -569,7 +602,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                     variant="secondary"
                     disabled={!canSubmit}
                     onClick={handleClarifyAndRun}
-                    className="h-9 border border-border bg-foreground/[0.06] text-foreground/80 hover:bg-foreground/[0.1]"
+                    className="h-10 border border-border bg-foreground/[0.06] text-foreground/80 hover:bg-foreground/[0.1]"
                   >
                     {clarifying ? (
                       <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />处理中...</>
@@ -583,6 +616,90 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
           </div>
         </aside>
       </div>
+
+      <AnimatePresence>
+        {bgmPanelVisible && (
+          <motion.div
+            key="bgm-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 px-4 py-8 backdrop-blur-sm"
+            onClick={() => setBgmEnabled(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full max-w-3xl rounded-3xl border border-border bg-card/96 p-6 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-primary/55">Background Music</p>
+                  <h3 className="mt-2 text-xl font-medium text-foreground/90">背景音乐配置</h3>
+                  <p className="mt-1 text-sm text-foreground/46">这层配置覆盖在主页面之上，不再挤压主编辑区布局。</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBgmEnabled(false)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background/50 text-foreground/55 transition-colors hover:bg-background hover:text-foreground/85"
+                  aria-label="关闭背景音乐配置"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-start">
+                <div>
+                  <FieldLabel label="配乐描述" />
+                  <Textarea
+                    id="bgm-prompt"
+                    value={bgmPrompt}
+                    onChange={(e) => setBgmPrompt(e.target.value)}
+                    rows={6}
+                    disabled={submitting}
+                    placeholder="例如：冷静、极简、轻微存在感的钢琴与弦乐，不要人声"
+                    className="mt-2 min-h-[180px] resize-none rounded-2xl border-border bg-background px-4 py-3 text-[14px] leading-6 placeholder:text-muted-foreground/40 focus:border-primary/30"
+                  />
+                </div>
+
+                <div className="rounded-2xl border border-border bg-background/50 p-4">
+                  <FieldLabel label="音量" />
+                  <input
+                    id="bgm-volume"
+                    type="range"
+                    min="0.05"
+                    max="0.3"
+                    step="0.01"
+                    value={bgmVolume}
+                    onChange={(e) => setBgmVolume(Number(e.target.value))}
+                    disabled={submitting}
+                    className="mt-4 w-full accent-primary"
+                  />
+                  <div className="mt-3 flex justify-between text-[10px] uppercase tracking-wider text-foreground/26">
+                    <span>轻微</span>
+                    <span className="font-mono text-foreground/55">{bgmVolume.toFixed(2)}</span>
+                    <span>明显</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setBgmEnabled(false)}
+                  className="border-border bg-background/50 text-foreground/75 hover:bg-background hover:text-foreground"
+                >
+                  关闭
+                </Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </form>
   );
 }
