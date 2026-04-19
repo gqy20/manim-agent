@@ -110,7 +110,7 @@ export function AnimatedMathDecorations() {
 
       {/* Floating triangle (geometry) */}
       <svg className="math-deco animate-float-reverse absolute top-8 right-[30%] w-24 h-24 sm:w-32 sm:h-32" viewBox="0 0 80 80" fill="none">
-        <path d="M10 65 L40 15 L70 65 Z" stroke="currentColor" strokeWidth="1.2" fill="oklch(0.7 0.18 250 / 4%)" strokeLinejoin="round"/>
+        <path d="M10 65 L40 15 L70 65 Z" stroke="currentColor" strokeWidth="1.2" fill="oklch(0.72 0.11 250 / 3%)" strokeLinejoin="round"/>
         <path d="M10 65 L40 65" stroke="currentColor" strokeWidth="0.8" opacity="0.4"/>
         <path d="M36 61 L36 69 L44 69" stroke="currentColor" strokeWidth="0.8" opacity="0.4"/>
         <circle cx="40" cy="15" r="2" fill="currentColor" opacity="0.3"/>
@@ -140,8 +140,7 @@ export function AnimatedMathDecorations() {
         ∫₀^∞ e^(-x²) dx = √π / 2
       </div>
 
-      {/* Center glow orb */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 sm:w-64 sm:h-64 rounded-full bg-primary/[0.03] blur-3xl pointer-events-none"/>
+      {/* Center glow orb — removed for cleaner look */}
     </div>
   );
 }

@@ -28,11 +28,6 @@ export default async function CreatePage({
           <TaskForm initialPrompt={prompt} />
         </div>
       </div>
-
-      <div className="pointer-events-none absolute inset-0 z-0 opacity-34">
-        <div className="absolute left-[8%] top-[18%] h-56 w-56 rounded-full bg-cyan-400/7 blur-[110px]" />
-        <div className="absolute right-[10%] top-[14%] h-72 w-72 rounded-full bg-blue-500/10 blur-[140px]" />
-      </div>
     </main>
   );
 }

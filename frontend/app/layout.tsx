@@ -48,17 +48,25 @@ export default function RootLayout({
 
         <header className="fixed left-0 right-0 top-0 z-50 bg-background/60 pt-[var(--safe-top)] backdrop-blur-2xl supports-[backdrop-filter]:bg-background/30">
           <nav className="flex h-14 w-full items-center justify-between px-4 md:px-6">
-            <Link href="/" className="group flex items-center gap-2.5">
-              <Logo
-                size={24}
-                className="text-primary transition-transform duration-300 group-hover:rotate-12"
-              />
-              <div className="flex flex-col leading-none">
-                <span className="text-sm font-semibold tracking-tight transition-colors group-hover:text-foreground">
-                  Manim Agent
-                </span>
-              </div>
-            </Link>
+            <div className="flex items-center gap-6">
+              <Link href="/" className="group flex items-center gap-2.5">
+                <Logo
+                  size={24}
+                  className="text-primary transition-transform duration-300 group-hover:rotate-12"
+                />
+                <div className="flex flex-col leading-none">
+                  <span className="text-sm font-semibold tracking-tight transition-colors group-hover:text-foreground">
+                    Manim Agent
+                  </span>
+                </div>
+              </Link>
+              <Link
+                href="/history"
+                className="hidden text-sm text-foreground/36 transition hover:text-foreground/65 sm:block"
+              >
+                历史任务
+              </Link>
+            </div>
           </nav>
         </header>
 

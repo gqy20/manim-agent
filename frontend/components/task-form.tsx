@@ -65,8 +65,8 @@ function ClarificationList({ title, items }: { title: string; items: string[] })
   if (items.length === 0) return null;
   return (
     <section>
-      <p className="text-xs font-medium text-white/45">{title}</p>
-      <ul className="mt-2 space-y-1.5 text-sm text-white/78">
+      <p className="text-xs font-medium text-foreground/40">{title}</p>
+      <ul className="mt-2 space-y-1.5 text-sm text-foreground/75">
         {items.map((item) => (
           <li key={item}>- {item}</li>
         ))}
@@ -77,7 +77,7 @@ function ClarificationList({ title, items }: { title: string; items: string[] })
 
 function FieldLabel({ label }: { label: string }) {
   return (
-    <label className="text-[11px] font-medium uppercase tracking-[0.2em] text-white/34">
+    <label className="text-[11px] font-medium uppercase tracking-[0.16em] text-foreground/34">
       {label}
     </label>
   );
@@ -256,22 +256,15 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
     <form
       ref={formRef}
       onSubmit={handleSubmit}
-      className="flex h-full min-h-0 flex-col rounded-[30px] border border-white/7 bg-[linear-gradient(180deg,rgba(5,10,16,0.84),rgba(8,13,22,0.74))] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_16px_60px_rgba(2,6,23,0.2)] transition-all duration-300 sm:p-3"
+      className="flex h-full min-h-0 flex-col gap-4"
     >
-      <div className="grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1.5fr)_minmax(340px,1fr)] lg:items-stretch">
-        <section
-          className={`min-h-0 gap-2.5 ${
-            bgmPanelVisible ? "grid grid-rows-[minmax(0,0.95fr)_minmax(0,1fr)]" : "flex flex-col"
-          }`}
-        >
-          <div
-            className={`flex min-h-0 flex-col rounded-[24px] border border-white/7 bg-black/20 p-5 ${
-              bgmPanelVisible ? "h-full overflow-hidden" : "flex-1"
-            }`}
-          >
-            <div className="mb-3.5">
-              <p className="text-sm text-white/58">用一句完整描述定义这次动画任务。</p>
-            </div>
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)] lg:items-stretch lg:content-start">
+        {/* Left — Input */}
+        <div className="flex min-h-0 flex-col gap-4">
+          <div className="flex min-h-0 flex-1 flex-col gap-4 rounded-2xl border border-border bg-card p-5">
+            <p className="text-sm text-foreground/50">
+              用一句完整描述定义这次动画任务。
+            </p>
 
             <Textarea
               id="prompt"
@@ -280,35 +273,35 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
               onChange={(e) => setText(e.target.value)}
               rows={8}
               disabled={submitting}
-              className="min-h-[144px] flex-1 resize-none rounded-[22px] border-white/6 bg-black/24 px-4 py-3 text-[15px] leading-relaxed text-foreground placeholder:text-muted-foreground/35 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-all duration-300 focus:border-primary/30 focus:ring-primary/20"
+              className="min-h-[160px] flex-1 resize-none rounded-xl border-border bg-background px-4 py-3 text-[15px] leading-relaxed placeholder:text-muted-foreground/40 focus:border-primary/30 focus:ring-primary/15"
             />
 
-            <div className="mt-3 shrink-0 grid gap-2 sm:grid-cols-2">
+            <div className="flex gap-2">
               {TEMPLATES.map((template) => (
                 <button
                   key={template.text}
                   type="button"
                   onClick={() => handleTemplate(template.text)}
                   disabled={submitting || clarifying}
-                  className="flex items-center gap-2 rounded-[18px] border border-white/8 bg-white/[0.03] px-3 py-1.5 text-left transition hover:border-white/16 hover:bg-white/[0.05]"
+                  className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-left transition hover:border-foreground/15 hover:bg-foreground/[0.03]"
                 >
-                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[10px] text-white/62">
+                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-foreground/[0.04] text-[10px] font-mono text-foreground/50">
                     {template.icon}
                   </span>
-                  <span className="line-clamp-1 text-xs text-white/62">{template.text}</span>
+                  <span className="line-clamp-1 text-xs text-foreground/50">{template.text}</span>
                 </button>
               ))}
             </div>
 
             {clarification && clarificationSourceText === text.trim() && (
-              <div className="mt-3 rounded-[24px] border border-cyan-400/20 bg-cyan-400/[0.06] p-4">
+              <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-cyan-300/70">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-primary/60">
                       内容理解确认
                     </p>
-                    <p className="mt-1 text-sm text-foreground/85">
-                      系统已经整理出推荐表达。你可以直接生成，也可以退回原始输入重新编辑。
+                    <p className="mt-1 text-sm text-foreground/80">
+                      系统已整理出推荐表达。可直接生成，或退回重新编辑。
                     </p>
                   </div>
                   <Button
@@ -321,7 +314,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                       setClarificationSourceText("");
                     }}
                     disabled={submitting || clarifying}
-                    className="border-white/15 bg-transparent text-white/70 hover:bg-white/10 hover:text-white"
+                    className="border-border bg-transparent text-foreground/60 hover:bg-foreground/[0.05] hover:text-foreground/80"
                   >
                     重新编辑
                   </Button>
@@ -330,25 +323,19 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <div className="space-y-3">
                     <section>
-                      <p className="text-xs font-medium text-white/45">主题理解</p>
-                      <p className="mt-1 text-sm leading-6 text-white/85">
-                        {clarification.topic_interpretation}
-                      </p>
+                      <p className="text-xs font-medium text-foreground/40">主题理解</p>
+                      <p className="mt-1 text-sm leading-6 text-foreground/80">{clarification.topic_interpretation}</p>
                     </section>
                     <section>
-                      <p className="text-xs font-medium text-white/45">核心问题</p>
-                      <p className="mt-1 text-sm leading-6 text-white/85">
-                        {clarification.core_question}
-                      </p>
+                      <p className="text-xs font-medium text-foreground/40">核心问题</p>
+                      <p className="mt-1 text-sm leading-6 text-foreground/80">{clarification.core_question}</p>
                     </section>
                   </div>
 
                   <div className="space-y-3">
                     <section>
-                      <p className="text-xs font-medium text-white/45">内容摘要</p>
-                      <p className="mt-1 text-sm leading-6 text-white/85">
-                        {clarification.clarified_brief_cn}
-                      </p>
+                      <p className="text-xs font-medium text-foreground/40">内容摘要</p>
+                      <p className="mt-1 text-sm leading-6 text-foreground/80">{clarification.clarified_brief_cn}</p>
                     </section>
                     <ClarificationList title="推荐讲解主线" items={clarification.explanation_path} />
                   </div>
@@ -363,22 +350,16 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
             )}
           </div>
 
+          {/* BGM Panel */}
           {bgmPanelVisible && (
-            <div className="rounded-[24px] border border-white/8 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.08),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.018))] p-5 shadow-[0_18px_50px_rgba(2,6,23,0.2)]">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-medium text-white/88">背景音乐层</h3>
-                  <p className="mt-2 max-w-[34rem] text-sm leading-7 text-white/50">
-                    为讲解铺一层低干扰背景音乐。这里集中完成编辑，右侧只保留状态和启动控制。
-                  </p>
-                </div>
-                <div className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-cyan-300/80">
-                  Music-2.6
-                </div>
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-4">
+                <h3 className="text-sm font-medium text-foreground/85">背景音乐层</h3>
+                <p className="mt-1 text-sm text-foreground/44">为讲解铺一层低干扰背景音乐。</p>
               </div>
 
-              <div className="mt-5 grid min-h-0 items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
-                <div className="flex min-h-0 flex-col rounded-[20px] border border-white/8 bg-black/16 p-4">
+              <div className="gap-4 xl:grid xl:grid-cols-[minmax(0,1fr)_200px]">
+                <div>
                   <FieldLabel label="配乐描述" />
                   <Textarea
                     id="bgm-prompt"
@@ -387,20 +368,12 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                     rows={3}
                     disabled={submitting}
                     placeholder="例如：冷静、极简、轻微存在感的钢琴与弦乐，不要人声"
-                    className="mt-3 min-h-[132px] flex-1 resize-none rounded-2xl border-white/10 bg-black/20 px-4 py-3 text-[13px] leading-6 text-foreground/90 placeholder:text-muted-foreground/35 focus:border-cyan-400/35 focus:ring-cyan-400/20"
+                    className="mt-2 min-h-[100px] resize-none rounded-xl border-border bg-background px-4 py-3 text-[13px] leading-6 placeholder:text-muted-foreground/40 focus:border-primary/30"
                   />
                 </div>
 
-                <div className="flex min-h-0 flex-col rounded-[20px] border border-white/8 bg-black/16 px-4 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <FieldLabel label="音量" />
-                      <p className="mt-1 text-[12px] leading-6 text-white/45">
-                        建议保持轻微存在感，不压过解说。
-                      </p>
-                    </div>
-                    <span className="font-mono text-lg text-cyan-300">{bgmVolume.toFixed(2)}</span>
-                  </div>
+                <div>
+                  <FieldLabel label="音量" />
                   <input
                     id="bgm-volume"
                     type="range"
@@ -410,46 +383,37 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                     value={bgmVolume}
                     onChange={(e) => setBgmVolume(Number(e.target.value))}
                     disabled={submitting}
-                    className="mt-5 w-full accent-cyan-400"
+                    className="mt-3 w-full accent-primary"
                   />
-                  <div className="mt-2 flex justify-between text-[10px] uppercase tracking-[0.16em] text-white/28">
-                    <span>Subtle</span>
-                    <span>Present</span>
-                  </div>
-                  <div className="mt-auto pt-4">
-                    <div className="rounded-xl border border-cyan-400/10 bg-cyan-400/[0.05] px-3 py-2.5">
-                      <p className="text-[11px] leading-5 text-white/60">
-                        推荐区间 <span className="font-mono text-cyan-300">0.10 - 0.16</span>
-                      </p>
-                    </div>
+                  <div className="mt-2 flex justify-between text-[10px] uppercase tracking-wider text-foreground/26">
+                    <span>轻微</span>
+                    <span className="font-mono text-foreground/55">{bgmVolume.toFixed(2)}</span>
+                    <span>明显</span>
                   </div>
                 </div>
               </div>
             </div>
           )}
-        </section>
+        </div>
 
-        <aside className="grid min-h-0 gap-2.5 lg:grid-rows-[minmax(0,0.95fr)_minmax(0,1fr)]">
-          <div className="rounded-[24px] border border-white/7 bg-black/16 p-4">
-            <div className="mb-3">
-              <h3 className="text-sm font-medium text-white/84">交付参数</h3>
-              <p className="mt-1 text-sm text-white/46">决定交付风格与制作规格。</p>
+        {/* Right — Params + Actions */}
+        <aside className="flex min-h-0 flex-col gap-4">
+          <div className="rounded-2xl border border-border bg-card p-4 space-y-4">
+            <div>
+              <h3 className="text-sm font-medium text-foreground/82">交付参数</h3>
+              <p className="mt-0.5 text-xs text-foreground/38">决定交付风格与制作规格。</p>
             </div>
 
-            <div className="space-y-2.5">
+            <div className="space-y-3">
               <div className="space-y-1.5">
                 <FieldLabel label="音色" />
                 <Select value={voiceId} onValueChange={(v) => v && setVoiceId(v)} disabled={submitting}>
-                  <SelectTrigger className="min-h-10 w-full border-white/10 bg-transparent text-[12px] font-medium text-white/80 shadow-none transition-colors hover:border-white/20 focus:border-primary/40 focus:ring-primary/20">
+                  <SelectTrigger className="h-9 w-full border-border bg-background text-[12px] focus:border-primary/35">
                     <SelectValue>{getLabel(VOICES, voiceId)}</SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="border border-white/10 bg-black/80 backdrop-blur-xl">
+                  <SelectContent className="border-border bg-popover">
                     {VOICES.map((voice) => (
-                      <SelectItem
-                        key={voice.id}
-                        value={voice.id}
-                        className="text-[11px] text-white/70 focus:bg-white/10 focus:text-white"
-                      >
+                      <SelectItem key={voice.id} value={voice.id} className="text-[11px]">
                         {voice.label}
                       </SelectItem>
                     ))}
@@ -457,24 +421,16 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 </Select>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <FieldLabel label="画质" />
-                  <Select
-                    value={quality}
-                    onValueChange={(v) => v && setQuality(v as "high" | "medium" | "low")}
-                    disabled={submitting}
-                  >
-                    <SelectTrigger className="min-h-10 w-full border-white/10 bg-transparent text-[12px] font-medium text-white/80 shadow-none transition-colors hover:border-white/20 focus:border-primary/40 focus:ring-primary/20">
+                  <Select value={quality} onValueChange={(v) => v && setQuality(v as "high" | "medium" | "low")} disabled={submitting}>
+                    <SelectTrigger className="h-9 w-full border-border bg-background text-[12px] focus:border-primary/35">
                       <SelectValue>{getLabel(QUALITIES, quality)}</SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="border border-white/10 bg-black/80 backdrop-blur-xl">
+                    <SelectContent className="border-border bg-popover">
                       {QUALITIES.map((item) => (
-                        <SelectItem
-                          key={item.value}
-                          value={item.value}
-                          className="text-[11px] text-white/70 focus:bg-white/10 focus:text-white"
-                        >
+                        <SelectItem key={item.value} value={item.value} className="text-[11px]">
                           {item.label}
                         </SelectItem>
                       ))}
@@ -484,21 +440,13 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
 
                 <div className="space-y-1.5">
                   <FieldLabel label="时长" />
-                  <Select
-                    value={String(targetDurationSeconds)}
-                    onValueChange={(v) => v && setTargetDurationSeconds(Number(v) as TaskDurationSeconds)}
-                    disabled={submitting}
-                  >
-                    <SelectTrigger className="min-h-10 w-full border-white/10 bg-transparent text-[12px] font-medium text-white/80 shadow-none transition-colors hover:border-white/20 focus:border-primary/40 focus:ring-primary/20">
+                  <Select value={String(targetDurationSeconds)} onValueChange={(v) => v && setTargetDurationSeconds(Number(v) as TaskDurationSeconds)} disabled={submitting}>
+                    <SelectTrigger className="h-9 w-full border-border bg-background text-[12px] focus:border-primary/35">
                       <SelectValue>{getLabel(DURATIONS, String(targetDurationSeconds))}</SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="border border-white/10 bg-black/80 backdrop-blur-xl">
+                    <SelectContent className="border-border bg-popover">
                       {DURATIONS.map((item) => (
-                        <SelectItem
-                          key={item.value}
-                          value={String(item.value)}
-                          className="text-[11px] text-white/70 focus:bg-white/10 focus:text-white"
-                        >
+                        <SelectItem key={item.value} value={String(item.value)} className="text-[11px]">
                           {item.label}
                         </SelectItem>
                       ))}
@@ -509,23 +457,13 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
 
               <div className="space-y-1.5">
                 <FieldLabel label="模式" />
-                <Select
-                  value={preset}
-                  onValueChange={(v) =>
-                    v && setPreset(v as "default" | "educational" | "presentation" | "proof" | "concept")
-                  }
-                  disabled={submitting}
-                >
-                  <SelectTrigger className="min-h-10 w-full border-white/10 bg-transparent text-[12px] font-medium text-white/80 shadow-none transition-colors hover:border-white/20 focus:border-primary/40 focus:ring-primary/20">
+                <Select value={preset} onValueChange={(v) => v && setPreset(v as "default" | "educational" | "presentation" | "proof" | "concept")} disabled={submitting}>
+                  <SelectTrigger className="h-9 w-full border-border bg-background text-[12px] focus:border-primary/35">
                     <SelectValue>{getLabel(PRESETS, preset)}</SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="border border-white/10 bg-black/80 backdrop-blur-xl">
+                  <SelectContent className="border-border bg-popover">
                     {PRESETS.map((item) => (
-                      <SelectItem
-                        key={item.value}
-                        value={item.value}
-                        className="text-[11px] text-white/70 focus:bg-white/10 focus:text-white"
-                      >
+                      <SelectItem key={item.value} value={item.value} className="text-[11px]">
                         {item.label}
                       </SelectItem>
                     ))}
@@ -535,14 +473,13 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-col rounded-[24px] border border-white/7 bg-black/18 p-3.5">
+          {/* Options & Actions */}
+          <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4">
             <div className="space-y-2.5">
-              <label className="flex cursor-pointer items-center gap-2.5 rounded-[20px] border border-white/7 bg-black/18 px-4 py-2 text-sm group select-none">
+              <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border px-3 py-2 select-none transition-colors hover:bg-foreground/[0.02]">
                 <div
-                  className={`relative h-4 w-4 rounded border transition-colors duration-200 ${
-                    noTts
-                      ? "border-primary bg-primary"
-                      : "border-border/60 bg-background/30 group-hover:border-foreground/30"
+                  className={`relative h-4 w-4 rounded border transition-colors ${
+                    noTts ? "border-primary bg-primary" : "border-border"
                   }`}
                 >
                   <input
@@ -553,136 +490,77 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                     className="sr-only"
                   />
                   {noTts && (
-                    <svg
-                      className="pointer-events-none absolute inset-0 m-auto h-3 w-3 text-primary-foreground"
-                      viewBox="0 0 12 12"
-                      fill="none"
-                    >
-                      <path
-                        d="M2 6l3 3l5-5"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
+                    <svg className="pointer-events-none absolute inset-0 m-auto h-3 w-3 text-primary-foreground" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6l3 3l5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   )}
                 </div>
-                <span className="text-[13px] text-muted-foreground/80 transition-colors group-hover:text-foreground/70">
-                  跳过语音合成，仅生成静音视频
-                </span>
+                <span className="text-[13px] text-foreground/65">跳过语音合成，仅生成静音视频</span>
               </label>
 
               <button
                 type="button"
-                onClick={() => {
-                  if (submitting || noTts) return;
-                  setBgmEnabled((value) => !value);
-                }}
+                onClick={() => { if (submitting || noTts) return; setBgmEnabled((v) => !v); }}
                 disabled={submitting || noTts}
-                className="relative isolate overflow-hidden rounded-[24px] border border-white/8 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.08),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.018))] p-3.5 text-left shadow-[0_18px_50px_rgba(2,6,23,0.2)] transition hover:border-white/14 disabled:cursor-not-allowed disabled:opacity-55"
+                className="flex items-center gap-3 rounded-xl border border-border px-3 py-2 text-left transition-colors hover:bg-foreground/[0.02] disabled:opacity-50"
               >
-                <div className="pointer-events-none absolute -left-8 top-0 h-20 w-20 rounded-full bg-cyan-400/10 blur-3xl" />
-                <div className="relative z-10 flex items-start gap-3">
-                  <div
-                    className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                      bgmPanelVisible
-                        ? "border-cyan-400/40 bg-cyan-400/14 text-cyan-300"
-                        : "border-white/12 bg-black/20 text-white/38"
-                    }`}
-                  >
-                    <Music4 className="h-3.5 w-3.5" />
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-white/90">背景音乐层</span>
-                      <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-cyan-300/80">
-                        Music-2.6
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] ${
-                          bgmPanelVisible ? "bg-emerald-400/12 text-emerald-300" : "bg-white/6 text-white/35"
-                        }`}
-                      >
-                        {bgmPanelVisible ? "On" : "Off"}
-                      </span>
-                    </div>
-                    <p className="mt-2 text-[12px] leading-6 text-white/48">
-                      {bgmPanelVisible ? "左侧已展开完整编辑面板。" : "点击展开完整背景音乐配置。"}
-                    </p>
-                  </div>
-
-                  <div className="mt-1 flex shrink-0 items-center gap-1 text-[11px] text-cyan-300/75">
-                    <Volume2 className="h-3.5 w-3.5" />
-                    {bgmVolume.toFixed(2)}
-                  </div>
+                <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border transition-colors ${bgmPanelVisible ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-foreground/[0.03] text-foreground/36"}`}>
+                  <Music4 className="h-3.5 w-3.5" />
                 </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-foreground/80">背景音乐</span>
+                    <span className={`rounded-full px-1.5 py-px text-[10px] ${bgmPanelVisible ? "bg-primary/10 text-primary" : "bg-foreground/[0.05] text-foreground/32"}`}>
+                      {bgmPanelVisible ? "On" : "Off"}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[12px] text-foreground/40">
+                    {bgmPanelVisible ? "左侧已展开编辑面板。" : "点击展开背景音乐配置。"}
+                  </p>
+                </div>
+                <span className="text-[11px] font-mono text-foreground/36">{bgmVolume.toFixed(2)}</span>
               </button>
 
               {error && (
-                <p className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2.5 text-sm text-destructive animate-fade-in-up">
+                <p className="rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-sm text-destructive animate-fade-in-up">
                   {error}
                 </p>
               )}
             </div>
 
-            <div className="mt-auto pt-2.5">
-              <div className="rounded-[24px] border border-white/7 bg-black/18 p-1.5">
-              <motion.div
-                className="relative"
-                whileHover={canSubmit ? { scale: 1.01 } : {}}
-                whileTap={canSubmit ? { scale: 0.98 } : {}}
-              >
+            <div className="mt-auto space-y-2 pt-1">
+              <motion.div whileHover={canSubmit ? { scale: 1.005 } : {}} whileTap={canSubmit ? { scale: 0.98 } : {}}>
                 <Button
                   type="submit"
                   disabled={!canSubmit}
                   size="lg"
-                  className="relative h-10.5 w-full overflow-hidden text-[15px] font-medium btn-glow"
+                  className="w-full h-10.5 text-[14px] font-medium btn-glow"
                 >
                   {submitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      正在创建任务...
-                    </>
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />正在创建...</>
                   ) : clarifying ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      正在理解内容...
-                    </>
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" />正在理解内容...</>
                   ) : hasCurrentClarification ? (
-                    <>
-                      <Wand2 className="mr-2 h-4 w-4" />
-                      按此理解继续生成
-                    </>
+                    <><Wand2 className="mr-2 h-4 w-4" />按此理解继续生成</>
                   ) : (
-                    <>
-                      <Sparkles className="mr-2 h-4 w-4" />
-                      先理解内容
-                    </>
+                    <><Sparkles className="mr-2 h-4 w-4" />先理解内容</>
                   )}
                 </Button>
               </motion.div>
 
               {!hasCurrentClarification && (
-                <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                <div className="grid grid-cols-2 gap-2">
                   <Button
                     type="button"
                     variant="outline"
                     disabled={!canSubmit}
                     onClick={handleCreateWithoutClarification}
-                    className="h-9.5 border-white/10 bg-transparent text-white/75 hover:bg-white/10 hover:text-white"
+                    className="h-9 border-border bg-transparent text-foreground/70 hover:bg-foreground/[0.04] hover:text-foreground/85"
                   >
                     {submitting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        提交中...
-                      </>
+                      <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />提交中...</>
                     ) : (
-                      <>
-                        <SkipForward className="mr-2 h-4 w-4" />
-                        跳过理解，直接生成
-                      </>
+                      <><SkipForward className="mr-2 h-3.5 w-3.5" />跳过理解直接生成</>
                     )}
                   </Button>
 
@@ -691,23 +569,16 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                     variant="secondary"
                     disabled={!canSubmit}
                     onClick={handleClarifyAndRun}
-                    className="h-9.5 border border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.12]"
+                    className="h-9 border border-border bg-foreground/[0.06] text-foreground/80 hover:bg-foreground/[0.1]"
                   >
                     {clarifying ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        理解并生成中...
-                      </>
+                      <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />处理中...</>
                     ) : (
-                      <>
-                        <Play className="mr-2 h-4 w-4" />
-                        理解并直接生成
-                      </>
+                      <><Play className="mr-2 h-3.5 w-3.5" />理解并直接生成</>
                     )}
                   </Button>
                 </div>
               )}
-              </div>
             </div>
           </div>
         </aside>
