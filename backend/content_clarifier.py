@@ -20,6 +20,7 @@ DEFAULT_MODEL = os.environ.get(
     os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
 )
 DEFAULT_MAX_TOKENS = 1400
+DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("ANTHROPIC_CLARIFIER_TIMEOUT_SECONDS", "60"))
 logger = logging.getLogger(__name__)
 
 
@@ -133,8 +134,32 @@ async def clarify_content(user_text: str) -> ContentClarifyData:
         text_len=len(user_text.strip()),
     )
 
-    async with httpx.AsyncClient(timeout=45.0, trust_env=False) as client:
-        response = await client.post(api_url, headers=headers, json=payload)
+    try:
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT_SECONDS, trust_env=False) as client:
+            response = await client.post(api_url, headers=headers, json=payload)
+    except httpx.TimeoutException as exc:
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        log_event(
+            logger,
+            logging.ERROR,
+            "clarifier_timeout",
+            model=DEFAULT_MODEL,
+            duration_ms=duration_ms,
+            timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+            error_type=type(exc).__name__,
+        )
+        raise ContentClarifyError("Content clarification timed out. Please retry.") from exc
+    except httpx.RequestError as exc:
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        log_event(
+            logger,
+            logging.ERROR,
+            "clarifier_request_failed",
+            model=DEFAULT_MODEL,
+            duration_ms=duration_ms,
+            error_type=type(exc).__name__,
+        )
+        raise ContentClarifyError("Content clarification service is temporarily unavailable.") from exc
 
     duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
     log_event(
