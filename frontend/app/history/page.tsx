@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, History, Inbox, Sparkles } from "lucide-react";
+
 import { TaskCard } from "@/components/task-card";
-import { listTasks } from "@/lib/api";
+import { deleteTask, listTasks } from "@/lib/api";
 import { logger } from "@/lib/logger";
 import type { Task } from "@/types";
 
@@ -33,6 +34,7 @@ function TaskCardSkeleton() {
 export default function HistoryPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
 
   useEffect(() => {
     listTasks()
@@ -45,8 +47,27 @@ export default function HistoryPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  async function handleDeleteTask(task: Task) {
+    if (deletingTaskId) return;
+    const confirmed = window.confirm(`Delete task ${task.id}? This removes its saved output and logs.`);
+    if (!confirmed) return;
+
+    setDeletingTaskId(task.id);
+    try {
+      await deleteTask(task.id);
+      setTasks((prev) => prev.filter((item) => item.id !== task.id));
+    } catch (err) {
+      logger.error("history", "Failed to delete task", {
+        taskId: task.id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setDeletingTaskId(null);
+    }
+  }
+
   return (
-    <main className="container mx-auto flex-1 max-w-[1400px] px-6 space-y-8 py-10 sm:py-14">
+    <main className="container mx-auto flex-1 max-w-[1400px] space-y-8 px-6 py-10 sm:py-14">
       <div className="animate-fade-in-up">
         <div className="mb-2 flex items-center gap-3">
           <div className="rounded-xl border border-primary/10 bg-primary/[0.08] p-2.5 text-primary">
@@ -80,7 +101,7 @@ export default function HistoryPage() {
             <p className="text-sm text-muted-foreground/60">创建你的第一个数学动画吧。</p>
           </div>
           <Link
-            href="/"
+            href="/create"
             className="group inline-flex items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.08] px-5 py-2.5 text-sm text-primary transition-all duration-200 hover:border-primary/25 hover:bg-primary/12"
           >
             <Sparkles className="h-3.5 w-3.5" />
@@ -98,7 +119,11 @@ export default function HistoryPage() {
               className="animate-fade-in-up"
               style={{ animationDelay: `${Math.min(index * 0.06, 0.5)}s` }}
             >
-              <TaskCard task={task} />
+              <TaskCard
+                task={task}
+                deleting={deletingTaskId === task.id}
+                onDelete={handleDeleteTask}
+              />
             </div>
           ))}
         </div>

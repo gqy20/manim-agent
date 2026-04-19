@@ -3,16 +3,21 @@ import { useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import type { Task } from "@/types";
-import { Film, ArrowUpRight } from "lucide-react";
+import { Film, ArrowUpRight, Loader2, Trash2 } from "lucide-react";
 
 interface TaskCardProps {
   task: Task;
+  deleting?: boolean;
+  onDelete?: (task: Task) => void;
 }
 
-export function TaskCard({ task }: TaskCardProps) {
+const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "stopped"]);
+
+export function TaskCard({ task, deleting = false, onDelete }: TaskCardProps) {
   const divRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [opacity, setOpacity] = useState(0);
+  const canDelete = TERMINAL_TASK_STATUSES.has(task.status) && !!onDelete;
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!divRef.current) return;
@@ -21,14 +26,29 @@ export function TaskCard({ task }: TaskCardProps) {
   };
 
   return (
-    <Link href={`/tasks/${task.id}`} className="group block">
-      <div
-        ref={divRef}
-        onMouseMove={handleMouseMove}
-        onMouseEnter={() => setOpacity(1)}
-        onMouseLeave={() => setOpacity(0)}
-        className="relative h-full"
-      >
+    <div
+      ref={divRef}
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => setOpacity(1)}
+      onMouseLeave={() => setOpacity(0)}
+      className="group relative h-full"
+    >
+      {canDelete && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onDelete(task);
+          }}
+          disabled={deleting}
+          className="absolute right-3 top-3 z-20 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/45 text-white/35 opacity-0 transition-all duration-200 hover:border-red-400/25 hover:bg-red-500/[0.12] hover:text-red-200 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-100"
+          aria-label={`Delete task ${task.id}`}
+        >
+          {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+        </button>
+      )}
+      <Link href={`/tasks/${task.id}`} className="block h-full">
         <Card
           className="glass-card rounded-xl p-4 cursor-pointer transition-all duration-300 ease-out
             hover:border-primary/25
@@ -52,7 +72,7 @@ export function TaskCard({ task }: TaskCardProps) {
 
         <CardContent className="p-0 space-y-3">
           {/* Header row */}
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3 pr-9">
             <div className="flex items-center gap-2 min-w-0">
               <div className="p-1.5 rounded-md bg-surface/80 flex-shrink-0 group-hover:bg-primary/10 transition-colors duration-300">
                 <Film className="h-3 w-3 text-muted-foreground/50 group-hover:text-primary/60 transition-colors"/>
@@ -86,7 +106,7 @@ export function TaskCard({ task }: TaskCardProps) {
           </div>
         </CardContent>
       </Card>
-      </div>
-    </Link>
+      </Link>
+    </div>
   );
 }

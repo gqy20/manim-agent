@@ -576,28 +576,24 @@ export default function TaskDetailClient() {
   return (
     <main
       ref={containerRef}
-      className="container mx-auto flex w-full max-w-[1800px] flex-1 flex-col space-y-4 px-4 pb-6 sm:px-6 md:px-10 md:pb-8"
+      className="container mx-auto flex h-full w-full max-w-[1800px] flex-1 flex-col space-y-2 overflow-hidden px-4 pb-2 sm:px-6 md:px-10 md:pb-3"
     >
-      <div className="gsap-header flex flex-col gap-3 pt-4 lg:flex-row lg:items-start lg:justify-between md:pt-6">
+      <div className="gsap-header flex flex-col gap-2 pt-1.5 lg:flex-row lg:items-center lg:justify-between md:pt-2">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <div className="flex-shrink-0 rounded-xl border border-primary/10 bg-primary/[0.08] p-2.5 text-primary shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+          <div className="flex-shrink-0 rounded-xl border border-primary/10 bg-primary/[0.07] p-2.5 text-primary shadow-[0_0_10px_rgba(6,182,212,0.1)]">
             <Film className="h-4.5 w-4.5" />
           </div>
           <div className="min-w-0 flex-1">
             <h1 className="truncate font-mono text-lg font-semibold tracking-tight">{task.id}</h1>
-            <p className="mt-0.5 line-clamp-2 max-w-2xl text-sm text-muted-foreground sm:line-clamp-1">
+            <p className="mt-0.5 line-clamp-1 max-w-2xl text-sm text-muted-foreground">
               {task.user_text}
+            </p>
+            <p className="mt-1 truncate font-mono text-[11px] tracking-[0.14em] text-cyan-300/58">
+              {pipelineProfile}
             </p>
           </div>
         </div>
-        <div className="flex min-w-0 flex-1 items-center justify-between gap-4 lg:justify-end">
-          <div className="hidden min-w-0 flex-1 items-center justify-center lg:flex">
-            <div className="max-w-2xl px-6">
-              <div className="truncate font-mono text-[11px] tracking-[0.18em] text-cyan-300/72">
-                {pipelineProfile}
-              </div>
-            </div>
-          </div>
+        <div className="flex items-center gap-3 lg:justify-end">
           <div className="flex items-center gap-3">
             {isRunning && (
               <Button
@@ -638,14 +634,6 @@ export default function TaskDetailClient() {
         </div>
       </div>
 
-      <div className="gsap-header lg:hidden">
-        <div className="px-1 text-center">
-          <div className="truncate font-mono text-[11px] tracking-[0.16em] text-cyan-300/70">
-            {pipelineProfile}
-          </div>
-        </div>
-      </div>
-
       {eventsError && (
         <div className="gsap-header glass-card rounded-xl border border-destructive/20 bg-destructive/[0.04] p-4 text-sm text-red-400 backdrop-blur-sm">
           <strong className="font-semibold">Error:</strong> {eventsError}
@@ -657,8 +645,8 @@ export default function TaskDetailClient() {
         </div>
       )}
 
-      <div className="relative mt-4 grid gap-6 lg:grid-cols-12">
-        <div className="order-2 z-10 flex flex-col space-y-4 rounded-xl p-4 glass-card lg:order-1 lg:col-span-4 lg:sticky lg:top-8 lg:h-[calc(100dvh-10rem)] lg:self-start">
+      <div className="relative mt-2 grid min-h-0 flex-1 gap-4 lg:grid-cols-12">
+        <div className="order-2 z-10 flex min-h-0 flex-col space-y-3 rounded-xl p-3 glass-card lg:order-1 lg:col-span-4 lg:sticky lg:top-6 lg:h-[calc(100dvh-8.4rem)] lg:self-start">
           <div className="flex shrink-0 flex-col gap-3 border-b border-white/5 pb-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex w-full overflow-x-auto rounded-lg bg-black/40 p-1 sm:w-auto">
               <button 
@@ -697,11 +685,11 @@ export default function TaskDetailClient() {
           
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             {activeTab === "logs" ? (
-              <div className="flex flex-col space-y-4 h-full mt-4 flex-1 min-h-0">
+              <div className="mt-2 flex h-full min-h-0 flex-1 flex-col space-y-3">
                 <LogViewer events={logs} isRunning={isRunning} taskStatus={task.status} />
               </div>
             ) : (
-              <div className="animate-fade-in-up mt-2 flex-1 min-h-0 h-full">
+              <div className="mt-1.5 h-full min-h-0 flex-1 animate-fade-in-up">
                 <ManimScriptPanel
                   sceneFile={task.pipeline_output?.scene_file ?? null}
                   sceneClass={task.pipeline_output?.scene_class ?? null}
@@ -712,9 +700,9 @@ export default function TaskDetailClient() {
           </div>
         </div>
 
-        <div className="order-1 flex w-full flex-col space-y-4 lg:order-2 lg:col-span-8 lg:sticky lg:top-8 lg:h-[calc(100dvh-10rem)] lg:self-start">
+        <div className="order-1 flex min-h-0 w-full flex-col space-y-3 lg:order-2 lg:col-span-8 lg:sticky lg:top-6 lg:h-[calc(100dvh-8.4rem)] lg:self-start">
           <div className="flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2 text-cyan-500/70">
+            <div className="flex items-center gap-2 text-cyan-500/58">
               <Play className="h-4 w-4" />
               <h2 className="text-[11px] font-mono uppercase tracking-widest">Output Video</h2>
             </div>
