@@ -1,6 +1,6 @@
 import pytest
 
-from manim_agent.hooks import _on_pre_tool_use
+from manim_agent.hooks import _on_pre_tool_use, activate_hook_state, create_hook_state, reset_hook_state
 from manim_agent.repo_paths import resolve_repo_root
 
 
@@ -18,6 +18,23 @@ async def _call_pre_tool_use(tool_name: str, tool_input: dict, cwd: str):
 
 
 class TestHookTaskScope:
+    @pytest.mark.asyncio
+    async def test_phase_level_allowed_tools_can_block_bash(self):
+        state = create_hook_state()
+        state.allowed_tools = {"Read", "Glob", "Grep"}
+        token = activate_hook_state(state)
+        try:
+            result = await _call_pre_tool_use(
+                "Bash",
+                {"command": "manim -qh scene.py GeneratedScene"},
+                r"D:\repo\backend\output\task-1",
+            )
+        finally:
+            reset_hook_state(token)
+
+        assert result["decision"] == "block"
+        assert "Tool `Bash` is not allowed in this phase." in result["reason"]
+
     @pytest.mark.asyncio
     async def test_write_denial_includes_relative_retry_hint(self):
         result = await _call_pre_tool_use(

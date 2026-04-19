@@ -61,6 +61,34 @@ class TestBuildScenePlanPrompt:
         assert "build_spec" in result
         assert "structured_output" in result
 
+    def test_can_derive_minimal_build_spec_from_visible_plan(self):
+        from manim_agent.pipeline_phases12 import derive_scene_plan_output_from_visible_plan
+
+        plan_text = (
+            "## Mode\nproof-walkthrough\n"
+            "## Learning Goal\nUnderstand the rearrangement proof.\n"
+            "## Audience\nHigh-school students.\n"
+            "## Beat List\n"
+            "1. Introduce the right triangle.\n"
+            "2. Rearrange the copies inside the square.\n"
+            "## Narration Outline\n"
+            "1. Set up the triangle and side labels.\n"
+            "2. Explain why area is preserved.\n"
+            "## Visual Risks\nAvoid clutter.\n"
+            "## Build Handoff\nImplement with clear labels.\n"
+        )
+
+        result = derive_scene_plan_output_from_visible_plan(
+            plan_text,
+            target_duration_seconds=60,
+        )
+
+        assert result is not None
+        assert result.build_spec.mode == "proof-walkthrough"
+        assert len(result.build_spec.beats) == 2
+        assert result.build_spec.beats[0].id == "beat_001_introduce_the_right_triangle"
+        assert result.build_spec.beats[1].narration_intent == "Explain why area is preserved."
+
 
 class TestBuildImplementationPrompt:
     """Tests for _build_implementation_prompt."""
@@ -216,6 +244,7 @@ class TestPhase1ValidationLogic:
             with pytest.raises(RuntimeError, match="scene-plan"):
                 await run_phase1_planning(
                     planning_prompt="test prompt",
+                    target_duration_seconds=60,
                     planning_options=planning_options,
                     dispatcher=dispatcher,
                     event_callback=event_callback,
@@ -237,18 +266,23 @@ class TestPhase1ValidationLogic:
         assert has_visible_scene_plan([plan_text]) is True
 
     @pytest.mark.asyncio
-    async def test_phase1_requires_structured_build_spec(self):
+    async def test_phase1_requires_structured_build_spec_when_visible_plan_cannot_be_derived(self):
         from manim_agent.pipeline_phases12 import run_phase1_planning
 
         plan_text = (
             "# Scene Plan\n## Mode\neducational\n## Learning Goal\ntest\n"
             "## Audience\nuniversity students\n"
-            "## Beat List\n1. Intro\n## Narration Outline\ntest\n"
+            "## Beat List\n\n## Narration Outline\ntest\n"
             "## Visual Risks\nnone\n## Build Handoff\nok"
         )
         dispatcher = MagicMock()
         dispatcher.collected_text = [plan_text]
         dispatcher.get_scene_plan_output.return_value = None
+        dispatcher.get_phase1_failure_diagnostics.return_value = {
+            "raw_structured_output_present": False,
+            "raw_structured_output_type": None,
+            "scene_plan_validation_error": "missing build_spec",
+        }
         dispatcher.result_summary = {"turns": 1}
         dispatcher._print = MagicMock()
 
@@ -265,10 +299,16 @@ class TestPhase1ValidationLogic:
             with pytest.raises(RuntimeError, match="structured build_spec"):
                 await run_phase1_planning(
                     planning_prompt="test prompt",
+                    target_duration_seconds=60,
                     planning_options=planning_options,
                     dispatcher=dispatcher,
                     event_callback=None,
                 )
+
+        printed = "\n".join(call.args[0] for call in dispatcher._print.call_args_list if call.args)
+        assert "Structured planning output missing or invalid." in printed
+        assert "raw_structured_output_present=False" in printed
+        assert "scene_plan_validation_error=missing build_spec" in printed
 
     @pytest.mark.asyncio
     async def test_phase1_accepts_valid_structured_build_spec(self):
@@ -320,6 +360,7 @@ class TestPhase1ValidationLogic:
             mock_query.return_value = empty_iter()
             result = await run_phase1_planning(
                 planning_prompt="test prompt",
+                target_duration_seconds=60,
                 planning_options=planning_options,
                 dispatcher=dispatcher,
                 event_callback=None,
@@ -328,3 +369,49 @@ class TestPhase1ValidationLogic:
         assert result == {"turns": 1}
         assert dispatcher.partial_plan_text == plan_text
         assert dispatcher.partial_build_spec["beats"][0]["id"] == "beat_001_intro"
+
+    @pytest.mark.asyncio
+    async def test_phase1_derives_build_spec_from_visible_plan_when_structured_output_missing(self):
+        from manim_agent.pipeline_phases12 import run_phase1_planning
+
+        plan_text = (
+            "## Mode\neducational\n## Learning Goal\ntest\n"
+            "## Audience\nuniversity students\n"
+            "## Beat List\n1. Intro\n2. Proof\n"
+            "## Narration Outline\n1. Introduce the setup\n2. Explain the proof\n"
+            "## Visual Risks\nnone\n## Build Handoff\nok"
+        )
+        dispatcher = MagicMock()
+        dispatcher.collected_text = [plan_text]
+        dispatcher.get_scene_plan_output.return_value = None
+        dispatcher.get_phase1_failure_diagnostics.return_value = {
+            "raw_structured_output_present": False,
+            "raw_structured_output_type": None,
+            "scene_plan_validation_error": "missing build_spec",
+        }
+        dispatcher.result_summary = {"turns": 1}
+        dispatcher._print = MagicMock()
+
+        planning_options = MagicMock()
+        planning_options.allowed_tools = []
+        planning_options.max_turns = 16
+
+        async def empty_iter():
+            return
+            yield
+
+        with patch("manim_agent.pipeline_phases12.query") as mock_query:
+            mock_query.return_value = empty_iter()
+            result = await run_phase1_planning(
+                planning_prompt="test prompt",
+                target_duration_seconds=60,
+                planning_options=planning_options,
+                dispatcher=dispatcher,
+                event_callback=None,
+            )
+
+        assert result == {"turns": 1}
+        assert dispatcher.partial_build_spec["beats"][0]["id"] == "beat_001_intro"
+        assert dispatcher.partial_build_spec["beats"][1]["narration_intent"] == "Explain the proof"
+        printed = "\n".join(call.args[0] for call in dispatcher._print.call_args_list if call.args)
+        assert "derived minimal build_spec from the visible plan" in printed

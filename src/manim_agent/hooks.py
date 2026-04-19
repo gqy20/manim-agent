@@ -129,6 +129,7 @@ class _HookState:
 
     captured_source_code: dict[str, str] = field(default_factory=dict)
     event_callback: Any = None
+    allowed_tools: set[str] | None = None
 
 
 _hook_state_var: contextvars.ContextVar[_HookState | None] = contextvars.ContextVar(
@@ -188,9 +189,16 @@ async def _on_pre_tool_use(
     tool_name = input_data.get("tool_name", "")
     tool_input = input_data.get("tool_input", {})
     cwd = input_data.get("cwd", "")
+    hook_state = get_hook_state()
 
     deny_reason: str | None = None
-    if tool_name == "Read" and isinstance(tool_input, dict):
+    if hook_state.allowed_tools is not None and tool_name not in hook_state.allowed_tools:
+        allowed = ", ".join(sorted(hook_state.allowed_tools))
+        deny_reason = (
+            f"Tool `{tool_name}` is not allowed in this phase. "
+            f"Allowed tools: {allowed}."
+        )
+    if deny_reason is None and tool_name == "Read" and isinstance(tool_input, dict):
         file_path = tool_input.get("file_path", "")
         if (
             file_path
@@ -198,11 +206,11 @@ async def _on_pre_tool_use(
             and not _is_within_any_directory(file_path, _plugin_readonly_dirs(cwd))
         ):
             deny_reason = _read_scope_denial(file_path)
-    elif tool_name in ("Write", "Edit") and isinstance(tool_input, dict):
+    elif deny_reason is None and tool_name in ("Write", "Edit") and isinstance(tool_input, dict):
         file_path = tool_input.get("file_path", "")
         if file_path and not _is_within_directory(file_path, cwd):
             deny_reason = _write_scope_denial(file_path)
-    elif tool_name == "Bash" and isinstance(tool_input, dict):
+    elif deny_reason is None and tool_name == "Bash" and isinstance(tool_input, dict):
         command = tool_input.get("command", "")
         escaped_path = _bash_contains_out_of_scope_path(command, cwd)
         if escaped_path:

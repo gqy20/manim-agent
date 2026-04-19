@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import json
+import re
 from typing import Any
 
 from claude_agent_sdk import query
 
-from .schemas import Phase1PlanningOutput as ScenePlanOutput
+from .schemas import BuildSpec, BuildSpecBeat, Phase1PlanningOutput as ScenePlanOutput
 from .dispatcher import _MessageDispatcher
 from .pipeline_config import emit_status, resolve_plugin_dir
 from .pipeline_events import PipelineEvent
@@ -48,6 +49,85 @@ def build_scene_plan_prompt(
         "- Keep the plan compact and implementation-ready.\n"
     )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
+
+
+def _extract_markdown_section(plan_text: str, heading: str) -> str:
+    pattern = rf"(?ims)^##\s+{re.escape(heading)}\s*\n(.*?)(?=^##\s+|\Z)"
+    match = re.search(pattern, plan_text)
+    if not match:
+        return ""
+    return match.group(1).strip()
+
+
+def _extract_markdown_list_items(section_text: str) -> list[str]:
+    items: list[str] = []
+    for line in section_text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        bullet_match = re.match(r"^(?:[-*+]|(?:\d+)[.)])\s+(.*)$", stripped)
+        if bullet_match:
+            items.append(bullet_match.group(1).strip())
+        elif not items:
+            items.append(stripped)
+    return items
+
+
+def _slugify_beat_title(value: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "_", value.strip().lower())
+    slug = slug.strip("_")
+    return slug or "beat"
+
+
+def derive_scene_plan_output_from_visible_plan(
+    plan_text: str,
+    *,
+    target_duration_seconds: int,
+) -> ScenePlanOutput | None:
+    """Build a minimal valid Phase 1 structured output from the visible Markdown plan."""
+    plan_text = plan_text.strip()
+    if not plan_text:
+        return None
+
+    mode = _extract_markdown_section(plan_text, "Mode") or "explain"
+    learning_goal = _extract_markdown_section(plan_text, "Learning Goal") or "Explain the topic."
+    audience = _extract_markdown_section(plan_text, "Audience") or "General learners."
+    beat_items = _extract_markdown_list_items(_extract_markdown_section(plan_text, "Beat List"))
+    narration_items = _extract_markdown_list_items(
+        _extract_markdown_section(plan_text, "Narration Outline")
+    )
+    if not beat_items:
+        return None
+
+    safe_target_duration = max(int(target_duration_seconds), len(beat_items))
+    base_duration = safe_target_duration / len(beat_items)
+    beats: list[BuildSpecBeat] = []
+    for index, title in enumerate(beat_items, start=1):
+        narration_intent = (
+            narration_items[index - 1] if index - 1 < len(narration_items) else title
+        )
+        beats.append(
+            BuildSpecBeat(
+                id=f"beat_{index:03d}_{_slugify_beat_title(title)}",
+                title=title,
+                visual_goal=title,
+                narration_intent=narration_intent,
+                target_duration_seconds=round(base_duration, 2),
+                required_elements=[],
+                segment_required=True,
+            )
+        )
+
+    return ScenePlanOutput(
+        markdown_plan=plan_text,
+        build_spec=BuildSpec(
+            mode=mode,
+            learning_goal=learning_goal,
+            audience=audience,
+            target_duration_seconds=safe_target_duration,
+            beats=beats,
+        ),
+    )
 
 
 def build_implementation_prompt(
@@ -128,6 +208,7 @@ def build_implementation_prompt(
 
 async def run_phase1_planning(
     planning_prompt: str,
+    target_duration_seconds: int,
     planning_options: Any,
     dispatcher: _MessageDispatcher,
     event_callback: Callable[[PipelineEvent], None] | None,
@@ -164,12 +245,42 @@ async def run_phase1_planning(
     plan_text = extract_visible_scene_plan_text(dispatcher.collected_text)
     scene_plan_output = dispatcher.get_scene_plan_output()
     if scene_plan_output is None:
-        raise RuntimeError(
-            "Phase 1 planning did not return the required structured build_spec output."
+        diagnostics = dispatcher.get_phase1_failure_diagnostics()
+        fallback_output = derive_scene_plan_output_from_visible_plan(
+            plan_text,
+            target_duration_seconds=target_duration_seconds,
         )
+        if fallback_output is not None:
+            scene_plan_output = fallback_output
+            dispatcher._print("")
+            dispatcher._print(
+                "  [WARN] Structured planning output missing; derived minimal build_spec "
+                "from the visible plan."
+            )
+            if diagnostics.get("scene_plan_validation_error"):
+                dispatcher._print(
+                    "  [WARN] scene_plan_validation_error="
+                    f"{diagnostics['scene_plan_validation_error']}"
+                )
+        else:
+            dispatcher._print("")
+            dispatcher._print("  [ERR] Structured planning output missing or invalid.")
+            dispatcher._print(
+                "  [ERR] raw_structured_output_present="
+                f"{diagnostics.get('raw_structured_output_present')} "
+                f"type={diagnostics.get('raw_structured_output_type')}"
+            )
+            if diagnostics.get("scene_plan_validation_error"):
+                dispatcher._print(
+                    "  [ERR] scene_plan_validation_error="
+                    f"{diagnostics['scene_plan_validation_error']}"
+                )
+            raise RuntimeError(
+                "Phase 1 planning did not return the required structured build_spec output."
+            )
 
     dispatcher.partial_build_spec = scene_plan_output.build_spec.model_dump()
-    dispatcher.partial_target_duration_seconds = planning_options.max_turns
+    dispatcher.partial_target_duration_seconds = target_duration_seconds
     dispatcher.partial_plan_text = plan_text
     dispatcher._print("  [PLAN] Visible scene plan accepted.")
     dispatcher._print("  [PROGRESS] Phase 2/5: implementation pass")

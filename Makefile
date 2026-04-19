@@ -39,7 +39,7 @@ dev-backend-reload: ## Start FastAPI backend with reload enabled (for short conf
 
 dev-frontend: ## Start Next.js frontend dev server
 	@$(call kill-port,$(FE_PORT))
-	cd frontend && API_URL=http://$(BE_HOST):$(BE_PORT) npm run dev -- --port $(FE_PORT)
+	cd frontend && API_URL=http://$(BE_HOST):$(BE_PORT) NEXT_PUBLIC_API_URL=http://$(BE_HOST):$(BE_PORT) npm run dev -- --port $(FE_PORT)
 
 stop-backend: ## Stop backend processes bound to BE_PORT
 	@$(call kill-port,$(BE_PORT))

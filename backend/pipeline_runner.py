@@ -1,6 +1,7 @@
 """共享的 pipeline 执行逻辑，消除 routes.py 中线程/inline 双版本重复。"""
 
 import asyncio
+import json
 import logging
 import os
 import shutil
@@ -113,6 +114,33 @@ def _cleanup_output_dir(output_dir: Path, *, keep_mp4: bool = True) -> None:
                 shutil.rmtree(child, ignore_errors=True)
     except OSError:
         logger.debug("Cleanup skipped for %s", output_dir)
+
+
+def _write_failure_diagnostics(
+    *,
+    task_dir: Path,
+    dispatcher: Any | None,
+    error_message: str,
+) -> Path | None:
+    """Persist raw pipeline diagnostics for post-mortem analysis."""
+    if dispatcher is None:
+        return None
+    try:
+        task_dir.mkdir(parents=True, exist_ok=True)
+        diagnostics_path = task_dir / "phase_failure_diagnostics.json"
+        payload = {
+            "error_message": error_message,
+            "phase1": dispatcher.get_phase1_failure_diagnostics(),
+            "pipeline_output_snapshot": dispatcher.get_persistable_pipeline_output(),
+        }
+        diagnostics_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return diagnostics_path
+    except Exception:
+        logger.exception("Failed to persist pipeline diagnostics for %s", task_dir)
+        return None
 
 
 async def _pipeline_body(
@@ -277,9 +305,17 @@ async def _pipeline_body(
             for ll in line.rstrip().splitlines():
                 log_callback(f"[TRACE] {ll}")
         partial_po_data = None
+        diagnostics_path = None
         if dispatcher_ref:
             dispatcher = dispatcher_ref[0]
             partial_po_data = dispatcher.get_persistable_pipeline_output()
+            diagnostics_path = _write_failure_diagnostics(
+                task_dir=task_dir,
+                dispatcher=dispatcher,
+                error_message=error_message,
+            )
+        if diagnostics_path is not None:
+            log_callback(f"[SYS] Failure diagnostics saved: {diagnostics_path}")
         raise PipelineExecutionError(
             error_message,
             pipeline_output=partial_po_data,

@@ -106,7 +106,7 @@ def build_options(
 
     hooks = {
         "PreToolUse": [
-            HookMatcher(matcher="Read|Write|Edit|Bash", hooks=[_on_pre_tool_use]),
+            HookMatcher(matcher="Read|Write|Edit|Bash|Glob|Grep", hooks=[_on_pre_tool_use]),
         ],
         "PostToolUse": [
             HookMatcher(matcher="Write|Edit", hooks=[_on_post_tool_use]),

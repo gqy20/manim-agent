@@ -168,6 +168,9 @@ async def run_pipeline(
         # Phase 1/5: Scene Planning Pass
         # ══════════════════════════════════════════════
         planning_result_summary: dict[str, Any] | None = None
+        hook_state.allowed_tools = (
+            set(planning_options.allowed_tools) if planning_options.allowed_tools is not None else None
+        )
         planning_prompt = build_scene_plan_prompt(
             user_text,
             target_duration_seconds,
@@ -175,6 +178,7 @@ async def run_pipeline(
         )
         planning_result_summary = await run_phase1_planning(
             planning_prompt=planning_prompt,
+            target_duration_seconds=target_duration_seconds,
             planning_options=planning_options,
             dispatcher=dispatcher,
             event_callback=event_callback,
@@ -187,6 +191,9 @@ async def run_pipeline(
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2/5: implementation pass")
         if build_opts.allowed_tools:
             dispatcher._print(f"  [SYS] Allowed tools: {', '.join(build_opts.allowed_tools)}")
+        hook_state.allowed_tools = (
+            set(build_opts.allowed_tools) if build_opts.allowed_tools is not None else None
+        )
 
         # ══════════════════════════════════════════════
         # Phase 2/5: Implementation Pass
@@ -355,4 +362,5 @@ async def run_pipeline(
                 logger.debug("run_pipeline: TRACE %s", _ll)
         raise
     finally:
+        hook_state.allowed_tools = None
         reset_hook_state(hook_state_token)

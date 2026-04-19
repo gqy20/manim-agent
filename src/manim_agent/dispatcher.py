@@ -34,6 +34,22 @@ from .segment_renderer import discover_segment_video_paths
 
 logger = logging.getLogger(__name__)
 
+
+def _to_jsonable(value: Any) -> Any:
+    """Best-effort conversion for diagnostic dumps."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _to_jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_to_jsonable(v) for v in value]
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return _to_jsonable(model_dump())
+    return str(value)
+
 # ── 日志样式常量（ASCII-only，兼容 Windows 终端） ──────────────
 
 _LOG_SEPARATOR = "=" * 58
@@ -88,6 +104,9 @@ class _MessageDispatcher:
         self._structured_output_candidate: PipelineOutput | None = None
         self._result_output_candidate: PipelineOutput | None = None
         self._scene_plan_output_candidate: ScenePlanOutput | None = None
+        self.raw_result_text: str | None = None
+        self.raw_structured_output: Any = None
+        self.scene_plan_validation_error: str | None = None
         self._saw_completed_task_notification = False
         self.task_notification_status: str | None = None
         self.task_notification_summary: str | None = None
@@ -197,6 +216,25 @@ class _MessageDispatcher:
             self.scene_plan_output = self._scene_plan_output_candidate
             return self.scene_plan_output
         return None
+
+    def get_phase1_failure_diagnostics(self) -> dict[str, Any]:
+        """Return raw planning artifacts useful when Phase 1 validation fails."""
+        return {
+            "raw_structured_output_present": self.raw_structured_output is not None,
+            "raw_structured_output_type": (
+                type(self.raw_structured_output).__name__
+                if self.raw_structured_output is not None
+                else None
+            ),
+            "scene_plan_validation_error": self.scene_plan_validation_error,
+            "raw_structured_output": _to_jsonable(self.raw_structured_output),
+            "raw_result_text": self.raw_result_text,
+            "collected_text": "\n".join(self.collected_text).strip() or None,
+            "partial_plan_text": getattr(self, "partial_plan_text", None),
+            "result_summary": self.result_summary,
+            "tool_use_count": self.tool_use_count,
+            "tool_stats": dict(self.tool_stats),
+        }
 
     def get_video_output(self) -> str | None:
         """返回视频输出路径，纯便捷包装（委托给 get_pipeline_output）。"""
@@ -318,6 +356,8 @@ class _MessageDispatcher:
     def _handle_result(self, msg: ResultMessage) -> None:
         """处理 ResultMessage，记录会话摘要并尝试解析 structured_output。"""
         self._result_message = msg
+        self.raw_result_text = msg.result if isinstance(msg.result, str) else None
+        self.raw_structured_output = msg.structured_output
         logger.debug(
             "_handle_result: stop_reason=%r, is_error=%s, num_turns=%d",
             msg.stop_reason,
@@ -398,6 +438,7 @@ class _MessageDispatcher:
                     len(scene_plan_output.build_spec.beats),
                 )
             except Exception as e:
+                self.scene_plan_validation_error = str(e)
                 logger.debug("_handle_result: scene plan validation failed: %s", e)
         else:
             logger.debug("_handle_result: no structured_output")
