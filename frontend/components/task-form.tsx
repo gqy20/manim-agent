@@ -4,7 +4,6 @@ import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import gsap from "gsap";
-import { useGSAP } from "@gsap/react";
 import { Loader2, Music4, Play, SkipForward, Sparkles, Wand2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -124,8 +123,6 @@ function AnimatedCheckbox({ checked, onChange, disabled }: { checked: boolean; o
 export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
-  const leftPanelRef = useRef<HTMLDivElement>(null);
-  const rightPanelRef = useRef<HTMLDivElement>(null);
 
   const [text, setText] = useState(initialPrompt);
   const [voiceId, setVoiceId] = useState("female-tianmei");
@@ -280,33 +277,6 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
   const canSubmit = !submitting && !clarifying && !!text.trim();
   const bgmPanelVisible = bgmEnabled && !noTts;
 
-  useGSAP(
-    () => {
-      if (!formRef.current) return;
-      gsap.fromTo(
-        formRef.current,
-        { y: 20, opacity: 0, scale: 0.988 },
-        { y: 0, opacity: 1, scale: 1, duration: 0.6, ease: "power3.out", delay: 0.2 },
-      );
-
-      if (leftPanelRef.current) {
-        gsap.fromTo(
-          leftPanelRef.current,
-          { x: -18, opacity: 0 },
-          { x: 0, opacity: 1, duration: 0.55, ease: "power2.out", delay: 0.35 },
-        );
-      }
-      if (rightPanelRef.current) {
-        gsap.fromTo(
-          rightPanelRef.current,
-          { x: 18, opacity: 0 },
-          { x: 0, opacity: 1, duration: 0.55, ease: "power2.out", delay: 0.45 },
-        );
-      }
-    },
-    { scope: formRef },
-  );
-
   return (
     <form
       ref={formRef}
@@ -315,7 +285,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
     >
       <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
         {/* Left — Input */}
-        <div ref={leftPanelRef} className="flex min-h-0 flex-col gap-4">
+        <div className="flex min-h-0 flex-col gap-4">
           <div className="flex min-h-[calc(var(--app-content-height)-12.5rem)] flex-1 flex-col gap-4 rounded-2xl border border-border bg-card p-5">
             <p className="text-sm text-foreground/40">
               描述你想讲解的数学概念。
@@ -421,7 +391,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
         </div>
 
         {/* Right — Params + Actions */}
-        <aside ref={rightPanelRef} className="flex min-h-0 flex-col gap-4">
+        <aside className="flex min-h-0 flex-col gap-4">
           <div className="rounded-2xl border border-border bg-card p-4 space-y-4">
             <div>
               <h3 className="text-sm font-medium text-foreground/82">输出设置</h3>

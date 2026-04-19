@@ -251,20 +251,41 @@ function VideoPipelinePlaceholder({
 
 function DetailSkeleton() {
   return (
-    <div className="animate-fade-in-up space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center gap-4">
         <div className="skeleton h-4 w-20 rounded" />
         <div className="skeleton h-8 w-32 rounded-lg" />
       </div>
       <div className="grid gap-6 lg:grid-cols-2">
-        <div className="glass-card space-y-3 rounded-xl p-6">
-          <div className="skeleton h-3.5 w-24 rounded" />
-          <div className="skeleton h-[400px] w-full rounded-lg" />
+        <div className="glass-card overflow-hidden rounded-xl p-6">
+          <div className="skeleton mb-4 h-3.5 w-24 rounded" />
+          <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-white/5 bg-black/30">
+            <svg className="absolute inset-0 h-full w-full opacity-[0.04]" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <pattern id="skel-grid" width="24" height="24" patternUnits="userSpaceOnUse">
+                  <path d="M 24 0 L 0 0 0 24" fill="none" stroke="currentColor" strokeWidth="0.5" />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#skel-grid)" />
+            </svg>
+            <div className="video-orb video-orb-init" style={{ transform: "scale(0.6)" }}>
+              <div className="video-orb-core" style={{ inset: "18px" }} />
+              <div className="video-orb-ring video-orb-ring-primary" style={{ inset: "4px" }} />
+              <div className="video-orb-ring video-orb-ring-secondary" style={{ inset: "-8px" }} />
+              <div className="video-orb-pulse" style={{ inset: "-24px" }} />
+            </div>
+          </div>
         </div>
-        <div className="glass-card space-y-3 rounded-xl p-6">
-          <div className="skeleton h-3.5 w-16 rounded" />
-          <div className="skeleton flex h-[400px] w-full items-center justify-center rounded-lg">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/20" />
+        <div className="glass-card overflow-hidden rounded-xl p-6">
+          <div className="skeleton mb-4 h-3.5 w-16 rounded" />
+          <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg border border-white/5 bg-black/30">
+            <svg className="absolute inset-0 h-full w-full opacity-[0.04]" xmlns="http://www.w3.org/2000/svg">
+              <rect width="100%" height="100%" fill="url(#skel-grid)" />
+            </svg>
+            <div className="flex flex-col items-center gap-3">
+              <span className="font-mono text-[10px] uppercase tracking-[0.26em] text-cyan-300/40">Loading</span>
+              <div className="h-px w-16 bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
+            </div>
           </div>
         </div>
       </div>
@@ -562,7 +583,7 @@ export default function TaskDetailClient() {
   if (!task) {
     return (
       <main className="container mx-auto max-w-6xl flex-1 px-6 py-8">
-        <div className="glass-card mx-auto max-w-md animate-fade-in-up space-y-4 rounded-2xl p-12 text-center">
+        <div className="glass-card mx-auto max-w-md space-y-4 rounded-2xl p-12 text-center">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-destructive/[0.06]">
             <XCircle className="h-8 w-8 text-destructive/40" />
           </div>

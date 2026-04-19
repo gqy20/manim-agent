@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Logo } from "@/components/logo";
+import { PageTransition } from "@/components/page-transition";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -71,9 +72,11 @@ export default function RootLayout({
         </header>
 
         <ErrorBoundary>
-          <div className="flex h-full flex-1 flex-col pt-[calc(var(--app-header-height)+var(--safe-top))]">
-            {children}
-          </div>
+          <PageTransition>
+            <div className="flex h-full flex-1 flex-col pt-[calc(var(--app-header-height)+var(--safe-top))]">
+              {children}
+            </div>
+          </PageTransition>
         </ErrorBoundary>
       </body>
     </html>

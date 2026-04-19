@@ -377,22 +377,26 @@ animate-fade-scale { animation: fadeScale 0.8s cubic-bezier(0.16, 1, 0.3, 1) for
   opacity: 0.1;
 }
 
-/* ── Skeleton Loading ───────────────────────────── */
+/* ── Skeleton Loading (Manim grid-pulse) ─────────── */
 .skeleton {
-  background: linear-gradient(
-    90deg,
-    oklch(0.2 0.01 250) 25%,
-    oklch(0.23 0.012 250) 50%,
-    oklch(0.2 0.01 250) 75%
-  );
-  background-size: 200% 100%;
-  animation: skeletonPulse 1.5s ease-in-out infinite;
+  background-color: oklch(0.18 0.008 250 / 60%);
+  border: 1px solid oklch(1 0 0 / 5%);
+  background-image:
+    radial-gradient(circle at 50% 50%, oklch(0.72 0.11 250 / 4%) 1px, transparent 1px);
+  background-size: 16px 16px;
+  animation: skeletonGridPulse 2.4s ease-in-out infinite;
   border-radius: var(--radius-md);
 }
 
-@keyframes skeletonPulse {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+@keyframes skeletonGridPulse {
+  0%, 100% {
+    background-color: oklch(0.18 0.008 250 / 55%);
+    opacity: 0.7;
+  }
+  50% {
+    background-color: oklch(0.21 0.01 250 / 70%);
+    opacity: 1;
+  }
 }
 
 /* ── Log Syntax Colors ──────────────────────────── */

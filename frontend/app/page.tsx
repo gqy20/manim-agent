@@ -261,28 +261,8 @@ function FlowSteps() {
 }
 
 export default function HomePage() {
-  const mainRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    if (!mainRef.current) return;
-
-    const sections = mainRef.current.querySelectorAll<HTMLElement>("[data-stagger]");
-    gsap.fromTo(
-      sections,
-      { opacity: 0, y: 24 },
-      {
-        opacity: 1,
-        y: 0,
-        duration: 0.65,
-        stagger: 0.12,
-        ease: "cubic-bezier(0.16, 1, 0.3, 1)",
-        delay: 0.05,
-      }
-    );
-  }, []);
-
   return (
-    <main ref={mainRef} className="relative flex min-h-full flex-col items-center justify-center px-4 pb-6 pt-[var(--app-header-height)] sm:px-6 lg:px-8">
+    <main className="relative flex min-h-full flex-col items-center justify-center px-4 pb-6 pt-[var(--app-header-height)] sm:px-6 lg:px-8">
       <FloatingSymbols />
       <div className="mx-auto w-full max-w-[680px] space-y-7">
         <section data-stagger className="space-y-4 text-center pt-2">
