@@ -36,7 +36,7 @@ class TestDispatcherPipelineOutput:
         assert po.duration_seconds == 25
         assert po.render_mode == "segments"
         assert po.segment_render_complete is True
-        assert po.segment_video_paths == ["/media/segments/beat_001.mp4"]
+        assert po.segment_video_paths == [str(Path("/media/segments/beat_001.mp4").resolve())]
 
     def test_get_pipeline_output_accepts_segment_mode_without_video_output(self):
         d = _MessageDispatcher(verbose=False)
@@ -66,7 +66,7 @@ class TestDispatcherPipelineOutput:
         assert po.video_output is None
         assert po.render_mode == "segments"
         assert po.segment_render_complete is True
-        assert po.segment_video_paths == ["/media/segments/beat_001.mp4"]
+        assert po.segment_video_paths == [str(Path("/media/segments/beat_001.mp4").resolve())]
 
     def test_get_pipeline_output_none_when_no_result_signal(self):
         d = _MessageDispatcher(verbose=False)

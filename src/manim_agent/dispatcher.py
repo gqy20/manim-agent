@@ -151,6 +151,10 @@ class _MessageDispatcher:
     def get_pipeline_output(self) -> PipelineOutput | None:
         """返回验证后的 PipelineOutput（可能为 None）。"""
         if self.pipeline_output is not None:
+            if self._structured_output_candidate is not None:
+                self._merge_pipeline_output(self._structured_output_candidate)
+            if self._result_output_candidate is not None:
+                self._merge_pipeline_output(self._result_output_candidate)
             self._attach_captured_source_code("get_pipeline_output[cached]")
             if not self.pipeline_output.scene_class:
                 self.pipeline_output.scene_class = self._infer_scene_class()
@@ -616,7 +620,7 @@ class _MessageDispatcher:
             return
 
         current = self.pipeline_output
-        current.video_output = current.video_output or incoming.video_output
+        current.video_output = incoming.video_output or current.video_output
         current.final_video_output = incoming.final_video_output or current.final_video_output
         current.scene_file = incoming.scene_file or current.scene_file
         current.scene_class = incoming.scene_class or current.scene_class
@@ -832,10 +836,37 @@ class _MessageDispatcher:
             raise ValueError(f"{source} unexpected type: {type(raw).__name__}")
         validated_output = PipelineOutput.model_validate(raw)
         if validated_output.video_output:
-            validated_output.video_output = normalize_path_string(validated_output.video_output)
+            validated_output.video_output = self._normalize_output_path(
+                validated_output.video_output
+            )
+        if validated_output.final_video_output:
+            validated_output.final_video_output = self._normalize_output_path(
+                validated_output.final_video_output
+            )
         if validated_output.scene_file:
-            validated_output.scene_file = normalize_path_string(validated_output.scene_file)
+            validated_output.scene_file = self._normalize_output_path(
+                validated_output.scene_file
+            )
+        if validated_output.audio_path:
+            validated_output.audio_path = self._normalize_output_path(validated_output.audio_path)
+        if validated_output.subtitle_path:
+            validated_output.subtitle_path = self._normalize_output_path(
+                validated_output.subtitle_path
+            )
+        if validated_output.bgm_path:
+            validated_output.bgm_path = self._normalize_output_path(validated_output.bgm_path)
+        if validated_output.segment_video_paths:
+            validated_output.segment_video_paths = [
+                self._normalize_output_path(path) for path in validated_output.segment_video_paths
+            ]
         return validated_output
+
+    def _normalize_output_path(self, value: str) -> str:
+        normalized = normalize_path_string(value)
+        path = Path(normalized)
+        if not path.is_absolute() and self.output_cwd is not None:
+            return str((self.output_cwd / path).resolve())
+        return normalized
 
     def _build_scene_plan_output_from_raw(
         self,

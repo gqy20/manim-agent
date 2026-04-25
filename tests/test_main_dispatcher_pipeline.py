@@ -515,6 +515,9 @@ class TestRunPipeline:
 
     @pytest.mark.asyncio
     async def test_full_flow_with_tts(self, tmp_path):
+        render_path = tmp_path / "media" / "out.mp4"
+        render_path.parent.mkdir(parents=True, exist_ok=True)
+        render_path.write_bytes(b"render")
         mock_messages = [
             _make_assistant_message(
                 _make_text_block("render complete"),
@@ -576,6 +579,9 @@ class TestRunPipeline:
 
     @pytest.mark.asyncio
     async def test_skip_tts_mode(self, tmp_path):
+        render_path = tmp_path / "media" / "silent.mp4"
+        render_path.parent.mkdir(parents=True, exist_ok=True)
+        render_path.write_bytes(b"render")
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
@@ -622,6 +628,9 @@ class TestRunPipeline:
     async def test_no_tts_emits_authoritative_status_phases(self, tmp_path):
         from manim_agent.pipeline_events import EventType
 
+        render_path = tmp_path / "media" / "silent.mp4"
+        render_path.parent.mkdir(parents=True, exist_ok=True)
+        render_path.write_bytes(b"render")
         events = []
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
@@ -717,6 +726,9 @@ class TestRunPipeline:
     async def test_full_flow_emits_authoritative_status_phases_in_order(self, tmp_path):
         from manim_agent.pipeline_events import EventType
 
+        render_path = tmp_path / "media" / "out.mp4"
+        render_path.parent.mkdir(parents=True, exist_ok=True)
+        render_path.write_bytes(b"render")
         events = []
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
@@ -871,6 +883,9 @@ class TestAsyncioImport:
 class TestBackgroundMusic:
     @pytest.mark.asyncio
     async def test_bgm_failure_falls_back_to_voice_only_mux(self, tmp_path):
+        render_path = tmp_path / "media" / "out.mp4"
+        render_path.parent.mkdir(parents=True, exist_ok=True)
+        render_path.write_bytes(b"render")
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(

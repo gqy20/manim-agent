@@ -64,6 +64,56 @@ def _require_structured_build_bookkeeping(po: Any) -> None:
     )
 
 
+def _collect_known_artifacts(*, resolved_cwd: str, dispatcher: _MessageDispatcher) -> list[str]:
+    """Collect concrete task artifacts to use as repair evidence, not as truth source."""
+    output_dir = Path(resolved_cwd)
+    patterns = ("*.mp4", "*.mp3", "*.wav", "*.srt", "*.json", "*.py")
+    artifacts: set[str] = set()
+    for pattern in patterns:
+        for path in output_dir.rglob(pattern):
+            if path.is_file():
+                artifacts.add(str(path.resolve()))
+    if dispatcher.task_notification_output_file:
+        artifacts.add(str(Path(dispatcher.task_notification_output_file).resolve()))
+    return sorted(artifacts)
+
+
+def _phase3_gate_issue(*, po: Any, render_mode: str, resolved_cwd: str) -> str | None:
+    """Return the first blocking issue for Phase 3 delivery stability."""
+    if po is None:
+        return "missing structured pipeline output"
+
+    if not getattr(po, "implemented_beats", None):
+        return "implemented_beats is empty"
+    if not getattr(po, "build_summary", None):
+        return "build_summary is missing"
+
+    normalized_mode = render_mode.strip().lower() or "full"
+    if normalized_mode == "segments":
+        segment_video_paths = [str(path) for path in (getattr(po, "segment_video_paths", None) or []) if path]
+        if not segment_video_paths:
+            return "segment_video_paths is empty"
+        for raw_path in segment_video_paths:
+            path = Path(raw_path)
+            if not path.is_absolute():
+                path = Path(resolved_cwd) / raw_path
+            if not path.exists():
+                return f"segment video does not exist: {raw_path}"
+        if getattr(po, "segment_render_complete", None) is not True:
+            return "segment_render_complete is not true"
+        return None
+
+    video_output = getattr(po, "video_output", None)
+    if not video_output:
+        return "video_output is missing"
+    video_path = Path(video_output)
+    if not video_path.is_absolute():
+        video_path = Path(resolved_cwd) / video_output
+    if not video_path.exists():
+        return f"video_output does not exist: {video_output}"
+    return None
+
+
 # ── Frame labeling ──────────────────────────────────────────────────
 
 
@@ -267,8 +317,6 @@ async def run_phase3_render(
                 message=render_status_message,
             )
 
-    needs_build_summary = not has_structured_build_summary(po)
-    needs_narration_summary = not has_narration_sync_summary(po)
     segment_paths_for_repair = (
         [str(path) for path in (getattr(po, "segment_video_paths", None) or []) if path]
         if po is not None
@@ -279,9 +327,8 @@ async def run_phase3_render(
         and segment_paths_for_repair
         and all(Path(path).exists() for path in segment_paths_for_repair)
     )
-    if (video_output or has_segment_render_artifacts) and (
-        needs_build_summary or needs_narration_summary
-    ):
+    gate_issue = _phase3_gate_issue(po=po, render_mode=render_mode, resolved_cwd=resolved_cwd)
+    if (video_output or has_segment_render_artifacts or dispatcher.raw_result_text) and gate_issue:
         dispatcher._print(
             "  [REPAIR] Structured output is incomplete. Running a no-tools repair pass."
         )
@@ -298,8 +345,14 @@ async def run_phase3_render(
             target_duration_seconds,
             plan_text=plan_text,
             partial_output=partial_output,
+            raw_result_text=dispatcher.raw_result_text,
             video_output=None if render_mode == "segments" else repair_visual_reference,
             segment_video_paths=segment_paths_for_repair,
+            artifact_inventory=_collect_known_artifacts(
+                resolved_cwd=resolved_cwd,
+                dispatcher=dispatcher,
+            ),
+            validation_issue=gate_issue,
             render_mode=render_mode,
         )
         repair_opts = build_options(
@@ -328,8 +381,10 @@ async def run_phase3_render(
             ):
                 po.video_output = repair_visual_reference
                 video_output = repair_visual_reference
+        gate_issue = _phase3_gate_issue(po=po, render_mode=render_mode, resolved_cwd=resolved_cwd)
 
-    _require_structured_build_bookkeeping(po)
+    if gate_issue is None and has_structured_build_summary(po) and has_narration_sync_summary(po):
+        pass
 
     if po is not None and video_output and po.duration_seconds is None:
         try:
@@ -341,10 +396,10 @@ async def run_phase3_render(
 
     _require_real_segment_outputs(po=po, render_mode=render_mode)
 
-    if not video_output:
+    if gate_issue is not None:
         dispatcher._print("")
         dispatcher._print(f"{_EMOJI['cross']} Claude did not produce a valid pipeline output.")
-        dispatcher._print("  The agent may have failed to render the scene.")
+        dispatcher._print(f"  Blocking issue: {gate_issue}")
         if dispatcher.task_notification_status:
             dispatcher._print(f"  Task notification status: {dispatcher.task_notification_status}")
         if dispatcher.task_notification_summary:
@@ -377,7 +432,7 @@ async def run_phase3_render(
         raise RuntimeError(
             "Claude did not produce a valid pipeline output. "
             f"Phase 3/5 outcome status={failure_phase}. "
-            "The agent may have failed to render the scene."
+            f"Blocking issue: {gate_issue}."
         )
 
     # Render review + duration check

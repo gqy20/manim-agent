@@ -33,6 +33,9 @@ class TestPipelineAudioPhases:
     @pytest.mark.asyncio
     async def test_run_phase3_render_discovers_existing_segment_videos(self, tmp_path):
         dispatcher = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
+        render_path = tmp_path / "media" / "out.mp4"
+        render_path.parent.mkdir(parents=True, exist_ok=True)
+        render_path.write_bytes(b"render")
         po = SimpleNamespace(
             video_output="media/out.mp4",
             duration_seconds=4.0,
@@ -334,7 +337,7 @@ class TestPipelineAudioPhases:
         )
 
         with patch.object(dispatcher, "get_pipeline_output", return_value=po):
-            with pytest.raises(RuntimeError, match="Structured build bookkeeping is required"):
+            with pytest.raises(RuntimeError, match="Blocking issue: build_summary is missing"):
                 await run_phase3_render(
                     dispatcher=dispatcher,
                     hook_state=SimpleNamespace(captured_source_code={}),

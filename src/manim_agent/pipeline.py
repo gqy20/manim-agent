@@ -180,6 +180,11 @@ async def run_pipeline(
             planning_prompt=planning_prompt,
             target_duration_seconds=target_duration_seconds,
             planning_options=planning_options,
+            system_prompt=system_prompt,
+            quality=quality,
+            prompt_file=prompt_file,
+            log_callback=log_callback,
+            resolved_cwd=resolved_cwd,
             dispatcher=dispatcher,
             event_callback=event_callback,
         )

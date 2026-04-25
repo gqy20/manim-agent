@@ -140,8 +140,11 @@ def build_output_repair_prompt(
     *,
     plan_text: str,
     partial_output: dict[str, object] | None,
+    raw_result_text: str | None = None,
     video_output: str | None,
     segment_video_paths: list[str] | None = None,
+    artifact_inventory: list[str] | None = None,
+    validation_issue: str | None = None,
     render_mode: str = "full",
 ) -> str:
     """Build a no-tools repair prompt for missing structured output fields."""
@@ -154,6 +157,7 @@ def build_output_repair_prompt(
         ensure_ascii=False,
         indent=2,
     )
+    artifact_inventory = [item for item in (artifact_inventory or []) if item]
     render_artifact_guidance = (
         f"- Keep `video_output` set to `{video_output}`.\n"
         "- Preserve the existing render artifact path exactly as-is.\n"
@@ -174,8 +178,10 @@ def build_output_repair_prompt(
         f"- Target final video duration: about {target_duration}.\n"
         "- Do not use any tools in this pass.\n"
         "- Do not write, edit, render, probe, or inspect files.\n"
-        "- The render already exists and should be preserved.\n"
+        "- The render/build already happened. Do not continue the build.\n"
         "- Your only job is to return a corrected structured_output object.\n"
+        "- Use only the approved plan, the partial structured output, the raw completion text, and the provided artifact inventory.\n"
+        "- Do not invent outputs that are not supported by the provided evidence.\n"
         f"- `render_mode` remains `{render_mode}`.\n"
         f"{render_artifact_guidance}"
         "- Fill in only the missing implementation facts that require agent knowledge from the approved plan and the work you already completed.\n"
@@ -188,10 +194,53 @@ def build_output_repair_prompt(
         "- If source code was not captured, leave `source_code` as null instead of inventing it.\n"
         "- If audio/subtitle artifacts do not exist yet, keep them null.\n"
         "- Return only the corrected structured output via the schema.\n"
+    )
+    if validation_issue:
+        guidance += f"- Repair target: {validation_issue}\n"
+    if raw_result_text:
+        guidance += (
+            "\nRaw final completion text from the prior pass:\n"
+            f"{raw_result_text}\n"
+        )
+    if artifact_inventory:
+        guidance += (
+            "\nKnown artifacts already present:\n"
+            f"{json.dumps(artifact_inventory, ensure_ascii=False, indent=2)}\n"
+        )
+    guidance += (
         "\nApproved visible scene plan:\n"
         f"{plan_text}\n"
         "\nCurrent partial structured output:\n"
         f"{partial_output_json}\n"
+    )
+    return f"{normalized}{guidance}" if normalized else guidance.strip()
+
+
+def build_scene_plan_repair_prompt(
+    user_text: str,
+    target_duration_seconds: int,
+    *,
+    visible_plan_text: str,
+    validation_issue: str | None = None,
+) -> str:
+    """Build a no-tools repair prompt for missing/invalid Phase 1 structured output."""
+    normalized = user_text.strip()
+    target_duration = format_target_duration(target_duration_seconds)
+    guidance = (
+        "\n\nStructured planning repair pass:\n"
+        f"- Target final video duration: about {target_duration}.\n"
+        "- Do not use any tools in this pass.\n"
+        "- Do not write, edit, render, probe, or inspect files.\n"
+        "- Do not create a new plan. Normalize the existing visible plan into the required structured output only.\n"
+        "- Preserve the existing beat structure and beat order from the visible plan.\n"
+        "- Do not invent extra beats, sections, or implementation work.\n"
+        "- Return only the corrected structured_output object via the schema.\n"
+    )
+    if validation_issue:
+        guidance += f"- Repair target: {validation_issue}\n"
+    guidance += (
+        "\nVisible plan to normalize:\n"
+        f"{visible_plan_text}\n"
     )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 

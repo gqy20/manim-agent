@@ -11,14 +11,15 @@ from claude_agent_sdk import query
 
 from .schemas import BuildSpec, BuildSpecBeat, Phase1PlanningOutput as ScenePlanOutput
 from .dispatcher import _MessageDispatcher
-from .pipeline_config import emit_status, resolve_plugin_dir
+from .pipeline_config import build_options, emit_status, resolve_plugin_dir
 from .pipeline_events import PipelineEvent
 from .pipeline_gates import (
     extract_visible_scene_plan_text,
     has_scene_plan_skill_signature,
     has_visible_scene_plan,
 )
-from .prompt_builder import format_target_duration
+from .prompt_builder import build_scene_plan_repair_prompt, format_target_duration
+from .schemas import PhaseSchemaRegistry
 
 
 def build_scene_plan_prompt(
@@ -210,6 +211,11 @@ async def run_phase1_planning(
     planning_prompt: str,
     target_duration_seconds: int,
     planning_options: Any,
+    system_prompt: str,
+    quality: str,
+    prompt_file: str | None,
+    log_callback: Callable[[str], None] | None,
+    resolved_cwd: str,
     dispatcher: _MessageDispatcher,
     event_callback: Callable[[PipelineEvent], None] | None,
 ) -> dict[str, Any]:
@@ -246,23 +252,39 @@ async def run_phase1_planning(
     scene_plan_output = dispatcher.get_scene_plan_output()
     if scene_plan_output is None:
         diagnostics = dispatcher.get_phase1_failure_diagnostics()
-        fallback_output = derive_scene_plan_output_from_visible_plan(
-            plan_text,
-            target_duration_seconds=target_duration_seconds,
+        dispatcher._print("")
+        dispatcher._print(
+            "  [WARN] Structured planning output missing or invalid. Running a no-tools repair pass."
         )
-        if fallback_output is not None:
-            scene_plan_output = fallback_output
-            dispatcher._print("")
+        if diagnostics.get("scene_plan_validation_error"):
             dispatcher._print(
-                "  [WARN] Structured planning output missing; derived minimal build_spec "
-                "from the visible plan."
+                "  [WARN] scene_plan_validation_error="
+                f"{diagnostics['scene_plan_validation_error']}"
             )
-            if diagnostics.get("scene_plan_validation_error"):
-                dispatcher._print(
-                    "  [WARN] scene_plan_validation_error="
-                    f"{diagnostics['scene_plan_validation_error']}"
-                )
-        else:
+
+        repair_prompt = build_scene_plan_repair_prompt(
+            user_text="",
+            target_duration_seconds=target_duration_seconds,
+            visible_plan_text=plan_text,
+            validation_issue=diagnostics.get("scene_plan_validation_error")
+            or "Phase 1 planning did not return a valid structured build_spec output.",
+        )
+        repair_options = build_options(
+            cwd=resolved_cwd,
+            system_prompt=system_prompt,
+            max_turns=4,
+            prompt_file=prompt_file,
+            quality=quality,
+            log_callback=log_callback,
+            output_format=PhaseSchemaRegistry.output_format_schema("phase1_planning"),
+            use_default_output_format=False,
+            allowed_tools=[],
+        )
+        async for message in query(prompt=repair_prompt, options=repair_options):
+            dispatcher.dispatch(message)
+
+        scene_plan_output = dispatcher.get_scene_plan_output()
+        if scene_plan_output is None:
             dispatcher._print("")
             dispatcher._print("  [ERR] Structured planning output missing or invalid.")
             dispatcher._print(
@@ -270,11 +292,6 @@ async def run_phase1_planning(
                 f"{diagnostics.get('raw_structured_output_present')} "
                 f"type={diagnostics.get('raw_structured_output_type')}"
             )
-            if diagnostics.get("scene_plan_validation_error"):
-                dispatcher._print(
-                    "  [ERR] scene_plan_validation_error="
-                    f"{diagnostics['scene_plan_validation_error']}"
-                )
             raise RuntimeError(
                 "Phase 1 planning did not return the required structured build_spec output."
             )

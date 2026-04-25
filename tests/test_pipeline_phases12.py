@@ -246,6 +246,11 @@ class TestPhase1ValidationLogic:
                     planning_prompt="test prompt",
                     target_duration_seconds=60,
                     planning_options=planning_options,
+                    system_prompt="system",
+                    quality="high",
+                    prompt_file=None,
+                    log_callback=None,
+                    resolved_cwd=".",
                     dispatcher=dispatcher,
                     event_callback=event_callback,
                 )
@@ -301,6 +306,11 @@ class TestPhase1ValidationLogic:
                     planning_prompt="test prompt",
                     target_duration_seconds=60,
                     planning_options=planning_options,
+                    system_prompt="system",
+                    quality="high",
+                    prompt_file=None,
+                    log_callback=None,
+                    resolved_cwd=".",
                     dispatcher=dispatcher,
                     event_callback=None,
                 )
@@ -362,6 +372,11 @@ class TestPhase1ValidationLogic:
                 planning_prompt="test prompt",
                 target_duration_seconds=60,
                 planning_options=planning_options,
+                system_prompt="system",
+                quality="high",
+                prompt_file=None,
+                log_callback=None,
+                resolved_cwd=".",
                 dispatcher=dispatcher,
                 event_callback=None,
             )
@@ -371,7 +386,8 @@ class TestPhase1ValidationLogic:
         assert dispatcher.partial_build_spec["beats"][0]["id"] == "beat_001_intro"
 
     @pytest.mark.asyncio
-    async def test_phase1_derives_build_spec_from_visible_plan_when_structured_output_missing(self):
+    async def test_phase1_repairs_structured_build_spec_from_visible_plan(self):
+        from manim_agent.schemas import Phase1PlanningOutput as ScenePlanOutput
         from manim_agent.pipeline_phases12 import run_phase1_planning
 
         plan_text = (
@@ -383,7 +399,42 @@ class TestPhase1ValidationLogic:
         )
         dispatcher = MagicMock()
         dispatcher.collected_text = [plan_text]
-        dispatcher.get_scene_plan_output.return_value = None
+        repaired_output = ScenePlanOutput.model_validate({
+            "markdown_plan": plan_text,
+            "build_spec": {
+                "mode": "educational",
+                "learning_goal": "test",
+                "audience": "university students",
+                "target_duration_seconds": 60,
+                "beats": [
+                    {
+                        "id": "beat_001_intro",
+                        "title": "Intro",
+                        "visual_goal": "Show setup",
+                        "narration_intent": "Introduce the setup",
+                        "target_duration_seconds": 20,
+                        "required_elements": [],
+                        "segment_required": True,
+                    },
+                    {
+                        "id": "beat_002_proof",
+                        "title": "Proof",
+                        "visual_goal": "Explain the proof",
+                        "narration_intent": "Explain the proof",
+                        "target_duration_seconds": 40,
+                        "required_elements": [],
+                        "segment_required": True,
+                    },
+                ],
+            },
+        })
+        scene_plan_outputs = [None, repaired_output]
+
+        def _get_scene_plan_output():
+            value = scene_plan_outputs.pop(0)
+            return value
+
+        dispatcher.get_scene_plan_output.side_effect = _get_scene_plan_output
         dispatcher.get_phase1_failure_diagnostics.return_value = {
             "raw_structured_output_present": False,
             "raw_structured_output_type": None,
@@ -406,6 +457,11 @@ class TestPhase1ValidationLogic:
                 planning_prompt="test prompt",
                 target_duration_seconds=60,
                 planning_options=planning_options,
+                system_prompt="system",
+                quality="high",
+                prompt_file=None,
+                log_callback=None,
+                resolved_cwd=".",
                 dispatcher=dispatcher,
                 event_callback=None,
             )
@@ -414,4 +470,4 @@ class TestPhase1ValidationLogic:
         assert dispatcher.partial_build_spec["beats"][0]["id"] == "beat_001_intro"
         assert dispatcher.partial_build_spec["beats"][1]["narration_intent"] == "Explain the proof"
         printed = "\n".join(call.args[0] for call in dispatcher._print.call_args_list if call.args)
-        assert "derived minimal build_spec from the visible plan" in printed
+        assert "Running a no-tools repair pass" in printed
