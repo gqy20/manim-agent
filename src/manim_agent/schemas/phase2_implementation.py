@@ -16,6 +16,10 @@ class Phase2ImplementationOutput(BaseModel):
         default=None,
         description="Primary Manim Scene class rendered for this task.",
     )
+    video_output: str | None = Field(
+        default=None,
+        description="Path to the rendered full-scene MP4 when render_mode is full.",
+    )
     implemented_beats: list[str] = Field(
         default_factory=list,
         description="Short list of the beats that were actually implemented in code, in order.",
@@ -23,6 +27,10 @@ class Phase2ImplementationOutput(BaseModel):
     build_summary: str | None = Field(
         default=None,
         description="Short summary of what the build phase implemented.",
+    )
+    narration: str | None = Field(
+        default=None,
+        description="Natural spoken narration text for the implemented animation.",
     )
     deviations_from_plan: list[str] = Field(
         default_factory=list,

@@ -46,10 +46,11 @@ Use this skill to keep voice-over aligned with what the viewer is seeing now.
 - Is the spoken rhythm short enough to sound natural?
 - Does the narration cover the whole animation from opening to ending?
 
-## Required structured handoff
+## Pipeline handoff
 
-When this skill is used in the main pipeline, the final structured output should include:
+When this skill is used in the main pipeline, write the final narration in the
+runtime-provided implementation schema. Do not add separate narration mapping
+fields unless the active runtime schema explicitly asks for them.
 
-- `beat_to_narration_map`: one short mapping line per beat, in order
-- `narration_coverage_complete`: `true` only if the narration covers the full beat sequence
-- `estimated_narration_duration_seconds`: a compact estimate of spoken duration
+The pipeline derives beat-to-narration bookkeeping, coverage flags, and duration
+estimates from the approved Phase 1 `build_spec` plus the final narration.

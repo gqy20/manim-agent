@@ -116,6 +116,30 @@ class TestDispatcherPipelineOutput:
         assert d.get_pipeline_output() is not None
         assert d.get_scene_plan_output() is None
 
+    def test_phase2_expected_output_only_parses_phase2_schema(self):
+        d = _MessageDispatcher(verbose=False, expected_output="phase2_implementation")
+        d.dispatch(
+            _make_result_message(
+                num_turns=1,
+                result=json.dumps({"video_output": "/should/not/parse.mp4"}),
+                structured_output={
+                    "scene_file": "scene.py",
+                    "scene_class": "GeneratedScene",
+                    "video_output": "media/out.mp4",
+                    "narration": "大家好，今天我们讲解这个动画的核心过程。",
+                    "implemented_beats": ["Intro"],
+                    "build_summary": "Built the intro beat.",
+                    "deviations_from_plan": [],
+                },
+            )
+        )
+
+        phase2_output = d.get_phase2_implementation_output()
+        assert phase2_output is not None
+        assert phase2_output.video_output == "media/out.mp4"
+        assert d.pipeline_output is None
+        assert d._result_output_candidate is None
+
     def test_get_pipeline_output_none_when_no_result_signal(self):
         d = _MessageDispatcher(verbose=False)
         d.dispatch(_make_result_message(num_turns=1))

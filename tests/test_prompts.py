@@ -14,15 +14,17 @@ class TestSystemPrompt:
         assert "Manim" in prompts.SYSTEM_PROMPT or "manim" in prompts.SYSTEM_PROMPT.lower()
 
     def test_system_prompt_contains_output_format(self):
-        assert "render" in prompts.SYSTEM_PROMPT.lower() or "output" in prompts.SYSTEM_PROMPT.lower()
+        assert (
+            "render" in prompts.SYSTEM_PROMPT.lower()
+            or "output" in prompts.SYSTEM_PROMPT.lower()
+        )
 
     def test_system_prompt_contains_workflow_rules(self):
         assert "manim" in prompts.SYSTEM_PROMPT.lower() or "render" in prompts.SYSTEM_PROMPT.lower()
 
     def test_system_prompt_mentions_manim_production_plugin(self):
         assert "manim-production" in prompts.SYSTEM_PROMPT
-        assert "/scene-plan" in prompts.SYSTEM_PROMPT
-        assert "/scene-build" in prompts.SYSTEM_PROMPT
+        assert "scene-build" in prompts.SYSTEM_PROMPT
         assert "layout-safety" in prompts.SYSTEM_PROMPT
 
 
@@ -84,11 +86,37 @@ class TestGetPrompt:
         result = prompts.get_prompt("测试", cwd="/tmp/task")
         assert "manim-production" in result
 
-    def test_get_prompt_mentions_scene_plan_and_build_when_task_directory_is_set(self):
+    def test_get_prompt_mentions_scene_build_when_task_directory_is_set(self):
         result = prompts.get_prompt("测试", cwd="/tmp/task")
-        assert "/scene-plan" in result
-        assert "/scene-build" in result
+        assert "scene-build" in result
         assert "layout-safety" in result
+
+
+class TestGetImplementationPrompt:
+    def test_get_implementation_prompt_is_phase2_only(self):
+        result = prompts.get_implementation_prompt(cwd="/tmp/task")
+
+        assert "Phase 2" in result
+        assert "build_spec" in result
+        assert "TTS" in result
+        assert "muxing" in result
+        assert "# 用户需求" not in result
+
+    def test_get_implementation_prompt_mentions_skill_order(self):
+        result = prompts.get_implementation_prompt(cwd="/tmp/task")
+
+        assert "scene-build" in result
+        assert "scene-direction" in result
+        assert "layout-safety" in result
+        assert "narration-sync" in result
+        assert "render-review" in result
+
+    def test_get_implementation_prompt_validates_preset_and_quality(self):
+        with pytest.raises(ValueError, match="preset"):
+            prompts.get_implementation_prompt(preset="invalid_preset")
+
+        with pytest.raises(ValueError, match="quality"):
+            prompts.get_implementation_prompt(quality="ultra")
 
 
 class TestGetPlanningPrompt:

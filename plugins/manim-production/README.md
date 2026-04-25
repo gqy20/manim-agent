@@ -30,16 +30,17 @@ These labels are stage names and skill entry points. The runtime may require the
 
 ## Runtime gates
 
-The backend enforces a few stages as hard gates instead of treating them as optional guidance:
+The backend enforces pipeline contracts in runtime code instead of relying on
+skill text as the source of truth:
 
-- visible `scene-plan` gate before code is allowed to count as valid
-- `scene-plan` skill canary signature check in the visible plan
-- structured `scene-build` handoff fields in `structured_output`
-- structured `narration-sync` fields in `structured_output`
-- `render-review` approval before the task can succeed
-- duration-target check after render review
+- Phase 1 must return the dedicated `phase1_planning` structured output.
+- Phase 2 must return the dedicated `phase2_implementation` structured output.
+- Phase 2 validates real render artifacts before later phases continue.
+- Render review and duration checks run after implementation acceptance.
 
-These gates are implemented in runtime code, not only in prompt text.
+Skills should describe workflow and quality criteria. They should not redefine
+the pipeline output schema. The current schema contracts live in runtime code
+and `docs/phase/`.
 
 `layout-safety` is intentionally not a hard backend gate. It is an implementation-time review aid for crowded compositions, and its warnings should be interpreted with visual judgment rather than treated as automatic failures.
 

@@ -30,7 +30,7 @@ from .pipeline_events import (
     ToolResultPayload,
     ToolStartPayload,
 )
-from .schemas import Phase1PlanningOutput, PipelineOutput
+from .schemas import Phase1PlanningOutput, Phase2ImplementationOutput, PipelineOutput
 from .segment_renderer import discover_segment_video_paths
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,9 @@ class _MessageDispatcher:
         log_callback: Callable[[str], None] | None = None,
         output_cwd: str | None = None,
         hook_state: _HookState | None = None,
-        expected_output: Literal["pipeline_output", "phase1_planning"] = "pipeline_output",
+        expected_output: Literal[
+            "pipeline_output", "phase1_planning", "phase2_implementation"
+        ] = "pipeline_output",
     ) -> None:
         self.verbose = verbose
         self.log_callback = log_callback
@@ -104,9 +106,11 @@ class _MessageDispatcher:
         # ── PipelineOutput ──
         self.pipeline_output: PipelineOutput | None = None
         self.scene_plan_output: Phase1PlanningOutput | None = None
+        self.phase2_implementation_output: Phase2ImplementationOutput | None = None
         self._structured_output_candidate: PipelineOutput | None = None
         self._result_output_candidate: PipelineOutput | None = None
         self._scene_plan_output_candidate: Phase1PlanningOutput | None = None
+        self._phase2_implementation_output_candidate: Phase2ImplementationOutput | None = None
         self.raw_result_text: str | None = None
         self.raw_structured_output: Any = None
         self.scene_plan_validation_error: str | None = None
@@ -223,6 +227,15 @@ class _MessageDispatcher:
         if self._scene_plan_output_candidate is not None:
             self.scene_plan_output = self._scene_plan_output_candidate
             return self.scene_plan_output
+        return None
+
+    def get_phase2_implementation_output(self) -> Phase2ImplementationOutput | None:
+        """Return the best-known structured implementation output, if any."""
+        if self.phase2_implementation_output is not None:
+            return self.phase2_implementation_output
+        if self._phase2_implementation_output_candidate is not None:
+            self.phase2_implementation_output = self._phase2_implementation_output_candidate
+            return self.phase2_implementation_output
         return None
 
     def get_phase1_failure_diagnostics(self) -> dict[str, Any]:
@@ -459,6 +472,21 @@ class _MessageDispatcher:
             except Exception as e:
                 self.scene_plan_validation_error = str(e)
                 logger.debug("_handle_result: scene plan validation failed: %s", e)
+        if msg.structured_output is not None and self.expected_output == "phase2_implementation":
+            try:
+                phase2_output = self._build_phase2_implementation_output_from_raw(
+                    msg.structured_output,
+                    source="structured_output",
+                )
+                self._phase2_implementation_output_candidate = phase2_output
+                if self.phase2_implementation_output is None:
+                    self.phase2_implementation_output = phase2_output
+                logger.debug(
+                    "_handle_result: Phase2ImplementationOutput validated with %d beat(s)",
+                    len(phase2_output.implemented_beats),
+                )
+            except Exception as e:
+                logger.debug("_handle_result: phase2 implementation validation failed: %s", e)
         elif msg.structured_output is None:
             logger.debug("_handle_result: no structured_output")
         if self.expected_output == "pipeline_output" and msg.result:
@@ -911,6 +939,28 @@ class _MessageDispatcher:
         if not isinstance(raw, dict):
             raise ValueError(f"{source} unexpected type: {type(raw).__name__}")
         return Phase1PlanningOutput.model_validate(raw)
+
+    def _build_phase2_implementation_output_from_raw(
+        self,
+        raw: Any,
+        *,
+        source: str,
+    ) -> Phase2ImplementationOutput:
+        logger.debug(
+            "_build_phase2_implementation_output_from_raw[%s]: raw type=%s",
+            source,
+            type(raw).__name__,
+        )
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+            logger.debug(
+                "_build_phase2_implementation_output_from_raw[%s]: parsed JSON, type=%s",
+                source,
+                type(raw).__name__,
+            )
+        if not isinstance(raw, dict):
+            raise ValueError(f"{source} unexpected type: {type(raw).__name__}")
+        return Phase2ImplementationOutput.model_validate(raw)
 
     def _build_pipeline_output_from_result_text(self, raw_result: str) -> PipelineOutput | None:
         """Parse compatibility fallback output from ResultMessage.result."""

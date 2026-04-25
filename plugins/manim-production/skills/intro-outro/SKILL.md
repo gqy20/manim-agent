@@ -271,6 +271,9 @@ For detailed fallback templates per style, see `references/manim-fallback.md`.
 
 ## Structured output contract
 
+This contract is specific to the intro/outro phase. It is not part of the main
+Phase 2 implementation schema.
+
 When this skill is active, populate these fields in `PipelineOutput`:
 
 | Field | Type | When to populate |

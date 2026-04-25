@@ -147,7 +147,7 @@ educational
         assert "If you cannot produce the real beat-level MP4 files" in result
         assert "Do not mark `segment_render_complete` true as a placeholder" in result
         assert "Do not leave `implemented_beats` empty" in result
-        assert "pipeline can discover those files automatically" in result
+        assert "report those paths in structured_output" in result
 
     def test_includes_structured_build_spec_when_provided(self):
         from manim_agent.pipeline_phases12 import build_implementation_prompt
@@ -176,8 +176,9 @@ educational
             cwd=".",
         )
 
-        assert "Approved structured build specification (JSON)" in result
+        assert "Approved Phase 1 build_spec (JSON)" in result
         assert '"id": "beat_001_intro"' in result
+        assert "## Beat List" not in result
 
 
 class TestBuildOutputRepairPrompt:
@@ -480,3 +481,77 @@ class TestPhase1ValidationLogic:
         assert "2. Proof" in result
         assert "id: `beat_001_intro`" in result
         assert "segment_required: yes" in result
+
+
+class TestPhase2ImplementationLogic:
+    @pytest.mark.asyncio
+    async def test_phase2_accepts_structured_implementation_output(self, tmp_path):
+        from manim_agent.pipeline_phases12 import run_phase2_implementation
+        from manim_agent.schemas import Phase2ImplementationOutput
+
+        phase2_output = Phase2ImplementationOutput.model_validate(
+            {
+                "scene_file": "scene.py",
+                "scene_class": "GeneratedScene",
+                "video_output": "media/out.mp4",
+                "narration": "大家好，今天我们讲解这个动画的核心过程。",
+                "implemented_beats": ["Intro"],
+                "build_summary": "Built the intro beat.",
+                "deviations_from_plan": [],
+            }
+        )
+        dispatcher = MagicMock()
+        dispatcher.get_phase2_implementation_output.return_value = phase2_output
+        dispatcher.get_scene_plan_output.return_value = None
+        dispatcher.result_summary = {"turns": 1}
+        dispatcher.partial_target_duration_seconds = 60
+        dispatcher.partial_plan_text = "Plan"
+        dispatcher._print = MagicMock()
+        planning_options = MagicMock()
+
+        async def empty_iter():
+            return
+            yield
+
+        with patch("manim_agent.pipeline_phases12.query") as mock_query:
+            mock_query.return_value = empty_iter()
+            result = await run_phase2_implementation(
+                implementation_prompt="implement",
+                build_options_instance=planning_options,
+                dispatcher=dispatcher,
+                event_callback=None,
+                cli_stderr_lines=[],
+                resolved_cwd=str(tmp_path),
+            )
+
+        assert result == {"turns": 1}
+        assert (tmp_path / "phase2_implementation.json").exists()
+        assert dispatcher.pipeline_output.phase2_implementation == phase2_output
+        assert dispatcher.pipeline_output.narration == phase2_output.narration
+
+    @pytest.mark.asyncio
+    async def test_phase2_rejects_missing_structured_output(self):
+        from manim_agent.pipeline_phases12 import run_phase2_implementation
+
+        dispatcher = MagicMock()
+        dispatcher.get_phase2_implementation_output.return_value = None
+        dispatcher.raw_structured_output = None
+        dispatcher.result_summary = {"turns": 1}
+        dispatcher._print = MagicMock()
+        planning_options = MagicMock()
+
+        async def empty_iter():
+            return
+            yield
+
+        with patch("manim_agent.pipeline_phases12.query") as mock_query:
+            mock_query.return_value = empty_iter()
+            with pytest.raises(RuntimeError, match="structured implementation output"):
+                await run_phase2_implementation(
+                    implementation_prompt="implement",
+                    build_options_instance=planning_options,
+                    dispatcher=dispatcher,
+                    event_callback=None,
+                    cli_stderr_lines=[],
+                    resolved_cwd=".",
+                )

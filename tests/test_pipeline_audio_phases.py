@@ -28,7 +28,10 @@ class TestPipelineAudioPhases:
         assert "Render mode: segments." in prompt
         assert "segments/beat_001.mp4" in prompt
         assert "segment_video_paths" in prompt
-        assert "Do not treat a single full-length `video_output` as the primary deliverable" in prompt
+        assert (
+            "Do not treat a single full-length `video_output` as the primary deliverable"
+            in prompt
+        )
 
     @pytest.mark.asyncio
     async def test_run_phase3_render_discovers_existing_segment_videos(self, tmp_path):
@@ -290,6 +293,7 @@ class TestPipelineAudioPhases:
             implemented_beats=["Opening", "Main idea", "Wrap up"],
             beat_to_narration_map=["Opening -> intro", "Main idea -> explain", "Wrap up -> close"],
             build_summary="Built three beats.",
+            narration="Narration",
             deviations_from_plan=[],
             narration_coverage_complete=True,
             estimated_narration_duration_seconds=6.0,
@@ -300,7 +304,10 @@ class TestPipelineAudioPhases:
             render_mode="segments",
             segment_render_complete=False,
         )
-        with patch.object(dispatcher, "get_pipeline_output", return_value=po):
+        with (
+            patch.object(dispatcher, "get_pipeline_output", return_value=po),
+            patch("manim_agent.pipeline_phases345.query", side_effect=_empty_query),
+        ):
             with pytest.raises(RuntimeError, match="segment render outputs are required"):
                 await run_phase3_render(
                     dispatcher=dispatcher,
@@ -328,6 +335,7 @@ class TestPipelineAudioPhases:
             implemented_beats=["Opening", "Main idea"],
             beat_to_narration_map=[],
             build_summary=None,
+            narration="Narration",
             deviations_from_plan=[],
             narration_coverage_complete=None,
             estimated_narration_duration_seconds=None,
@@ -336,7 +344,10 @@ class TestPipelineAudioPhases:
             scene_class="GeneratedScene",
         )
 
-        with patch.object(dispatcher, "get_pipeline_output", return_value=po):
+        with (
+            patch.object(dispatcher, "get_pipeline_output", return_value=po),
+            patch("manim_agent.pipeline_phases345.query", side_effect=_empty_query),
+        ):
             with pytest.raises(RuntimeError, match="Blocking issue: build_summary is missing"):
                 await run_phase3_render(
                     dispatcher=dispatcher,

@@ -7,6 +7,7 @@ import pytest
 
 from manim_agent import pipeline as main_module
 from manim_agent.schemas import Phase3RenderReviewOutput as RenderReviewOutput
+
 from ._test_main_dispatcher_helpers import _make_two_stage_query_side_effect
 
 
@@ -15,6 +16,7 @@ def _phase2_output(**overrides):
         "video_output": "/out.mp4",
         "implemented_beats": ["Hook", "Main idea", "Wrap-up"],
         "build_summary": "Built the planned teaching beats.",
+        "narration": "大家好，今天我们按照计划逐步讲解这个动画，从开场到核心过程再到总结收束。",
         "deviations_from_plan": [],
     }
     data.update(overrides)
@@ -74,11 +76,15 @@ class TestStderrHandlerForwardsToCallback:
 
 class TestPipelinePhaseLogsViaCallback:
     @pytest.mark.asyncio
-    async def test_tts_phase_logs_via_callback(self):
+    async def test_tts_phase_logs_via_callback(self, tmp_path):
         logs: list[str] = []
+        (tmp_path / "out.mp4").write_bytes(b"render")
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
-            _make_result_message(num_turns=1, structured_output=_phase2_output()),
+            _make_result_message(
+                num_turns=1,
+                structured_output=_phase2_output(video_output="out.mp4"),
+            ),
         ]
 
         with (
@@ -88,10 +94,13 @@ class TestPipelinePhaseLogsViaCallback:
                 "manim_agent.video_builder.build_final_video", new_callable=AsyncMock
             ) as mock_video,
             patch(
+                "manim_agent.video_builder.concat_audios", new_callable=AsyncMock
+            ) as mock_concat_audio,
+            patch(
                 "manim_agent.render_review.extract_review_frames", new_callable=AsyncMock
             ) as mock_frames,
             patch(
-                "manim_agent.pipeline_phases345.run_render_review", new_callable=AsyncMock
+                "manim_agent.pipeline._run_render_review", new_callable=AsyncMock
             ) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
@@ -102,6 +111,7 @@ class TestPipelinePhaseLogsViaCallback:
                 word_count=42,
             )
             mock_video.return_value = "/out/final.mp4"
+            mock_concat_audio.return_value = str(tmp_path / "audio_track.mp3")
             mock_frames.return_value = []
             mock_review.return_value = RenderReviewOutput(
                 approved=True,
@@ -112,18 +122,23 @@ class TestPipelinePhaseLogsViaCallback:
 
             await main_module.run_pipeline(
                 user_text="测试 TTS 日志",
-                output_path="output/out.mp4",
+                output_path=str(tmp_path / "final.mp4"),
+                cwd=str(tmp_path),
                 log_callback=logs.append,
             )
 
         assert any("[TTS]" in line for line in logs)
 
     @pytest.mark.asyncio
-    async def test_mux_phase_logs_via_callback(self):
+    async def test_mux_phase_logs_via_callback(self, tmp_path):
         logs: list[str] = []
+        (tmp_path / "out.mp4").write_bytes(b"render")
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
-            _make_result_message(num_turns=1, structured_output=_phase2_output()),
+            _make_result_message(
+                num_turns=1,
+                structured_output=_phase2_output(video_output="out.mp4"),
+            ),
         ]
         mock_tts_result = MagicMock(
             audio_path="/tmp/audio.mp3",
@@ -139,15 +154,19 @@ class TestPipelinePhaseLogsViaCallback:
                 "manim_agent.video_builder.build_final_video", new_callable=AsyncMock
             ) as mock_video,
             patch(
+                "manim_agent.video_builder.concat_audios", new_callable=AsyncMock
+            ) as mock_concat_audio,
+            patch(
                 "manim_agent.render_review.extract_review_frames", new_callable=AsyncMock
             ) as mock_frames,
             patch(
-                "manim_agent.pipeline_phases345.run_render_review", new_callable=AsyncMock
+                "manim_agent.pipeline._run_render_review", new_callable=AsyncMock
             ) as mock_review,
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_tts.return_value = mock_tts_result
             mock_video.return_value = "/out/final.mp4"
+            mock_concat_audio.return_value = str(tmp_path / "audio_track.mp3")
             mock_frames.return_value = []
             mock_review.return_value = RenderReviewOutput(
                 approved=True,
@@ -158,7 +177,8 @@ class TestPipelinePhaseLogsViaCallback:
 
             await main_module.run_pipeline(
                 user_text="测试 MUX 日志",
-                output_path="output/out.mp4",
+                output_path=str(tmp_path / "final.mp4"),
+                cwd=str(tmp_path),
                 log_callback=logs.append,
             )
 

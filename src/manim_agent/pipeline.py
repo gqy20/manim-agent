@@ -83,8 +83,7 @@ async def run_pipeline(
         quality=quality,
         render_mode=render_mode,
     )
-    implementation_system_prompt = prompts.get_prompt(
-        user_text="",
+    implementation_system_prompt = prompts.get_implementation_prompt(
         preset=preset,
         quality=quality,
         cwd=resolved_cwd,
@@ -111,6 +110,8 @@ async def run_pipeline(
         prompt_file=prompt_file,
         quality=quality,
         log_callback=log_callback,
+        output_format=PhaseSchemaRegistry.output_format_schema("phase2_implementation"),
+        use_default_output_format=False,
     )
 
     hook_state = create_hook_state(event_callback=event_callback)
@@ -201,7 +202,7 @@ async def run_pipeline(
 
         plan_text = dispatcher.partial_plan_text
         build_spec = getattr(dispatcher, "partial_build_spec", None)
-        dispatcher.expected_output = "pipeline_output"
+        dispatcher.expected_output = "phase2_implementation"
         dispatcher.partial_render_mode = render_mode
         dispatcher.partial_segment_render_complete = False
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2/5: implementation pass")
@@ -228,6 +229,7 @@ async def run_pipeline(
             dispatcher=dispatcher,
             event_callback=event_callback,
             cli_stderr_lines=_cli_stderr_lines,
+            resolved_cwd=resolved_cwd,
         )
 
         phase2_po = dispatcher.get_pipeline_output()
@@ -236,6 +238,7 @@ async def run_pipeline(
             build_spec=build_spec,
             cwd=resolved_cwd,
             render_mode=render_mode,
+            discover_segments=False,
         )
         phase2_issue = implementation_contract_issue(
             phase2_po,
@@ -246,6 +249,15 @@ async def run_pipeline(
             raise RuntimeError(
                 f"Phase 2 implementation output is incomplete. Blocking issue: {phase2_issue}"
             )
+        dispatcher.pipeline_output = phase2_po
+        dispatcher.expected_output = "pipeline_output"
+        _emit_status(
+            event_callback,
+            task_status="running",
+            phase="scene",
+            message="Structured implementation output accepted. Resolving render output.",
+            pipeline_output=phase2_po.model_dump() if phase2_po is not None else None,
+        )
 
         result_summary = merge_result_summaries(
             planning_result_summary,

@@ -176,14 +176,17 @@ For patterns not yet in the component library:
 - For the 3Blue1Brown visual style profile (exact color hex codes, LaTeX template config, animation speed/easing preferences), read `../manim-production/references/style-3b1b.md`.
 - For common implementation mistakes and error-fix patterns, read `references/build-anti-patterns.md`.
 
-## Final response
+## Implementation handoff
 
-Include:
+When used inside the main pipeline, return implementation facts through the
+runtime-provided structured output schema. Do not redefine the schema in this
+skill.
 
-- what was built
-- whether the render succeeded
-- any deviation from the original scene plan
-- the final scene class name
-- `implemented_beats`: the beat titles actually implemented, in order
-- `build_summary`: one short summary of what the build phase delivered
-- `deviations_from_plan`: an explicit list, even if empty
+The handoff should make these facts clear:
+
+- What was built.
+- Whether the render succeeded.
+- Any deviation from the original scene plan.
+- The final scene class name.
+- Which planned beats were actually implemented, in order.
+- A short build summary.

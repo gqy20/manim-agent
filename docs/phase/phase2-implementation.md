@@ -2,17 +2,65 @@
 
 ## 目标
 
-Phase 2 根据 Phase 1 批准的可见 plan 和 `build_spec` 编写、运行并修正 Manim 场景，产出可验证的实现结果。
+Phase 2 根据 Phase 1 已验收的 `build_spec` 编写、运行并修正 Manim 场景，产出可验证的实现结果。
+
+该阶段允许使用工具，但 structured output 只走 Phase 2 专用 schema。Phase 2 不从 assistant 可见文本解析结果，不使用 `ResultMessage.result` fallback，也不通过文件扫描兜底生成实现契约。
+
+Phase 2 只负责实现和渲染，不重新规划，不做 TTS，不做 mux，不上传，不生成面向用户阅读的自由格式总结。
 
 ## 输入
 
-- `user_text`: 用户原始需求。
+来自 `pipeline.py` 和 Phase 1 冻结产物：
+
+- `user_text`: 用户原始需求，用于保留任务语义。
 - `target_duration_seconds`: 目标视频时长。
-- `plan_text`: Phase 1 验收后的可见 plan。
-- `build_spec`: Phase 1 输出的结构化构建契约。
-- `resolved_cwd`: 当前任务目录。
+- `build_spec`: Phase 1 输出的结构化构建契约，是 Phase 2 的唯一权威规划输入。
+- `resolved_cwd`: 当前任务目录，所有文件读写和渲染产物都应限制在这里。
 - `render_mode`: `full` 或 `segments`。
-- 完整 implementation system prompt，来自 `prompts.get_prompt()`。
+- Phase 2 system prompt: 来自 `prompts.get_implementation_prompt()`。
+- Phase 2 user prompt: 来自 `pipeline_phases12.build_implementation_prompt()`。
+
+`plan_text` 仍保存在 dispatcher 和数据库快照中，用于日志、人类核对和后续兼容上下文；但 Phase 2 首轮 prompt 在存在 `build_spec` 时不再同时附带完整 `plan_text`，避免同一规划内容在 Markdown 和 JSON 之间双轨漂移。
+
+## System Prompt
+
+Phase 2 不再复用通用 `prompts.get_prompt()`。
+
+当前使用 `prompts.get_implementation_prompt()`，只描述 Phase 2 边界：
+
+- 不重新规划。
+- 不做 TTS、mux、上传或最终用户总结。
+- 只实现、渲染并返回 Phase 2 structured output。
+- 所有文件限制在任务目录内。
+- 默认写 `scene.py` 和 `GeneratedScene`。
+- narration 默认返回自然简体中文。
+
+## User Prompt
+
+Phase 2 user prompt 由 `build_implementation_prompt()` 生成，负责传入任务实例数据：
+
+- 原始 `user_text`。
+- 目标时长。
+- `render_mode` 的交付要求。
+- Phase 1 的 `build_spec` JSON。
+
+当存在 `build_spec` 时，user prompt 不再附带完整 `plan_text`。如果未来出现没有 `build_spec` 的兼容路径，才会退回使用 `plan_text` 作为上下文；主流程不依赖该路径。
+
+## Skill 使用
+
+Phase 2 不禁用 tools，也不设置 `skills=[]`。运行时通过 `ClaudeAgentOptions.plugins` 注入本地 `manim-production` plugin。
+
+system prompt 要求按以下顺序把 plugin skills 作为阶段 cue 使用：
+
+1. `scene-build`: 根据 `build_spec` 实现场景。
+2. `scene-direction`: 调整视觉调度和节奏。
+3. `layout-safety`: 在密集布局或修复渲染前后做安全审查。
+4. `narration-sync`: 将最终 narration 对齐已实现 beats。
+5. `render-review`: 渲染后检查明显视觉和产物问题。
+
+这里不是 Python 代码显式调用 skill API，而是通过 Claude Agent SDK 的 plugin/skill 运行时和提示词约束让 Agent 进入对应 workflow。Agent 不应通过 shell、import、`ls`、`find` 等方式探测 plugin 是否存在。
+
+Plugin skills 只描述工作流和质量标准，不再定义主流程 output schema。Phase 2 输出字段只由 `Phase2ImplementationOutput` 定义。
 
 ## 工具权限
 
@@ -33,33 +81,123 @@ Hook 会限制任务越界：
 
 ## 输出
 
-Phase 2 主要产出 `PipelineOutput` 的实现字段：
+Agent 只允许通过 SDK structured output 返回 `Phase2ImplementationOutput`。Pipeline 使用：
 
-- `video_output` 或 segment 模式下的 `segment_video_paths`
+```python
+PhaseSchemaRegistry.output_format_schema("phase2_implementation")
+```
+
+Phase 2 输出只包含实现阶段事实：
+
+- `video_output`: `full` 模式下渲染出的主 MP4。
 - `scene_file`
 - `scene_class`
 - `narration`
 - `implemented_beats`
 - `build_summary`
 - `deviations_from_plan`
-- `beat_to_narration_map`
-- `narration_coverage_complete`
-- `estimated_narration_duration_seconds`
+- `render_mode`
+- `segment_render_complete`
+- `segment_video_paths`
+- `source_code`
+
+示例：
+
+```json
+{
+  "scene_file": "scene.py",
+  "scene_class": "GeneratedScene",
+  "video_output": "media/videos/scene/1080p60/GeneratedScene.mp4",
+  "narration": "自然口语化中文解说文本。",
+  "implemented_beats": ["Intro", "Main idea"],
+  "build_summary": "Built the requested animation flow.",
+  "deviations_from_plan": [],
+  "render_mode": "full",
+  "segment_render_complete": false,
+  "segment_video_paths": [],
+  "source_code": "from manim import *\n..."
+}
+```
+
+Phase 2 不要求 Agent 返回 `beat_to_narration_map`、`narration_coverage_complete` 或 `estimated_narration_duration_seconds`。这些字段由 pipeline 基于 Phase 1 `build_spec` 和最终 narration 本地派生，并合并到后续 `PipelineOutput`。
+
+## 解析边界
+
+进入 Phase 2 前，dispatcher 设置：
+
+```python
+expected_output = "phase2_implementation"
+```
+
+因此 Phase 2 的 `ResultMessage.structured_output` 只按 `Phase2ImplementationOutput` 验证，不同时尝试：
+
+- `PipelineOutput`
+- `ResultMessage.result` 文本 fallback
+- assistant 可见文本 JSON fallback
+- 文件系统扫描生成契约
+
+Phase 2 验收成功后，进入 Phase 3 前才切换为：
+
+```python
+expected_output = "pipeline_output"
+```
 
 ## 验收规则
 
 - `implemented_beats` 不能为空。
 - `build_summary` 不能为空。
-- `beat_to_narration_map` 不能为空。
-- `narration_coverage_complete` 必须为 true。
-- `estimated_narration_duration_seconds` 必须存在。
+- `narration` 不能为空。
+- `full` 模式下必须有真实 `video_output`，且路径指向存在的 MP4 文件。
 - `segments` 模式下必须存在真实 segment 文件，并设置 `segment_render_complete=true`。
+- Phase 2 gate 前不会自动发现或回填 `video_output` / `segment_video_paths`。
+
+## 本地派生
+
+Phase 2 验收后，pipeline 会把 `Phase2ImplementationOutput` 投影成后续阶段使用的 `PipelineOutput`。
+
+以下字段不由 Agent 输出，而是由 pipeline 基于 Phase 1 `build_spec` 和 Phase 2 narration 派生：
+
+- `beat_to_narration_map`
+- `narration_coverage_complete`
+- `estimated_narration_duration_seconds`
+- `target_duration_seconds`
+- `plan_text`
+- `phase1_planning`
+- `phase2_implementation`
+
+这样可以避免 skill 文档、prompt 和 schema 同时维护同一批派生字段。
+
+## 冻结与写库
+
+Phase 2 验收成功后立即冻结写入：
+
+```text
+backend/output/{task_id}/phase2_implementation.json
+```
+
+随后 pipeline 发出携带 Phase 2 快照的状态事件写入数据库：
+
+```json
+{
+  "task_status": "running",
+  "phase": "scene",
+  "message": "Structured implementation output accepted. Resolving render output.",
+  "pipeline_output": {
+    "...": "Phase2/PipelineOutput snapshot"
+  }
+}
+```
+
+该写入发生在 Phase 3 之前，因此可以独立核对 Phase 2 是否完成，不依赖后续 render review、TTS、mux 或最终视频是否成功。
 
 ## 传给下一阶段
 
-Phase 2 输出会先用 Phase 1 `build_spec` 回填可确定的 bookkeeping 字段，再交给 Phase 3 做渲染产物解析和质量 review。
+Phase 2 gate 通过后，Phase 3 接收已经投影好的 `PipelineOutput`，继续做渲染产物解析和质量 review。
+
+Phase 3 以后才允许 dispatcher 回到 `expected_output="pipeline_output"`，因为后续阶段处理的是全 pipeline 工作模型，而不是 Phase 2 专用契约。
 
 ## 当前风险
 
-- Agent 可能产出 video 路径但遗漏实现 bookkeeping，因此 Phase 2 gate 必须保留。
-- segment 模式对路径和真实文件存在性更敏感，需要继续加强测试。
+- skill 使用仍由 Agent 运行时和提示词共同驱动，不是代码层硬调用；如果后续 SDK 提供稳定的显式 skill selection，可以再收紧。
+- Agent 可能产出视频路径但遗漏实现 bookkeeping 或 narration，因此 Phase 2 gate 必须继续保留。
+- segment 模式对路径和真实文件存在性更敏感，需要继续加强端到端测试。

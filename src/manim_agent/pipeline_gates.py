@@ -137,6 +137,9 @@ def implementation_contract_issue(
         return "implemented_beats is empty."
     if not po.build_summary or not po.build_summary.strip():
         return "build_summary is missing."
+    narration = getattr(po, "narration", None)
+    if not narration or not narration.strip():
+        return "narration is missing."
     if len(po.beat_to_narration_map) == 0:
         return "beat_to_narration_map is empty."
     if po.narration_coverage_complete is not True:
@@ -157,6 +160,14 @@ def implementation_contract_issue(
             return "segment_render_complete is not true."
         if not all(path.exists() for path in segment_paths):
             return "segment_video_paths does not point to real files."
+    else:
+        if not po.video_output:
+            return "video_output is missing."
+        video_path = Path(po.video_output)
+        if not video_path.is_absolute():
+            video_path = Path(cwd) / po.video_output
+        if not video_path.exists():
+            return "video_output does not point to a real file."
 
     return None
 
@@ -167,6 +178,7 @@ def apply_phase2_build_spec_defaults(
     build_spec: dict | BuildSpec | None,
     cwd: str,
     render_mode: str,
+    discover_segments: bool = True,
 ) -> PipelineOutput | None:
     """Backfill deterministic Phase 2 fields from BuildSpec and real artifacts.
 
@@ -209,7 +221,7 @@ def apply_phase2_build_spec_defaults(
         )
 
     normalized_mode = (render_mode or po.render_mode or "full").strip().lower() or "full"
-    if normalized_mode == "segments":
+    if normalized_mode == "segments" and discover_segments:
         expected_paths = [
             str((Path(cwd) / "segments" / f"{beat.id}.mp4").resolve())
             for beat in ordered_beats

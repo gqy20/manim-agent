@@ -49,15 +49,22 @@ SYSTEM_PROMPT: str = """# Role
 # Plugin Usage
 The `manim-production` plugin is mandatory for every task in this environment.
 Treat the plugin as already provisioned by the runtime when the task starts.
-Do not test plugin availability with Python imports, package checks, shell probes, or filesystem heuristics.
+Do not test plugin availability with Python imports, package checks, shell probes,
+or filesystem heuristics.
 Do not use Bash, Read, ls, find, or other filesystem checks to verify whether the plugin exists.
 Do not decide to bypass the plugin workflow because a manual probe failed.
 Use the plugin as the primary workflow guide across coding, rendering, narration, and review.
-Before coding, use the approved Phase 1 `build_spec` and build plan/context instead of improvising directly in code.
+Before coding, use the approved Phase 1 `build_spec` and build plan/context
+instead of improvising directly in code.
 Apply the relevant plugin skills during build, direction, narration, and render review.
-Route the work through `/scene-build`, `/scene-direction`, `/layout-safety`, `/narration-sync`, and `/render-review` as the stage cues for this workflow.
-Use the `layout-safety` skill as an advisory audit for dense beats with labels, formulas, braces, arrows, or other objects that can overlap, and interpret its warnings with visual judgment.
-If plugin behavior seems unavailable or inconsistent, continue following the plugin workflow and report the issue in your final summary instead of switching to a non-plugin workflow.
+Route the work through `/scene-build`, `/scene-direction`, `/layout-safety`,
+`/narration-sync`, and `/render-review` as the stage cues for this workflow.
+Use the `layout-safety` skill as an advisory audit for dense beats with labels,
+formulas, braces, arrows, or other objects that can overlap, and interpret its
+warnings with visual judgment.
+If plugin behavior seems unavailable or inconsistent, continue following the
+plugin workflow and report the issue in your final summary instead of switching
+to a non-plugin workflow.
 # Working Directory
 **重要：所有文件必须写入当前工作目录（cwd），不要使用 /root/ 或其他绝对路径。**
 先用 `pwd` 确认当前目录，然后在该目录下创建和运行所有文件。
@@ -124,6 +131,49 @@ beat 字段只能使用 `id`、`title`、`visual_goal`、`narration_intent`、
 - 规划要足够紧凑，可以直接交给实现阶段。
 - 优先使用视觉递进，避免堆砌大量文字。
 - 如果用户明确要求语言，遵循用户要求；否则按简体中文解说来规划。
+"""
+
+
+IMPLEMENTATION_SYSTEM_PROMPT: str = """# Role
+You are Phase 2 of the Manim teaching-animation pipeline.
+Your only job is to turn the approved Phase 1 `build_spec` into a real Manim implementation,
+render the requested deliverable, and return the Phase 2 structured implementation facts.
+
+# Phase Boundary
+- Do not create a fresh scene plan.
+- Do not redesign the beat structure unless a tiny implementation fix is required.
+- Do not perform TTS, muxing, upload, final packaging, or user-facing summary generation.
+- Do not rely on visible text output for the contract; return SDK structured output only.
+
+# Plugin Skill Workflow
+The `manim-production` plugin is already injected by the runtime.
+Use the plugin skills as stage cues in this order:
+1. `scene-build` to implement the approved build_spec.
+2. `scene-direction` to refine visual staging and pacing.
+3. `layout-safety` to audit dense layouts before or during render fixes.
+4. `narration-sync` to align the final narration with the implemented beats.
+5. `render-review` after rendering to catch obvious visual or output issues.
+
+Do not probe the plugin with shell commands, imports, `ls`, `find`, or filesystem heuristics.
+If a skill seems unavailable, continue following this workflow and report the
+deviation in structured output.
+
+# Task Directory
+All files must stay inside the current task directory.
+Write the main script to `scene.py` unless multiple files are truly necessary.
+Use `GeneratedScene` as the main Manim Scene class unless the user explicitly asks otherwise.
+Run Manim directly from the task directory, for example: `manim -qh scene.py GeneratedScene`.
+Do not use absolute repository paths, do not cd to the repository root, and do
+not invoke `.venv/Scripts/python` directly.
+
+# Implementation Rules
+- Use Manim Community Edition imports: `from manim import *`.
+- Keep text readable and avoid dense object overlap.
+- Use waits and transitions to make the requested duration plausible.
+- If render fails, inspect the error, edit the scene, and render again.
+- Return narration in natural Simplified Chinese unless the user explicitly
+  requests another language.
+- The narration must cover the implemented flow, not collapse into a one-sentence summary.
 """
 
 
@@ -197,24 +247,34 @@ def get_prompt(
         base += (
             "\n# Task Directory\n"
             f"Your only writable workspace for this run is:\n{cwd}\n"
-            "You must create the script, run Manim, and keep the final video inside this directory.\n"
+            "You must create the script, run Manim, and keep the final video "
+            "inside this directory.\n"
             "Do not write files to the repository root or any sibling directory.\n"
             "Do not use absolute paths outside the task directory.\n"
             "If you use Bash, change into this directory first and keep all paths relative to it.\n"
-            "Run Manim directly from this directory with a command like: manim -qh scene.py GeneratedScene.\n"
-            "Do not use absolute repository paths, do not invoke .venv/Scripts/python directly, and do not cd to the repo root.\n"
-            "Always write the main Manim script to scene.py unless the user explicitly asks for multiple files.\n"
-            "Use GeneratedScene as the main Scene class name unless the user explicitly requests another class name.\n"
+            "Run Manim directly from this directory with a command like: "
+            "manim -qh scene.py GeneratedScene.\n"
+            "Do not use absolute repository paths, do not invoke "
+            ".venv/Scripts/python directly, and do not cd to the repo root.\n"
+            "Always write the main Manim script to scene.py unless the user "
+            "explicitly asks for multiple files.\n"
+            "Use GeneratedScene as the main Scene class name unless the user "
+            "explicitly requests another class name.\n"
             "Use a simple relative filename like scene.py when calling Write/Edit.\n"
             "Do not use /root, D:\\root, /tmp, or any absolute output path.\n"
             "\n# Plugin Runtime\n"
-            f"The `manim-production` plugin has already been injected by the runtime from:\n{plugin_dir}\n"
+            "The `manim-production` plugin has already been injected by the "
+            f"runtime from:\n{plugin_dir}\n"
             "This plugin path is a read-only runtime reference, not the writable task directory.\n"
-            "Do not verify the plugin with shell commands such as `ls`, `find`, or `pwd`-relative path checks.\n"
+            "Do not verify the plugin with shell commands such as `ls`, "
+            "`find`, or `pwd`-relative path checks.\n"
             "Use the plugin workflow directly instead of probing for plugin files.\n"
             "\n# Narration Requirements\n"
-            "Return structured_output.narration in natural Simplified Chinese unless the user explicitly requests another language.\n"
-            "The narration should sound like spoken explanation, stay tightly aligned with the animation beats, avoid bullet-list phrasing, and cover the full animation instead of summarizing it in one sentence.\n"
+            "Return structured_output.narration in natural Simplified Chinese "
+            "unless the user explicitly requests another language.\n"
+            "The narration should sound like spoken explanation, stay tightly "
+            "aligned with the animation beats, avoid bullet-list phrasing, and "
+            "cover the full animation instead of summarizing it in one sentence.\n"
         )
 
     # 追加预设特定指令
@@ -222,3 +282,30 @@ def get_prompt(
     full_system = base + suffix
 
     return f"{full_system}\n\n# 用户需求\n{user_text}"
+
+
+def get_implementation_prompt(
+    preset: str = "default",
+    quality: str = "high",
+    cwd: str | None = None,
+) -> str:
+    """Build the Phase 2 implementation-only system prompt."""
+    _validate_prompt_options(preset, quality)
+
+    quality_flag = QUALITY_FLAGS[quality]
+    prompt = IMPLEMENTATION_SYSTEM_PROMPT.replace("-qh", quality_flag)
+    plugin_dir = resolve_plugin_dir(cwd)
+
+    if cwd:
+        prompt += (
+            "\n# Runtime Paths\n"
+            f"Writable task directory:\n{cwd}\n"
+            f"Injected `manim-production` plugin reference:\n{plugin_dir}\n"
+            "The plugin path is read-only context, not a writable workspace.\n"
+        )
+
+    suffix = PRESET_SUFFIXES.get(preset, "")
+    if suffix:
+        prompt += suffix
+
+    return prompt

@@ -10,10 +10,10 @@ from typing import Any
 from claude_agent_sdk import query
 
 from .dispatcher import _MessageDispatcher
-from .pipeline_config import emit_status, resolve_plugin_dir
+from .pipeline_config import emit_status
 from .pipeline_events import PipelineEvent
 from .prompt_builder import format_target_duration
-from .schemas import Phase1PlanningOutput
+from .schemas import Phase1PlanningOutput, Phase2ImplementationOutput, PipelineOutput
 
 
 def build_scene_plan_prompt(
@@ -136,6 +136,48 @@ def persist_phase1_planning_output(
     return str(output_path)
 
 
+def persist_phase2_implementation_output(
+    phase2_output: Phase2ImplementationOutput,
+    *,
+    resolved_cwd: str,
+) -> str:
+    """Persist the accepted Phase 2 implementation contract after validation."""
+    output_path = Path(resolved_cwd).resolve() / "phase2_implementation.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(phase2_output.model_dump(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return str(output_path)
+
+
+def build_pipeline_output_from_phase2(
+    phase2_output: Phase2ImplementationOutput,
+    *,
+    dispatcher: _MessageDispatcher,
+    target_duration_seconds: int | None,
+    plan_text: str | None,
+) -> PipelineOutput:
+    """Project Phase 2's stage output into the pipeline-wide working model."""
+    return PipelineOutput(
+        video_output=phase2_output.video_output,
+        scene_file=phase2_output.scene_file,
+        scene_class=phase2_output.scene_class,
+        narration=phase2_output.narration,
+        implemented_beats=list(phase2_output.implemented_beats),
+        build_summary=phase2_output.build_summary,
+        deviations_from_plan=list(phase2_output.deviations_from_plan),
+        render_mode=phase2_output.render_mode,
+        segment_render_complete=phase2_output.segment_render_complete,
+        segment_video_paths=list(phase2_output.segment_video_paths),
+        source_code=phase2_output.source_code,
+        target_duration_seconds=target_duration_seconds,
+        plan_text=plan_text,
+        phase1_planning=dispatcher.get_scene_plan_output(),
+        phase2_implementation=phase2_output,
+    )
+
+
 def build_implementation_prompt(
     user_text: str,
     target_duration_seconds: int,
@@ -147,13 +189,13 @@ def build_implementation_prompt(
     """Build the implementation prompt after a planning pass has been accepted."""
     normalized = user_text.strip()
     target_duration = format_target_duration(target_duration_seconds)
-    plugin_dir = resolve_plugin_dir(cwd)
     render_mode = render_mode.strip().lower() or "full"
     render_guidance = (
         "- Render mode: full.\n"
         "- The primary visual deliverable is one full-length `video_output` MP4.\n"
         "- You may create helper clips during debugging, but the final structured "
         "output must center on the single main render.\n"
+        "- In structured_output, include `video_output` with the rendered MP4 path.\n"
     )
     if render_mode == "segments":
         render_guidance = (
@@ -174,17 +216,8 @@ def build_implementation_prompt(
     guidance = (
         "\n\nImplementation pass:\n"
         f"- Target final video duration: about {target_duration}.\n"
-        "- The approved build plan/context below was derived from Phase 1 `build_spec`. "
-        "Implement from it instead of creating a new plan.\n"
-        "- The structured build specification below is authoritative. Do not redesign "
-        "the beat structure during implementation.\n"
-        "- Continue using the runtime-injected `manim-production` plugin "
-        f"rooted at `{plugin_dir}`.\n"
-        "- Use `scene-build`, `scene-direction`, `layout-safety`, `narration-sync`, "
-        "and `render-review` through that injected plugin workflow.\n"
-        "- Use `layout-safety` as an advisory audit for dense beats and interpret warnings.\n"
-        "- The plugin location is a read-only runtime reference, not the writable task directory.\n"
-        "- Do not use shell or filesystem probes to verify plugin files during implementation.\n"
+        "- The Phase 1 `build_spec` is authoritative. Implement from it instead of "
+        "creating a new plan.\n"
         "- Preserve the planned beat order unless debugging requires a very small fix.\n"
         "- Do not begin with a fresh planning pass; begin implementation from the approved plan.\n"
         f"{render_guidance}"
@@ -197,10 +230,9 @@ def build_implementation_prompt(
         "you know: what beats were actually built, what deviated, and the final "
         "narration text.\n"
         "- The pipeline will derive beat-level narration bookkeeping, coverage flags, "
-        "and estimated narration duration from the approved build spec when possible.\n"
+        "and estimated narration duration from the approved build spec.\n"
         "- In `segments` mode, prioritize writing the real beat files to canonical "
-        "paths like `segments/<beat_id>.mp4`; the pipeline can discover those files "
-        "automatically.\n"
+        "paths like `segments/<beat_id>.mp4` and report those paths in structured_output.\n"
         "- Do not leave `implemented_beats` empty.\n"
         "- Do not omit `build_summary`.\n"
         "- Keep every file inside the task directory only.\n"
@@ -210,17 +242,16 @@ def build_implementation_prompt(
         "- Run Manim directly from the task directory with `manim scene.py GeneratedScene`.\n"
         "- Do not use absolute repository paths, do not cd to the repo root, "
         "and do not invoke `.venv/Scripts/python` directly.\n"
-        "- Return structured_output.narration as natural Simplified Chinese "
-        "unless the user explicitly requests another language.\n"
-        "- Make the narration spoken and synchronized with the animation, and cover the full flow "
-        "rather than collapsing into a one-sentence summary.\n"
-        "\nApproved build plan/context:\n"
-        f"{plan_text}\n"
     )
     if build_spec is not None:
         guidance += (
-            "\nApproved structured build specification (JSON):\n"
+            "\nApproved Phase 1 build_spec (JSON):\n"
             f"{json.dumps(build_spec, ensure_ascii=False, indent=2)}\n"
+        )
+    else:
+        guidance += (
+            "\nApproved build plan/context:\n"
+            f"{plan_text}\n"
         )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
@@ -318,6 +349,7 @@ async def run_phase2_implementation(
     dispatcher: _MessageDispatcher,
     event_callback: Callable[[PipelineEvent], None] | None,
     cli_stderr_lines: list[str],
+    resolved_cwd: str,
 ) -> dict[str, Any]:
     """Execute Phase 2: implementation pass."""
     async for message in query(prompt=implementation_prompt, options=build_options_instance):
@@ -337,5 +369,38 @@ async def run_phase2_implementation(
                 raise RuntimeError(
                     "Claude began implementation before emitting the required Phase 1 build_spec"
                 )
+
+    phase2_output = dispatcher.get_phase2_implementation_output()
+    if phase2_output is None:
+        raw_type = (
+            type(dispatcher.raw_structured_output).__name__
+            if dispatcher.raw_structured_output is not None
+            else None
+        )
+        dispatcher._print("")
+        dispatcher._print("  [ERR] Structured Phase 2 implementation output missing or invalid.")
+        dispatcher._print(
+            "  [ERR] raw_structured_output_present="
+            f"{dispatcher.raw_structured_output is not None} "
+            f"type={raw_type}"
+        )
+        raise RuntimeError(
+            "Phase 2 implementation did not return the required structured implementation output."
+        )
+
+    phase2_output_path = persist_phase2_implementation_output(
+        phase2_output,
+        resolved_cwd=resolved_cwd,
+    )
+    dispatcher.phase2_output_path = phase2_output_path
+    dispatcher.pipeline_output = build_pipeline_output_from_phase2(
+        phase2_output,
+        dispatcher=dispatcher,
+        target_duration_seconds=getattr(dispatcher, "partial_target_duration_seconds", None),
+        plan_text=getattr(dispatcher, "partial_plan_text", None),
+    )
+    dispatcher._sync_compat_attrs()
+    dispatcher._print("  [BUILD] Structured implementation output accepted.")
+    dispatcher._print(f"  [BUILD] Phase 2 contract persisted: {phase2_output_path}")
 
     return dispatcher.result_summary or {}
