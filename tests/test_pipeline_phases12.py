@@ -14,7 +14,6 @@ class TestBuildScenePlanPrompt:
         result = build_scene_plan_prompt(
             user_text="解释傅里叶变换",
             target_duration_seconds=60,
-            cwd=".",
         )
         assert isinstance(result, str)
         assert len(result) > 0
@@ -26,7 +25,6 @@ class TestBuildScenePlanPrompt:
         result = build_scene_plan_prompt(
             user_text="解释傅里叶变换",
             target_duration_seconds=60,
-            cwd=".",
         )
         assert format_target_duration(60) in result
 
@@ -36,7 +34,6 @@ class TestBuildScenePlanPrompt:
         result = build_scene_plan_prompt(
             user_text="解释傅里叶变换",
             target_duration_seconds=60,
-            cwd=".",
         )
         assert "scene-plan" not in result.lower()
         assert "plugin rooted at" not in result
@@ -48,7 +45,6 @@ class TestBuildScenePlanPrompt:
         result = build_scene_plan_prompt(
             user_text="解释傅里叶变换",
             target_duration_seconds=60,
-            cwd="D:/repo/backend/output/task123",
         )
 
         assert "D:/repo/backend/output/task123" not in result
@@ -61,7 +57,6 @@ class TestBuildScenePlanPrompt:
         result = build_scene_plan_prompt(
             user_text="",
             target_duration_seconds=30,
-            cwd=".",
         )
         assert isinstance(result, str)
 
@@ -71,11 +66,10 @@ class TestBuildScenePlanPrompt:
         result = build_scene_plan_prompt(
             user_text="测试",
             target_duration_seconds=60,
-            cwd=".",
         )
         assert "build_spec" in result
         assert "structured_output" in result
-        assert "Do not include a Markdown plan" in result
+        assert "Markdown plan" not in result
 
     def test_segments_mode_includes_segment_planning_guidance(self):
         from manim_agent.pipeline_phases12 import build_scene_plan_prompt
@@ -339,14 +333,6 @@ class TestPhase1ValidationLogic:
             "raw_structured_output_type": "dict",
             "scene_plan_validation_error": None,
         }
-        dispatcher.get_persistable_pipeline_output.return_value = {
-            "phase1_planning": {
-                "build_spec": {
-                    "mode": "proof-walkthrough",
-                },
-            },
-        }
-
         planning_options = MagicMock()
         planning_options.allowed_tools = []
         planning_options.max_turns = 16
@@ -385,6 +371,9 @@ class TestPhase1ValidationLogic:
         assert status_event.data.pipeline_output["phase1_planning"]["build_spec"]["mode"] == (
             "proof-walkthrough"
         )
+        assert status_event.data.pipeline_output["target_duration_seconds"] == 60
+        assert "## Beat List" in status_event.data.pipeline_output["plan_text"]
+        dispatcher.get_persistable_pipeline_output.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_phase1_normalizes_target_duration_and_renders_plan_text(self, tmp_path):

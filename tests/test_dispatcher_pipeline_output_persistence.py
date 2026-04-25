@@ -1,8 +1,8 @@
-from ._test_main_dispatcher_helpers import _MessageDispatcher, _make_result_message
+from ._test_main_dispatcher_helpers import _make_result_message, _MessageDispatcher
 
 
 def test_persistable_output_includes_phase1_planning():
-    d = _MessageDispatcher(verbose=False)
+    d = _MessageDispatcher(verbose=False, expected_output="phase1_planning")
     d.dispatch(
         _make_result_message(
             num_turns=1,

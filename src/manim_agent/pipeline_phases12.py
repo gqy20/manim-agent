@@ -19,7 +19,6 @@ from .schemas import Phase1PlanningOutput
 def build_scene_plan_prompt(
     user_text: str,
     target_duration_seconds: int,
-    cwd: str | None = None,
     preset: str = "default",
     quality: str = "high",
     render_mode: str = "full",
@@ -34,27 +33,11 @@ def build_scene_plan_prompt(
         f"- Preset: {preset}.\n"
         f"- Quality target: {quality}.\n"
         f"- Downstream render mode: {render_mode}.\n"
-        "- Return only the Phase 1 `structured_output` through the configured schema.\n"
-        "- Do not include a Markdown plan, JSON code block, or explanatory text "
-        "in the message body.\n"
-        "- The structured output top level must contain exactly `build_spec`; do not wrap it "
-        "in `phase1_planning` and do not add `meta`, `visual_style_directives`, or "
-        "`narration_notes`.\n"
-        "- Use `build_spec` as the single source of truth for mode, learning goal, "
-        "audience, ordered beats, visual goals, narration intents, required elements, "
-        "and segment requirements.\n"
-        "- Every beat must use fields `id`, `title`, `visual_goal`, `narration_intent`, "
-        "`target_duration_seconds`, `required_elements`, and `segment_required`; do not use "
-        "`beat_id`, `teaching_point`, or `segment_requirements`.\n"
+        "- Return the Phase 1 `build_spec` through the configured structured_output schema.\n"
         "- Do not use Bash, Read, Glob, Grep, ls, find, or path probes in this pass.\n"
         "- Do not write, edit, or render any code in this pass.\n"
         "- Keep the structured plan compact and implementation-ready.\n"
     )
-    if cwd:
-        guidance += (
-            "- The writable task directory will be provided only to later "
-            "implementation phases.\n"
-        )
     if render_mode == "segments":
         guidance += (
             "- Plan one segment-required beat per major teaching step and use stable beat ids "
@@ -106,6 +89,20 @@ def render_build_spec_markdown(
         ]
     )
     return "\n".join(lines).strip()
+
+
+def build_phase1_pipeline_output_snapshot(
+    scene_plan_output: Phase1PlanningOutput,
+    *,
+    target_duration_seconds: int,
+    plan_text: str,
+) -> dict[str, Any]:
+    """Build the minimal DB/API snapshot produced by Phase 1."""
+    return {
+        "phase1_planning": scene_plan_output.model_dump(),
+        "target_duration_seconds": target_duration_seconds,
+        "plan_text": plan_text,
+    }
 
 
 def _normalize_phase1_output(
@@ -302,7 +299,13 @@ async def run_phase1_planning(
         phase="scene",
         message="Structured build_spec accepted. Beginning implementation pass.",
         pipeline_output=(
-            dispatcher.get_persistable_pipeline_output() if event_callback is not None else None
+            build_phase1_pipeline_output_snapshot(
+                scene_plan_output,
+                target_duration_seconds=target_duration_seconds,
+                plan_text=plan_text,
+            )
+            if event_callback is not None
+            else None
         ),
     )
 

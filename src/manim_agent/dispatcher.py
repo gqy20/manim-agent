@@ -5,7 +5,7 @@ import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -83,11 +83,13 @@ class _MessageDispatcher:
         log_callback: Callable[[str], None] | None = None,
         output_cwd: str | None = None,
         hook_state: _HookState | None = None,
+        expected_output: Literal["pipeline_output", "phase1_planning"] = "pipeline_output",
     ) -> None:
         self.verbose = verbose
         self.log_callback = log_callback
         self.output_cwd = Path(output_cwd).resolve() if output_cwd else None
         self._hook_state = hook_state or get_hook_state()
+        self.expected_output = expected_output
         self.event_callback: Callable[[PipelineEvent], None] | None = None
         self.turn_count = 0
         self.tool_use_count = 0
@@ -409,7 +411,7 @@ class _MessageDispatcher:
                 str(msg.structured_output)[:500],
             )
         # ── 从 structured_output 构建 PipelineOutput（主路径）──
-        if msg.structured_output is not None:
+        if msg.structured_output is not None and self.expected_output == "pipeline_output":
             try:
                 validated_output = self._build_pipeline_output_from_raw(
                     msg.structured_output,
@@ -441,6 +443,7 @@ class _MessageDispatcher:
             except Exception as e:
                 logger.warning("structured_output validation failed: %s", e)
                 logger.debug("_handle_result: validation failed: %s", e)
+        if msg.structured_output is not None and self.expected_output == "phase1_planning":
             try:
                 scene_plan_output = self._build_scene_plan_output_from_raw(
                     msg.structured_output,
@@ -456,9 +459,9 @@ class _MessageDispatcher:
             except Exception as e:
                 self.scene_plan_validation_error = str(e)
                 logger.debug("_handle_result: scene plan validation failed: %s", e)
-        else:
+        elif msg.structured_output is None:
             logger.debug("_handle_result: no structured_output")
-        if msg.result:
+        if self.expected_output == "pipeline_output" and msg.result:
             try:
                 result_candidate = self._build_pipeline_output_from_result_text(msg.result)
                 if result_candidate is not None:
@@ -470,7 +473,11 @@ class _MessageDispatcher:
             except Exception as e:
                 logger.warning("result fallback parsing failed: %s", e)
                 logger.debug("_handle_result: result fallback validation failed: %s", e)
-        if self._result_output_candidate is None and self.collected_text:
+        if (
+            self.expected_output == "pipeline_output"
+            and self._result_output_candidate is None
+            and self.collected_text
+        ):
             try:
                 text_candidate = self._extract_pipeline_output_from_embedded_json(
                     "\n".join(self.collected_text),

@@ -2,9 +2,9 @@ import json
 from pathlib import Path
 
 from ._test_main_dispatcher_helpers import (
-    _MessageDispatcher,
-    _make_result_message,
     TaskNotificationMessage,
+    _make_result_message,
+    _MessageDispatcher,
 )
 
 
@@ -67,6 +67,54 @@ class TestDispatcherPipelineOutput:
         assert po.render_mode == "segments"
         assert po.segment_render_complete is True
         assert po.segment_video_paths == [str(Path("/media/segments/beat_001.mp4").resolve())]
+
+    def test_phase1_expected_output_only_parses_phase1_schema(self):
+        d = _MessageDispatcher(verbose=False, expected_output="phase1_planning")
+        d.dispatch(
+            _make_result_message(
+                num_turns=1,
+                result=json.dumps({"video_output": "/should/not/parse.mp4"}),
+                structured_output={
+                    "build_spec": {
+                        "mode": "teaching-animation",
+                        "learning_goal": "Explain a key idea.",
+                        "audience": "Beginners",
+                        "target_duration_seconds": 60,
+                        "beats": [
+                            {
+                                "id": "beat_001_intro",
+                                "title": "Intro",
+                                "visual_goal": "Show title card.",
+                                "narration_intent": "Set up context.",
+                                "target_duration_seconds": 12,
+                                "required_elements": ["title"],
+                                "segment_required": True,
+                            },
+                        ],
+                    },
+                },
+            )
+        )
+
+        assert d.get_scene_plan_output() is not None
+        assert d._structured_output_candidate is None
+        assert d.pipeline_output is None
+
+    def test_pipeline_expected_output_skips_phase1_schema_parse(self):
+        d = _MessageDispatcher(verbose=False, expected_output="pipeline_output")
+        d.dispatch(
+            _make_result_message(
+                num_turns=1,
+                structured_output={
+                    "video_output": "/media/out.mp4",
+                    "scene_file": "scene.py",
+                    "scene_class": "MyScene",
+                },
+            )
+        )
+
+        assert d.get_pipeline_output() is not None
+        assert d.get_scene_plan_output() is None
 
     def test_get_pipeline_output_none_when_no_result_signal(self):
         d = _MessageDispatcher(verbose=False)

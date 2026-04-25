@@ -120,6 +120,7 @@ async def run_pipeline(
         log_callback=log_callback,
         output_cwd=resolved_cwd,
         hook_state=hook_state,
+        expected_output="phase1_planning",
     )
     if _dispatcher_ref is not None:
         _dispatcher_ref.append(dispatcher)
@@ -181,7 +182,6 @@ async def run_pipeline(
         planning_prompt = build_scene_plan_prompt(
             user_text,
             target_duration_seconds,
-            cwd=None,
             preset=preset,
             quality=quality,
             render_mode=render_mode,
@@ -201,6 +201,7 @@ async def run_pipeline(
 
         plan_text = dispatcher.partial_plan_text
         build_spec = getattr(dispatcher, "partial_build_spec", None)
+        dispatcher.expected_output = "pipeline_output"
         dispatcher.partial_render_mode = render_mode
         dispatcher.partial_segment_render_complete = False
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2/5: implementation pass")
