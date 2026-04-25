@@ -10,23 +10,6 @@ const TRANSITION_PRIMARY = "#7ab4d6";
 const TRANSITION_PRIMARY_SOFT = "rgba(122, 180, 214, 0.35)";
 const TRANSITION_PRIMARY_FAINT = "rgba(122, 180, 214, 0.12)";
 
-let prevDepthGlobal = -1;
-
-function getRouteDepth(pathname: string): number {
-  if (pathname === "/") return 0;
-  if (pathname.startsWith("/create")) return 1;
-  if (pathname.startsWith("/history")) return 1;
-  if (pathname.startsWith("/tasks/")) return 2;
-  return 1;
-}
-
-function detectDirection(pathname: string): number {
-  const depth = getRouteDepth(pathname);
-  const dir = prevDepthGlobal < 0 ? 0 : depth > prevDepthGlobal ? 1 : depth < prevDepthGlobal ? -1 : 0;
-  prevDepthGlobal = depth;
-  return dir;
-}
-
 interface PathDef {
   d: string;
   length: number;
@@ -470,7 +453,7 @@ function buildVariants(direction: number) {
 
 export function PageTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const direction = detectDirection(pathname);
+  const direction = 0;
   const variants = buildVariants(direction);
   const [exiting, setExiting] = useState(false);
 
@@ -484,7 +467,7 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
         <motion.div
           key={pathname}
           variants={variants}
-          initial="initial"
+          initial={false}
           animate="animate"
           exit="exit"
           onAnimationStart={(definition) => {

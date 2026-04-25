@@ -608,13 +608,6 @@ export default function TaskDetailClient() {
   const isRunning = task.status === "running" || task.status === "pending";
   const showVideo = !!stableVideoSrc;
 
-  const liveBadge = isRunning
-    ? "Live"
-    : task.status === "completed"
-      ? "Synced"
-      : task.status === "failed"
-        ? "Failed"
-        : "Stopped";
   const voiceSummary = task.options.no_tts
     ? "No narration"
     : `${VOICE_LABELS[task.options.voice_id] ?? task.options.voice_id} / ${task.options.model}`;
