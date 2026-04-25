@@ -174,6 +174,23 @@ not invoke `.venv/Scripts/python` directly.
 - Return narration in natural Simplified Chinese unless the user explicitly
   requests another language.
 - The narration must cover the implemented flow, not collapse into a one-sentence summary.
+
+# Render-Stable Visual Rules
+- Do not put Unicode superscripts or uncommon math glyphs directly inside `Text()`,
+  especially `²`, `³`, `√`, `≤`, `≥`, or long symbolic formulas. These often
+  render as tofu boxes on Windows/Pango font fallback.
+- For simple labels without LaTeX, build exponents from separate `Text` objects,
+  for example `VGroup(Text("a"), Text("2").scale(0.55).next_to(base, UR, buff=0.02))`.
+- Use `MathTex` only when LaTeX is actually available and verified by a successful
+  render. If LaTeX is unavailable, use safe composed labels instead of Unicode glyphs.
+- Every beat must end with a readable completion frame and a short hold before the
+  next beat title appears. Do not switch the title while the previous beat's main
+  transformation is still visually incomplete.
+- For geometric area proofs and rearrangements, show the completed rearranged state
+  clearly before moving to the conclusion.
+- Final theorem/proof frames must use a simple, non-overlapping equation layout:
+  left side visual, center equality/sign, right side visual sum. Do not use nested,
+  overlapping, or ambiguous shapes for the final takeaway.
 """
 
 

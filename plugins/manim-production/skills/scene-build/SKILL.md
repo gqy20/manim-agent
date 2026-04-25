@@ -30,6 +30,12 @@ Implement Manim code from a scene plan.
 - Prefer comments that mark beat boundaries.
 - Keep each beat focused on one reveal, transform, or emphasis change.
 - Keep narration aligned to the current beat.
+- Each beat must reach a readable completion frame before the next beat title or
+  next concept appears.
+- Insert a short hold (`self.wait(0.3)` to `self.wait(0.8)`) after each completed
+  beat state so frame review can sample the intended result.
+- Do not change the title early while the previous beat's transformation is still
+  visually incomplete.
 
 ## Quality checks
 
@@ -38,6 +44,49 @@ Implement Manim code from a scene plan.
 - Confirm dense beats have been reviewed with the geometry-based layout safety check when the composition is crowded.
 - Confirm there is a clear ending frame.
 - Confirm the final narration covers all beats in order.
+
+## Render-stable labels
+
+Math labels must survive the actual Manim/Pango/font environment, not just look
+correct in source code.
+
+- Do not put Unicode superscripts or uncommon math glyphs directly in `Text()`,
+  including `²`, `³`, `√`, `≤`, `≥`, or symbolic formulas. They can render as
+  tofu boxes on Windows font fallback.
+- If LaTeX is available and has rendered successfully in this task, use `MathTex`
+  for formulas.
+- If LaTeX is unavailable, compose simple labels from safe glyphs instead of
+  Unicode math glyphs. For example, create `a^2` as a `VGroup` containing
+  `Text("a")` plus a smaller `Text("2")` positioned at the upper right.
+- Use the same safe label helper consistently for titles, object labels, final
+  formulas, and narration-adjacent captions.
+- After rendering, visually inspect sampled frames for tofu boxes (`□`) before
+  returning structured output.
+
+Example fallback helper:
+
+```python
+def safe_power_label(base_text, exponent_text="2", font_size=28, color=WHITE):
+    base = Text(base_text, font_size=font_size, color=color)
+    exp = Text(exponent_text, font_size=font_size * 0.55, color=color)
+    exp.next_to(base, UR, buff=0.02)
+    return VGroup(base, exp)
+```
+
+Use `safe_power_label("a")` instead of `Text("a²")` when LaTeX is not available.
+
+## Area-proof layout rules
+
+For Pythagorean, Zhao Shuang, dissection, rearrangement, or similar area proofs:
+
+- Show a clean completed state for the rearrangement beat before the conclusion.
+- Keep source area, equality marker, and target area in separate screen zones.
+- Final takeaway should be visually equivalent to `c^2 = a^2 + b^2`: left visual,
+  center `=`, right visual sum.
+- Avoid nested or overlapping shapes in the final proof frame unless nesting is
+  the mathematical object being explained.
+- If triangles move to reveal/rebuild squares, the final positions must be tidy
+  enough that the square regions are obvious without relying on narration.
 
 ## Animation build rules (how to write play() calls)
 

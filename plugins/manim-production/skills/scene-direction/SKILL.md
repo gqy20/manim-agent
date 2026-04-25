@@ -31,6 +31,10 @@ Use this skill to shape how the animation feels on screen.
 - Introduce new text only when it supports the focal object instead of competing with it.
 - Prefer transforms, parameter changes, reveals, and highlighting over replacing the whole frame with a new static layout.
 - If a conclusion matters, animate the transition that creates it.
+- A beat is not finished until the viewer can see its completed state without
+  relying on narration. Hold that state briefly before introducing the next title.
+- Do not let title text lead the animation by a beat. The title should name the
+  state currently being shown, not the state that will appear next.
 
 ## Density rules
 
@@ -44,6 +48,23 @@ Use this skill to shape how the animation feels on screen.
 - End on a stable takeaway frame.
 - The ending should clearly resolve the question, construction, or proof introduced earlier.
 - Prefer visual recall or a final highlighted relationship over a generic bullet summary.
+- For proof/equivalence endings, use a left-to-right visual equation: source
+  object or area on the left, `=` or equivalence cue in the center, result on the
+  right. Keep these zones separated.
+- Avoid final frames where objects overlap, nest ambiguously, or require the
+  viewer to infer which shapes are being added.
+- If the final line is a theorem such as `c^2 = a^2 + b^2`, the graphic above it
+  must communicate the same relationship, not a different composition.
+
+## Mathematical text direction
+
+- Treat rendered math text as visual material. It must be readable in sampled
+  frames, not merely syntactically correct in source.
+- Avoid Unicode superscripts and uncommon symbols in `Text()` labels. Prefer
+  `MathTex` after a successful LaTeX render, or manually composed labels such as
+  a base `Text("a")` plus a smaller upper-right `Text("2")`.
+- Watch for tofu boxes (`□`) in titles, captions, formulas, and object labels;
+  these are blocking issues, not minor style issues.
 
 ## Motion direction rules (how things move)
 

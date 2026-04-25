@@ -111,6 +111,14 @@ class TestGetImplementationPrompt:
         assert "narration-sync" in result
         assert "render-review" in result
 
+    def test_get_implementation_prompt_contains_render_stable_generation_rules(self):
+        result = prompts.get_implementation_prompt(cwd="/tmp/task")
+
+        assert "Unicode superscripts" in result
+        assert "tofu boxes" in result
+        assert "completion frame" in result
+        assert "final theorem" in result.lower()
+
     def test_get_implementation_prompt_validates_preset_and_quality(self):
         with pytest.raises(ValueError, match="preset"):
             prompts.get_implementation_prompt(preset="invalid_preset")

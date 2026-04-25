@@ -35,6 +35,14 @@ Phase 2 不再复用通用 `prompts.get_prompt()`。
 - 默认写 `scene.py` 和 `GeneratedScene`。
 - narration 默认返回自然简体中文。
 
+Phase 2 system prompt 还负责约束可稳定渲染的生成方式：
+
+- 不在 `Text()` 中直接使用 Unicode 上标或非常用数学符号，例如 `²`、`³`、`√`、`≤`、`≥`。
+- 只有在当前任务中确认 LaTeX 能成功渲染后，才使用 `MathTex` 表达公式；否则用多个安全 `Text` 对象组合上标标签。
+- 每个 beat 必须先到达清晰可读的完成态，并短暂停留，再切换到下一个 beat 标题。
+- 几何割补、重排、等积证明类动画必须展示干净的重排完成态，再进入结论。
+- 最终证明画面应使用不重叠的等式布局：左侧视觉对象，中间等号或等价提示，右侧视觉和。
+
 ## User Prompt
 
 Phase 2 user prompt 由 `build_implementation_prompt()` 生成，负责传入任务实例数据：
