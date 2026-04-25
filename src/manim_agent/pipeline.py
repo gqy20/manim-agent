@@ -88,6 +88,11 @@ async def run_pipeline(
         quality=quality,
         cwd=resolved_cwd,
     )
+    render_review_system_prompt = prompts.get_render_review_prompt(
+        preset=preset,
+        quality=quality,
+        cwd=resolved_cwd,
+    )
 
     planning_options = _build_options(
         cwd=resolved_cwd,
@@ -281,7 +286,7 @@ async def run_pipeline(
             result_summary=result_summary,
             target_duration_seconds=target_duration_seconds,
             resolved_cwd=resolved_cwd,
-            system_prompt=implementation_system_prompt,
+            system_prompt=render_review_system_prompt,
             quality=quality,
             prompt_file=prompt_file,
             log_callback=log_callback,

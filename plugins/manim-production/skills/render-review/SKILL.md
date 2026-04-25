@@ -21,7 +21,7 @@ Use this skill after rendering and before reporting success.
 ## Review workflow
 
 1. **MUST read every frame image** using the Read tool — this is not optional.
-2. For each frame, provide a structured visual assessment (see *Per-frame assessment* below).
+2. For each frame, form a concrete visual assessment using the criteria below.
 3. Compare assessments against the intended scene structure if a plan is available.
 4. Decide whether the render is acceptable or must be revised.
 5. If revision is needed, explain the blocking issues concretely enough for the next build pass.
@@ -51,18 +51,19 @@ Mark the render as blocked if any of these are true:
 - Labels, formulas, or focal objects compete so strongly that the main idea is unclear.
 - Vision analysis reports `illegible` labels on a frame that should show readable content.
 
-## Review output
+## Pipeline handoff
 
-- Return a short summary.
-- Return `approved: false` if any blocking issue is present.
-- Return `vision_analysis_used: true` if you performed per-frame visual analysis via Read.
-- Return `frame_analyses` with one entry per frame containing:
-  - `frame_path`: path to the image file
-  - `timestamp_label`: beat-aligned label (e.g. "beat_1__Intro")
-  - `visual_assessment`: free-text description of what the frame shows
-  - `issues_found`: list of specific problems in this frame
-- List each blocking issue as a concise standalone item.
-- Add concrete suggested edits that tell the next build pass what to change.
+When this skill is used in the main pipeline, return the review through the
+runtime-provided structured output schema. Do not redefine the schema in this
+skill.
+
+The handoff should make these facts clear:
+
+- Whether the render is acceptable.
+- What visual evidence supports the decision.
+- Which sampled frames were inspected.
+- Which issues are blocking versus optional suggestions.
+- What the next build pass should change if revision is needed.
 
 ## What to avoid
 

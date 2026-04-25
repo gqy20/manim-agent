@@ -6,7 +6,12 @@ import pytest
 from manim_agent.beat_schema import AudioOrchestrationResult, BeatSpec, TimelineSpec
 from manim_agent.dispatcher import _MessageDispatcher
 from manim_agent.pipeline_phases12 import build_implementation_prompt
-from manim_agent.pipeline_phases345 import run_phase3_render, run_phase4_tts, run_phase5_mux
+from manim_agent.pipeline_phases345 import (
+    run_phase3_render,
+    run_phase4_tts,
+    run_phase5_mux,
+    run_render_review,
+)
 from manim_agent.segment_renderer import SegmentRenderPlan
 
 
@@ -181,7 +186,7 @@ class TestPipelineAudioPhases:
         mock_concat.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_run_phase3_render_repairs_segment_first_output_without_video_output(
+    async def test_run_phase3_render_rejects_incomplete_segment_output_without_repair(
         self, tmp_path
     ):
         dispatcher = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
@@ -200,87 +205,94 @@ class TestPipelineAudioPhases:
             render_mode="segments",
             segment_render_complete=True,
         )
-        repaired_po = SimpleNamespace(
-            video_output=None,
-            duration_seconds=1.5,
-            implemented_beats=["Opening"],
-            beat_to_narration_map=["Opening -> intro"],
-            build_summary="Built one beat.",
-            deviations_from_plan=[],
-            narration_coverage_complete=True,
-            estimated_narration_duration_seconds=1.5,
-            segment_video_paths=[str(tmp_path / "segments" / "beat_001.mp4")],
-            scene_file=None,
-            scene_class=None,
-            render_mode="segments",
-            segment_render_complete=True,
-        )
         segment_a = tmp_path / "segments" / "beat_001.mp4"
         segment_a.parent.mkdir(parents=True, exist_ok=True)
         segment_a.write_bytes(b"a")
-        review_track = tmp_path / "review_visual_track.mp4"
-        review_result = SimpleNamespace(
-            summary="Looks good.",
-            approved=True,
-            blocking_issues=[],
-            suggested_edits=[],
-            frame_analyses=[],
-            vision_analysis_used=False,
-        )
-        get_po_calls = {"value": 0}
-
-        def _get_pipeline_output():
-            get_po_calls["value"] += 1
-            return po if get_po_calls["value"] == 1 else repaired_po
 
         with (
-            patch.object(dispatcher, "get_pipeline_output", side_effect=_get_pipeline_output),
+            patch.object(dispatcher, "get_pipeline_output", return_value=po),
             patch(
                 "manim_agent.pipeline_phases345.concat_videos",
                 new_callable=AsyncMock,
-                return_value=str(review_track),
-            ),
-            patch(
-                "manim_agent.pipeline_phases345.extract_review_frames",
-                new_callable=AsyncMock,
-                return_value=["frame_1.png"],
-            ),
-            patch(
-                "manim_agent.pipeline_phases345.run_render_review",
-                new_callable=AsyncMock,
-                return_value=review_result,
-            ),
-            patch(
-                "manim_agent.pipeline_phases345._get_duration",
-                new_callable=AsyncMock,
-                return_value=1.5,
+                return_value=str(tmp_path / "review_visual_track.mp4"),
             ),
             patch(
                 "manim_agent.pipeline_phases345.query",
                 side_effect=_empty_query,
             ) as mock_query,
         ):
-            result_po, video_output, review_frames = await run_phase3_render(
-                dispatcher=dispatcher,
-                hook_state=SimpleNamespace(captured_source_code={}),
-                user_text="Explain a concept",
-                plan_text="Plan",
-                result_summary=None,
-                target_duration_seconds=30,
-                resolved_cwd=str(tmp_path),
-                system_prompt="system",
-                quality="high",
-                prompt_file=None,
-                log_callback=None,
-                event_callback=None,
-                cli_stderr_lines=[],
-                render_mode="segments",
+            with pytest.raises(RuntimeError, match="build_summary is missing"):
+                await run_phase3_render(
+                    dispatcher=dispatcher,
+                    hook_state=SimpleNamespace(captured_source_code={}),
+                    user_text="Explain a concept",
+                    plan_text="Plan",
+                    result_summary=None,
+                    target_duration_seconds=30,
+                    resolved_cwd=str(tmp_path),
+                    system_prompt="system",
+                    quality="high",
+                    prompt_file=None,
+                    log_callback=None,
+                    event_callback=None,
+                    cli_stderr_lines=[],
+                    render_mode="segments",
+                )
+
+        assert not mock_query.called
+
+    @pytest.mark.asyncio
+    async def test_run_render_review_accepts_structured_verdict(self, tmp_path):
+        from claude_agent_sdk import ResultMessage
+
+        frame = tmp_path / "frame.png"
+        frame.write_bytes(b"png")
+
+        async def _review_query(*_args, **_kwargs):
+            yield ResultMessage(
+                subtype="result",
+                duration_ms=1000,
+                duration_api_ms=900,
+                is_error=False,
+                num_turns=1,
+                session_id="sess-review",
+                total_cost_usd=0.01,
+                usage={},
+                structured_output={
+                    "approved": True,
+                    "summary": "Readable and coherent.",
+                    "blocking_issues": [],
+                    "suggested_edits": [],
+                    "frame_analyses": [
+                        {
+                            "frame_path": str(frame),
+                            "timestamp_label": "opening",
+                            "visual_assessment": "The opening is readable.",
+                            "issues_found": [],
+                        }
+                    ],
+                    "vision_analysis_used": True,
+                },
             )
 
-        assert result_po is repaired_po
-        assert video_output == str(review_track)
-        assert review_frames == ["frame_1.png"]
-        assert mock_query.called
+        with patch("manim_agent.pipeline_phases345.query", side_effect=_review_query):
+            result = await run_render_review(
+                user_text="Explain a concept",
+                plan_text="Plan",
+                video_output=str(tmp_path / "phase2_video.mp4"),
+                frame_paths=[str(frame)],
+                target_duration_seconds=30,
+                actual_duration_seconds=28.0,
+                cwd=str(tmp_path),
+                system_prompt="review system",
+                quality="high",
+                log_callback=None,
+                implemented_beats=["Opening"],
+            )
+
+        assert result.approved is True
+        assert result.summary == "Readable and coherent."
+        assert result.vision_analysis_used is True
 
     @pytest.mark.asyncio
     async def test_run_phase3_render_rejects_segments_mode_without_real_segment_outputs(

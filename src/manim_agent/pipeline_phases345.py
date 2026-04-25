@@ -18,7 +18,6 @@ from .pipeline_gates import (
     duration_target_issue,
     has_narration_sync_summary,
     has_structured_build_summary,
-    merge_result_summaries,
     narration_is_too_short_for_video,
 )
 from .prompt_builder import format_target_duration
@@ -51,31 +50,6 @@ def _require_real_segment_outputs(*, po: Any, render_mode: str) -> None:
         "High-quality segment render outputs are required in segments mode. "
         "No real segment render outputs were produced."
     )
-
-
-def _require_structured_build_bookkeeping(po: Any) -> None:
-    """Fail fast when the implementation pass skipped required bookkeeping."""
-    if has_structured_build_summary(po) and has_narration_sync_summary(po):
-        return
-
-    raise RuntimeError(
-        "Structured build bookkeeping is required. "
-        "Missing implemented beat bookkeeping, build summary, or narration sync metadata."
-    )
-
-
-def _collect_known_artifacts(*, resolved_cwd: str, dispatcher: _MessageDispatcher) -> list[str]:
-    """Collect concrete task artifacts to use as repair evidence, not as truth source."""
-    output_dir = Path(resolved_cwd)
-    patterns = ("*.mp4", "*.mp3", "*.wav", "*.srt", "*.json", "*.py")
-    artifacts: set[str] = set()
-    for pattern in patterns:
-        for path in output_dir.rglob(pattern):
-            if path.is_file():
-                artifacts.add(str(path.resolve()))
-    if dispatcher.task_notification_output_file:
-        artifacts.add(str(Path(dispatcher.task_notification_output_file).resolve()))
-    return sorted(artifacts)
 
 
 def _phase3_gate_issue(*, po: Any, render_mode: str, resolved_cwd: str) -> str | None:
@@ -176,23 +150,18 @@ async def run_render_review(
     )
     review_prompt = (
         "Use the `render-review` skill to review this rendered Manim video.\n"
-        "Do not write, edit, or render anything in this pass. Only review the output.\n\n"
-        "## MANDATORY: Visual Analysis of Each Frame\n"
-        "You MUST use the Read tool to examine EVERY frame image file listed below.\n"
-        "For each frame, provide a visual assessment covering:\n"
-        "- What is visibly on screen (objects, text, formulas, labels, arrows)\n"
-        "- Visual density (sparse / balanced / crowded)\n"
-        "- Whether the focal point is clear and unambiguous\n"
-        "- Label and formula readability (clear / partially obscured / illegible)\n"
-        "- Any visual issues (overlap, cutoff, too small, wrong position, etc.)\n\n"
+        "Only review the existing render. Do not write, edit, or render anything.\n"
+        "Read every sampled frame listed below before returning the structured verdict.\n\n"
         f"Original user request:\n{user_text}\n\n"
         "Duration target:\n"
         f"- requested runtime: about {format_target_duration(target_duration_seconds)}\n"
         f"- measured render runtime: {measured_duration}\n\n"
-        "Approved build plan/context:\n"
+        "Approved build context:\n"
         f"{plan_text or '(no plan text available)'}\n\n"
+        "Implemented beats:\n"
+        f"{', '.join(implemented_beats or []) or '(not provided)'}\n\n"
         f"Rendered video path:\n- {video_output}\n\n"
-        "Sampled review frames (MUST read each one):\n"
+        "Sampled review frames:\n"
         f"{labeled_frames}\n"
     )
 
@@ -208,7 +177,8 @@ async def run_render_review(
 
     result_message: ResultMessage | None = None
     async for message in query(prompt=review_prompt, options=review_opts):
-        pass
+        if isinstance(message, ResultMessage):
+            result_message = message
 
     if result_message is None or result_message.structured_output is None:
         raise RuntimeError("Render review did not produce a structured verdict.")
@@ -239,12 +209,10 @@ async def run_phase3_render(
     cli_stderr_lines: list[str],
     render_mode: str = "full",
 ) -> tuple[Any, str | None, list[str]]:
-    """Execute Phase 3: resolve render output, optional repair, frame review.
+    """Execute Phase 3: resolve render output and frame review.
 
     Returns (po, video_output, review_frames).
     """
-    from . import prompt_builder
-
     dispatcher._print(f"  {_EMOJI['gear']} Phase 3/5: resolve render output")
     logger.debug(
         "run_pipeline: phase2: dispatcher.video_output before extraction = %r",
@@ -319,72 +287,7 @@ async def run_phase3_render(
                 message=render_status_message,
             )
 
-    segment_paths_for_repair = (
-        [str(path) for path in (getattr(po, "segment_video_paths", None) or []) if path]
-        if po is not None
-        else []
-    )
-    has_segment_render_artifacts = bool(
-        render_mode == "segments"
-        and segment_paths_for_repair
-        and all(Path(path).exists() for path in segment_paths_for_repair)
-    )
     gate_issue = _phase3_gate_issue(po=po, render_mode=render_mode, resolved_cwd=resolved_cwd)
-    if (video_output or has_segment_render_artifacts or dispatcher.raw_result_text) and gate_issue:
-        dispatcher._print(
-            "  [REPAIR] Structured output is incomplete. Running a no-tools repair pass."
-        )
-        repair_visual_reference = video_output
-        try:
-            partial_output = dispatcher.get_persistable_pipeline_output()
-        except AttributeError:
-            if po is not None and hasattr(po, "__dict__"):
-                partial_output = dict(vars(po))
-            else:
-                partial_output = None
-        repair_prompt = prompt_builder.build_output_repair_prompt(
-            user_text,
-            target_duration_seconds,
-            plan_text=plan_text,
-            partial_output=partial_output,
-            raw_result_text=dispatcher.raw_result_text,
-            video_output=None if render_mode == "segments" else repair_visual_reference,
-            segment_video_paths=segment_paths_for_repair,
-            artifact_inventory=_collect_known_artifacts(
-                resolved_cwd=resolved_cwd,
-                dispatcher=dispatcher,
-            ),
-            validation_issue=gate_issue,
-            render_mode=render_mode,
-        )
-        repair_opts = build_options(
-            cwd=resolved_cwd,
-            system_prompt=system_prompt,
-            max_turns=6,
-            prompt_file=prompt_file,
-            quality=quality,
-            log_callback=log_callback,
-            allowed_tools=[],
-        )
-        async for message in query(prompt=repair_prompt, options=repair_opts):
-            dispatcher.dispatch(message)
-
-        repair_result_summary = dispatcher.result_summary
-        result_summary = merge_result_summaries(result_summary, repair_result_summary)
-        po = dispatcher.get_pipeline_output()
-        if po is not None:
-            _populate_po_metadata(
-                po, dispatcher, result_summary, target_duration_seconds, plan_text
-            )
-            if (
-                render_mode == "segments"
-                and not getattr(po, "video_output", None)
-                and repair_visual_reference
-            ):
-                po.video_output = repair_visual_reference
-                video_output = repair_visual_reference
-        gate_issue = _phase3_gate_issue(po=po, render_mode=render_mode, resolved_cwd=resolved_cwd)
-
     if gate_issue is None and has_structured_build_summary(po) and has_narration_sync_summary(po):
         pass
 

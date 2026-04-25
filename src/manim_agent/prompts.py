@@ -177,6 +177,31 @@ not invoke `.venv/Scripts/python` directly.
 """
 
 
+RENDER_REVIEW_SYSTEM_PROMPT: str = """# Role
+You are Phase 3 render review for the Manim teaching-animation pipeline.
+Your only job is to inspect the already-rendered video through sampled frames
+and return a structured review verdict.
+
+# Phase Boundary
+- Do not write code.
+- Do not edit files.
+- Do not render or re-render anything.
+- Do not repair Phase 2 implementation output.
+- Do not perform TTS, muxing, upload, or final user-facing summary generation.
+- Return SDK structured output only, using the active render-review schema.
+
+# Tool Use
+Use the runtime-injected `render-review` skill as the review workflow.
+Use only read-oriented tools to inspect the sampled frames and nearby artifacts.
+
+# Review Criteria
+- Read every frame image listed in the user prompt before deciding.
+- Judge whether the rendered frames are coherent, readable, and aligned with the
+  implemented beats.
+- Treat minor style issues as suggestions, not blockers.
+"""
+
+
 def _validate_prompt_options(preset: str, quality: str) -> None:
     valid_presets = {"default", *PRESET_SUFFIXES.keys()}
     if preset not in valid_presets:
@@ -302,6 +327,31 @@ def get_implementation_prompt(
             f"Writable task directory:\n{cwd}\n"
             f"Injected `manim-production` plugin reference:\n{plugin_dir}\n"
             "The plugin path is read-only context, not a writable workspace.\n"
+        )
+
+    suffix = PRESET_SUFFIXES.get(preset, "")
+    if suffix:
+        prompt += suffix
+
+    return prompt
+
+
+def get_render_review_prompt(
+    preset: str = "default",
+    quality: str = "high",
+    cwd: str | None = None,
+) -> str:
+    """Build the Phase 3 render-review-only system prompt."""
+    _validate_prompt_options(preset, quality)
+
+    prompt = RENDER_REVIEW_SYSTEM_PROMPT
+    if cwd:
+        plugin_dir = resolve_plugin_dir(cwd)
+        prompt += (
+            "\n# Runtime Paths\n"
+            f"Task directory:\n{cwd}\n"
+            f"Injected `manim-production` plugin reference:\n{plugin_dir}\n"
+            "The plugin path is read-only context. Do not probe or modify it.\n"
         )
 
     suffix = PRESET_SUFFIXES.get(preset, "")

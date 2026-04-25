@@ -119,6 +119,23 @@ class TestGetImplementationPrompt:
             prompts.get_implementation_prompt(quality="ultra")
 
 
+class TestGetRenderReviewPrompt:
+    def test_get_render_review_prompt_is_phase3_only(self):
+        result = prompts.get_render_review_prompt(cwd="/tmp/task")
+
+        assert "Phase 3" in result
+        assert "render review" in result.lower()
+        assert "Do not write code" in result
+        assert "Do not render or re-render" in result
+
+    def test_get_render_review_prompt_validates_preset_and_quality(self):
+        with pytest.raises(ValueError, match="preset"):
+            prompts.get_render_review_prompt(preset="invalid_preset")
+
+        with pytest.raises(ValueError, match="quality"):
+            prompts.get_render_review_prompt(quality="ultra")
+
+
 class TestGetPlanningPrompt:
     def test_get_planning_prompt_is_planning_only(self):
         result = prompts.get_planning_prompt()
