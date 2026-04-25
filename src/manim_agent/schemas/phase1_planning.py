@@ -45,9 +45,6 @@ class BuildSpec(BaseModel):
 class Phase1PlanningOutput(BaseModel):
     """Structured output from Phase 1 (scene planning pass)."""
 
-    markdown_plan: str = Field(
-        description="Visible Markdown scene plan emitted during the planning pass.",
-    )
     build_spec: BuildSpec = Field(
         description="Machine-readable implementation contract for Phase 2.",
     )

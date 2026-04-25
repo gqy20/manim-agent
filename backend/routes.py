@@ -14,25 +14,16 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
+
 try:
     from fastapi.sse import EventSourceResponse
 except ImportError:
     from sse_starlette.sse import EventSourceResponse
 
-from .storage.r2_client import R2Client, is_r2_url, r2_object_key
-from .pipeline_runner import PipelineExecutionError, _pipeline_body
-from .content_clarifier import ContentClarifyError, clarify_content
-from .log_config import bind_log_context, get_log_context, log_event, set_log_context
-from .task_runtime import (
-    TaskRuntime,
-    TaskTerminationRequested,
-    get_task_runtime,
-    register_task_runtime,
-    unregister_task_runtime,
-)
-
 from manim_agent.pipeline_events import EventType, PipelineEvent, StatusPayload
 
+from .content_clarifier import ContentClarifyError, clarify_content
+from .log_config import bind_log_context, get_log_context, log_event, set_log_context
 from .models import (
     ContentClarifyRequest,
     ContentClarifyResponse,
@@ -41,7 +32,16 @@ from .models import (
     TaskResponse,
     TaskStatus,
 )
+from .pipeline_runner import PipelineExecutionError, _pipeline_body
 from .sse_manager import SSESubscriptionManager
+from .storage.r2_client import R2Client, is_r2_url, r2_object_key
+from .task_runtime import (
+    TaskRuntime,
+    TaskTerminationRequested,
+    get_task_runtime,
+    register_task_runtime,
+    unregister_task_runtime,
+)
 from .task_store import TaskStore
 
 # In production, pipeline runs in a dedicated thread with its own asyncio
@@ -144,6 +144,23 @@ def _terminal_status_payload(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _task_update_kwargs(
+    *,
+    video_path: str | None = None,
+    error: str | None = None,
+    pipeline_output: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build task update kwargs without clearing existing pipeline_output by accident."""
+    kwargs: dict[str, Any] = {}
+    if video_path is not None:
+        kwargs["video_path"] = video_path
+    if error is not None:
+        kwargs["error"] = error
+    if pipeline_output is not None:
+        kwargs["pipeline_output"] = pipeline_output
+    return kwargs
+
+
 def init_r2_client() -> None:
     """Initialize the R2 client from environment variables.
 
@@ -203,7 +220,11 @@ def _get_local_mp4_keep_count() -> int:
         value = int(raw)
         return max(0, value)
     except ValueError:
-        logger.warning("Invalid KEEP_LOCAL_MP4_TASKS=%r, using default=%d", raw, _DEFAULT_KEEP_LOCAL_MP4_TASKS)
+        logger.warning(
+            "Invalid KEEP_LOCAL_MP4_TASKS=%r, using default=%d",
+            raw,
+            _DEFAULT_KEEP_LOCAL_MP4_TASKS,
+        )
         return _DEFAULT_KEEP_LOCAL_MP4_TASKS
 
 
@@ -412,6 +433,19 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             return
         try:
             logger.debug("task=%s event_callback type=%s", task_id, type(event).__name__)
+            if isinstance(event, PipelineEvent) and event.event_type == EventType.STATUS:
+                data = event.data
+                if isinstance(data, StatusPayload) and data.pipeline_output is not None:
+                    status = TaskStatus(data.task_status)
+                    pipeline_output = data.pipeline_output
+                    _safe_schedule(
+                        main_loop,
+                        lambda st=status, po=pipeline_output: _store.update_status(
+                            task_id,
+                            st,
+                            pipeline_output=po,
+                        ),
+                    )
             main_loop.call_soon_threadsafe(_sse_mgr.push, task_id, event)
         except RuntimeError:
             logger.debug(
@@ -473,8 +507,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 lambda: _store.update_status(
                     task_id,
                     TaskStatus.COMPLETED,
-                    video_path=_video_url,
-                    pipeline_output=po_data,
+                    **_task_update_kwargs(video_path=_video_url, pipeline_output=po_data),
                 ),
             )
             log_event(
@@ -505,8 +538,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                 lambda: _store.update_status(
                     task_id,
                     TaskStatus.FAILED,
-                    error=error_message,
-                    pipeline_output=po_data,
+                    **_task_update_kwargs(error=error_message, pipeline_output=po_data),
                 ),
             )
             log_event(
@@ -579,12 +611,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             logger.info("Task %s inline pipeline completed video=%s", task_id, _video_url)
             if runtime.cancel_requested:
                 raise TaskTerminationRequested
-            await _store.update_status(
-                task_id,
-                TaskStatus.COMPLETED,
-                video_path=_video_url,
-                pipeline_output=po_data,
-            )
+            completed_kwargs = _task_update_kwargs(video_path=_video_url, pipeline_output=po_data)
+            await _store.update_status(task_id, TaskStatus.COMPLETED, **completed_kwargs)
             log_event(
                 logger,
                 logging.INFO,
@@ -608,12 +636,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             error_message = _format_exception_message(exc)
             logger.exception("Task %s failed: %s", task_id, error_message)
             po_data = exc.pipeline_output if isinstance(exc, PipelineExecutionError) else None
-            await _store.update_status(
-                task_id,
-                TaskStatus.FAILED,
-                error=error_message,
-                pipeline_output=po_data,
-            )
+            failed_kwargs = _task_update_kwargs(error=error_message, pipeline_output=po_data)
+            await _store.update_status(task_id, TaskStatus.FAILED, **failed_kwargs)
             log_event(
                 logger,
                 logging.ERROR,
@@ -896,7 +920,11 @@ async def task_events(task_id: str):
                             continue
                         seen_log_payloads.add(data_val)
                     elif event_name == "status":
-                        payload_key = json.dumps(parsed.get("data", {}), ensure_ascii=False, sort_keys=True)
+                        payload_key = json.dumps(
+                            parsed.get("data", {}),
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        )
                         if payload_key in seen_status_payloads:
                             continue
                         seen_status_payloads.add(payload_key)

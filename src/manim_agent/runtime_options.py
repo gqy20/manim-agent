@@ -7,15 +7,16 @@ import logging
 import os
 import sys
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Literal
 
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
 
 from . import prompts
 from .hooks import _on_post_tool_use, _on_pre_tool_use
-from .schemas import PhaseSchemaRegistry
 from .repo_paths import resolve_plugin_dir, resolve_repo_root
+from .schemas import PhaseSchemaRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,10 @@ def build_options(
     log_callback: Callable[[str], None] | None = None,
     output_format: dict[str, Any] | None = None,
     use_default_output_format: bool = True,
+    tools: list[str] | None = None,
     allowed_tools: list[str] | None = None,
+    disallowed_tools: list[str] | None = None,
+    skills: list[str] | Literal["all"] | None = None,
     error_prefix: str,
 ) -> ClaudeAgentOptions:
     """Build ClaudeAgentOptions with session isolation and local plugin injection."""
@@ -147,7 +151,10 @@ def build_options(
                 else None
             )
         ),
+        tools=tools,
         allowed_tools=resolved_allowed_tools,
+        disallowed_tools=disallowed_tools or [],
+        skills=skills,
         extra_args={"bare": None},
         env=venv_env,
         hooks=hooks,
@@ -158,7 +165,8 @@ def build_options(
     logger.debug(
         "_build_options: cwd=%s, max_turns=%s, permission_mode=%s, "
         "allowed_tools=%s, output_format=%s, fork_session=%s, "
-        "enable_file_checkpointing%s, hooks=%s, system_prompt_length=%d",
+        "enable_file_checkpointing%s, hooks=%s, tools=%s, disallowed_tools=%s, "
+        "skills=%s, system_prompt_length=%d",
         options.cwd,
         options.max_turns,
         options.permission_mode,
@@ -167,15 +175,21 @@ def build_options(
         options.fork_session,
         options.enable_file_checkpointing,
         list(options.hooks.keys()) if options.hooks else [],
+        options.tools,
+        options.disallowed_tools,
+        options.skills,
         len(final_system_prompt) if final_system_prompt else 0,
     )
     logger.debug(
         "_build_options: cwd=%s, max_turns=%s, permission_mode=%s, "
-        "allowed_tools=%s, plugins=%s, output_format=%s, system_prompt_len=%d",
+        "allowed_tools=%s, disallowed_tools=%s, skills=%s, plugins=%s, "
+        "output_format=%s, system_prompt_len=%d",
         resolved_cwd,
         max_turns,
         permission_mode,
         options.allowed_tools,
+        options.disallowed_tools,
+        options.skills,
         [plugin["path"] for plugin in options.plugins],
         "set" if options.output_format else "None",
         len(final_system_prompt) if final_system_prompt else 0,

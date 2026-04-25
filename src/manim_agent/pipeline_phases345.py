@@ -23,7 +23,7 @@ from .pipeline_gates import (
 )
 from .prompt_builder import format_target_duration
 from .render_review import extract_review_frames
-from .schemas import Phase3RenderReviewOutput as RenderReviewOutput, PhaseSchemaRegistry
+from .schemas import Phase3RenderReviewOutput, PhaseSchemaRegistry
 from .segment_renderer import (
     build_segment_render_plan,
     discover_segment_video_paths,
@@ -90,7 +90,9 @@ def _phase3_gate_issue(*, po: Any, render_mode: str, resolved_cwd: str) -> str |
 
     normalized_mode = render_mode.strip().lower() or "full"
     if normalized_mode == "segments":
-        segment_video_paths = [str(path) for path in (getattr(po, "segment_video_paths", None) or []) if path]
+        segment_video_paths = [
+            str(path) for path in (getattr(po, "segment_video_paths", None) or []) if path
+        ]
         if not segment_video_paths:
             return "segment_video_paths is empty"
         for raw_path in segment_video_paths:
@@ -160,7 +162,7 @@ async def run_render_review(
     quality: str,
     log_callback: Callable[[str], None] | None,
     implemented_beats: list[str] | None = None,
-) -> RenderReviewOutput:
+) -> Phase3RenderReviewOutput:
     """Ask Claude to review sampled render frames and return a structured verdict."""
     beat_labels = _build_frame_labels(implemented_beats, len(frame_paths))
     labeled_frames = "\n".join(
@@ -187,7 +189,7 @@ async def run_render_review(
         "Duration target:\n"
         f"- requested runtime: about {format_target_duration(target_duration_seconds)}\n"
         f"- measured render runtime: {measured_duration}\n\n"
-        "Visible plan / build context:\n"
+        "Approved build plan/context:\n"
         f"{plan_text or '(no plan text available)'}\n\n"
         f"Rendered video path:\n- {video_output}\n\n"
         "Sampled review frames (MUST read each one):\n"
@@ -214,7 +216,7 @@ async def run_render_review(
     raw = result_message.structured_output
     if isinstance(raw, str):
         raw = json.loads(raw)
-    return RenderReviewOutput.model_validate(raw)
+    return Phase3RenderReviewOutput.model_validate(raw)
 
 
 # ── Phase 3: Render Resolve + Review ───────────────────────────────
@@ -448,7 +450,7 @@ async def run_phase3_render(
         resolved_cwd,
         implemented_beats=po.implemented_beats if po else None,
     )
-    review_result: RenderReviewOutput | None = None
+    review_result: Phase3RenderReviewOutput | None = None
     review_warning: str | None = None
     try:
         review_result = await run_render_review(

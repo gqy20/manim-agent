@@ -1,9 +1,6 @@
 """Tests for pipeline_config module (SDK options + path helpers + emit_status)."""
 
 import inspect
-from unittest.mock import MagicMock
-
-import pytest
 
 
 class TestPipelineConfigExports:
@@ -33,6 +30,54 @@ class TestPipelineConfigExports:
         from manim_agent.pipeline_config import resolve_plugin_dir
 
         assert callable(resolve_plugin_dir)
+
+
+class TestBuildOptions:
+    def test_phase1_tool_isolation_options_are_forwarded(self, tmp_path):
+        from manim_agent.pipeline_config import build_options
+
+        options = build_options(
+            cwd=str(tmp_path),
+            system_prompt="planning",
+            max_turns=8,
+            use_default_output_format=False,
+            tools=[],
+            allowed_tools=[],
+            disallowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+            skills=[],
+        )
+
+        assert options.tools == []
+        assert options.allowed_tools == []
+        assert options.disallowed_tools == ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
+        assert options.skills == []
+
+    def test_phase1_tool_isolation_matches_sdk_cli_contract(self, tmp_path):
+        from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
+
+        from manim_agent.pipeline_config import build_options
+        from manim_agent.schemas import PhaseSchemaRegistry
+
+        options = build_options(
+            cwd=str(tmp_path),
+            system_prompt="planning",
+            max_turns=8,
+            output_format=PhaseSchemaRegistry.output_format_schema("phase1_planning"),
+            use_default_output_format=False,
+            tools=[],
+            allowed_tools=[],
+            disallowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+            skills=[],
+        )
+        transport = SubprocessCLITransport(prompt="test", options=options)
+        transport._cli_path = "claude"
+
+        cmd = transport._build_command()
+
+        assert cmd[cmd.index("--tools") + 1] == ""
+        assert "--allowedTools" not in cmd
+        assert cmd[cmd.index("--disallowedTools") + 1] == "Read,Write,Edit,Bash,Glob,Grep"
+        assert "--json-schema" in cmd
 
 
 class TestStderrHandler:
@@ -77,7 +122,7 @@ class TestEmitStatus:
 
     def test_calls_event_callback_with_pipeline_event(self):
         from manim_agent.pipeline_config import emit_status
-        from manim_agent.pipeline_events import PipelineEvent, EventType
+        from manim_agent.pipeline_events import EventType, PipelineEvent
 
         events = []
         cb = events.append
@@ -99,7 +144,6 @@ class TestEmitStatus:
 
     def test_optional_fields_omitted(self):
         from manim_agent.pipeline_config import emit_status
-        from manim_agent.pipeline_events import EventType
 
         events = []
         emit_status(events.append, task_status="running")

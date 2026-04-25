@@ -2,133 +2,141 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import json
-import re
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import query
 
-from .schemas import BuildSpec, BuildSpecBeat, Phase1PlanningOutput as ScenePlanOutput
 from .dispatcher import _MessageDispatcher
-from .pipeline_config import build_options, emit_status, resolve_plugin_dir
+from .pipeline_config import emit_status, resolve_plugin_dir
 from .pipeline_events import PipelineEvent
-from .pipeline_gates import (
-    extract_visible_scene_plan_text,
-    has_scene_plan_skill_signature,
-    has_visible_scene_plan,
-)
-from .prompt_builder import build_scene_plan_repair_prompt, format_target_duration
-from .schemas import PhaseSchemaRegistry
+from .prompt_builder import format_target_duration
+from .schemas import Phase1PlanningOutput
 
 
 def build_scene_plan_prompt(
     user_text: str,
     target_duration_seconds: int,
     cwd: str | None = None,
+    preset: str = "default",
+    quality: str = "high",
+    render_mode: str = "full",
 ) -> str:
-    """Build a planning-only prompt that must stop after the visible plan."""
+    """Build a planning-only prompt that returns only Phase 1 structured output."""
     normalized = user_text.strip()
     target_duration = format_target_duration(target_duration_seconds)
-    plugin_dir = resolve_plugin_dir(cwd)
-    headings = (
-        "`Mode`, `Learning Goal`, `Audience`, `Beat List`, "
-        "`Narration Outline`, `Visual Risks`, and `Build Handoff`"
-    )
+    render_mode = (render_mode or "full").strip().lower() or "full"
     guidance = (
         "\n\nPlanning pass only:\n"
         f"- Target final video duration: about {target_duration}.\n"
-        f"- Use the runtime-injected `scene-plan` skill from the plugin rooted at "
-        f"`{plugin_dir}` and stop after producing the visible plan.\n"
-        "- The plugin location is a read-only runtime reference, not the writable task directory.\n"
-        "- Do not use Bash, Read, ls, find, or path probes to verify plugin files in this pass.\n"
+        f"- Preset: {preset}.\n"
+        f"- Quality target: {quality}.\n"
+        f"- Downstream render mode: {render_mode}.\n"
+        "- Return only the Phase 1 `structured_output` through the configured schema.\n"
+        "- Do not include a Markdown plan, JSON code block, or explanatory text "
+        "in the message body.\n"
+        "- The structured output top level must contain exactly `build_spec`; do not wrap it "
+        "in `phase1_planning` and do not add `meta`, `visual_style_directives`, or "
+        "`narration_notes`.\n"
+        "- Use `build_spec` as the single source of truth for mode, learning goal, "
+        "audience, ordered beats, visual goals, narration intents, required elements, "
+        "and segment requirements.\n"
+        "- Every beat must use fields `id`, `title`, `visual_goal`, `narration_intent`, "
+        "`target_duration_seconds`, `required_elements`, and `segment_required`; do not use "
+        "`beat_id`, `teaching_point`, or `segment_requirements`.\n"
+        "- Do not use Bash, Read, Glob, Grep, ls, find, or path probes in this pass.\n"
         "- Do not write, edit, or render any code in this pass.\n"
-        "- Use only lightweight reference reads if needed.\n"
-        f"- Return a Markdown plan with these exact section headings: {headings}.\n"
-        "- Also return structured_output that conforms to the Phase 1 `build_spec` contract.\n"
-        "- The structured `build_spec` must include stable beat ids, per-beat visual goals, narration intents, target durations, required elements, and whether each beat requires a segment.\n"
-        "- Keep the plan compact and implementation-ready.\n"
+        "- Keep the structured plan compact and implementation-ready.\n"
     )
+    if cwd:
+        guidance += (
+            "- The writable task directory will be provided only to later "
+            "implementation phases.\n"
+        )
+    if render_mode == "segments":
+        guidance += (
+            "- Plan one segment-required beat per major teaching step and use stable beat ids "
+            "that can become segment filenames later.\n"
+        )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
 
-def _extract_markdown_section(plan_text: str, heading: str) -> str:
-    pattern = rf"(?ims)^##\s+{re.escape(heading)}\s*\n(.*?)(?=^##\s+|\Z)"
-    match = re.search(pattern, plan_text)
-    if not match:
-        return ""
-    return match.group(1).strip()
-
-
-def _extract_markdown_list_items(section_text: str) -> list[str]:
-    items: list[str] = []
-    for line in section_text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        bullet_match = re.match(r"^(?:[-*+]|(?:\d+)[.)])\s+(.*)$", stripped)
-        if bullet_match:
-            items.append(bullet_match.group(1).strip())
-        elif not items:
-            items.append(stripped)
-    return items
-
-
-def _slugify_beat_title(value: str) -> str:
-    slug = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "_", value.strip().lower())
-    slug = slug.strip("_")
-    return slug or "beat"
-
-
-def derive_scene_plan_output_from_visible_plan(
-    plan_text: str,
+def render_build_spec_markdown(
+    scene_plan_output: Phase1PlanningOutput,
     *,
     target_duration_seconds: int,
-) -> ScenePlanOutput | None:
-    """Build a minimal valid Phase 1 structured output from the visible Markdown plan."""
-    plan_text = plan_text.strip()
-    if not plan_text:
-        return None
-
-    mode = _extract_markdown_section(plan_text, "Mode") or "explain"
-    learning_goal = _extract_markdown_section(plan_text, "Learning Goal") or "Explain the topic."
-    audience = _extract_markdown_section(plan_text, "Audience") or "General learners."
-    beat_items = _extract_markdown_list_items(_extract_markdown_section(plan_text, "Beat List"))
-    narration_items = _extract_markdown_list_items(
-        _extract_markdown_section(plan_text, "Narration Outline")
-    )
-    if not beat_items:
-        return None
-
-    safe_target_duration = max(int(target_duration_seconds), len(beat_items))
-    base_duration = safe_target_duration / len(beat_items)
-    beats: list[BuildSpecBeat] = []
-    for index, title in enumerate(beat_items, start=1):
-        narration_intent = (
-            narration_items[index - 1] if index - 1 < len(narration_items) else title
+) -> str:
+    """Render the structured Phase 1 contract into deterministic Markdown for humans/Phase 2."""
+    spec = scene_plan_output.build_spec
+    lines = [
+        "## Mode",
+        spec.mode,
+        "",
+        "## Learning Goal",
+        spec.learning_goal,
+        "",
+        "## Audience",
+        spec.audience,
+        "",
+        "## Beat List",
+    ]
+    for index, beat in enumerate(spec.beats, start=1):
+        required = ", ".join(beat.required_elements) if beat.required_elements else "none"
+        segment_required = "yes" if beat.segment_required else "no"
+        lines.extend(
+            [
+                f"{index}. {beat.title}",
+                f"   - id: `{beat.id}`",
+                f"   - visual_goal: {beat.visual_goal}",
+                f"   - narration_intent: {beat.narration_intent}",
+                f"   - target_duration_seconds: {beat.target_duration_seconds:g}",
+                f"   - required_elements: {required}",
+                f"   - segment_required: {segment_required}",
+            ]
         )
-        beats.append(
-            BuildSpecBeat(
-                id=f"beat_{index:03d}_{_slugify_beat_title(title)}",
-                title=title,
-                visual_goal=title,
-                narration_intent=narration_intent,
-                target_duration_seconds=round(base_duration, 2),
-                required_elements=[],
-                segment_required=True,
-            )
-        )
-
-    return ScenePlanOutput(
-        markdown_plan=plan_text,
-        build_spec=BuildSpec(
-            mode=mode,
-            learning_goal=learning_goal,
-            audience=audience,
-            target_duration_seconds=safe_target_duration,
-            beats=beats,
-        ),
+    lines.extend(
+        [
+            "",
+            "## Build Handoff",
+            f"Implement the ordered `build_spec` beats for a target duration of "
+            f"{target_duration_seconds} seconds.",
+            "Keep the beat ids stable and report implementation deviations explicitly.",
+        ]
     )
+    return "\n".join(lines).strip()
+
+
+def _normalize_phase1_output(
+    scene_plan_output: Phase1PlanningOutput,
+    *,
+    target_duration_seconds: int,
+    dispatcher: _MessageDispatcher,
+) -> Phase1PlanningOutput:
+    """Normalize deterministic Phase 1 fields owned by the pipeline."""
+    if scene_plan_output.build_spec.target_duration_seconds != target_duration_seconds:
+        dispatcher._print(
+            "  [WARN] build_spec.target_duration_seconds did not match the request; "
+            f"using {target_duration_seconds}."
+        )
+        scene_plan_output.build_spec.target_duration_seconds = target_duration_seconds
+    return scene_plan_output
+
+
+def persist_phase1_planning_output(
+    scene_plan_output: Phase1PlanningOutput,
+    *,
+    resolved_cwd: str,
+) -> str:
+    """Persist the accepted Phase 1 contract immediately after validation."""
+    output_path = Path(resolved_cwd).resolve() / "phase1_planning.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(scene_plan_output.model_dump(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return str(output_path)
 
 
 def build_implementation_prompt(
@@ -147,24 +155,32 @@ def build_implementation_prompt(
     render_guidance = (
         "- Render mode: full.\n"
         "- The primary visual deliverable is one full-length `video_output` MP4.\n"
-        "- You may create helper clips during debugging, but the final structured output must center on the single main render.\n"
+        "- You may create helper clips during debugging, but the final structured "
+        "output must center on the single main render.\n"
     )
     if render_mode == "segments":
         render_guidance = (
             "- Render mode: segments.\n"
-            "- The primary visual deliverables are beat-level MP4 files such as `segments/beat_001.mp4`, `segments/beat_002.mp4`, in beat order.\n"
-            "- In structured_output, include `segment_video_paths` with the ordered segment paths that were actually rendered.\n"
-            "- In structured_output, include `render_mode` as `segments` and `segment_render_complete` as true only when every planned beat segment exists.\n"
-            "- Do not treat a single full-length `video_output` as the primary deliverable in this mode; if you also produce one, treat it as a convenience artifact.\n"
-            "- If you cannot produce the real beat-level MP4 files, stop and fail instead of silently returning a degraded full-render result.\n"
+            "- The primary visual deliverables are beat-level MP4 files such as "
+            "`segments/beat_001.mp4`, `segments/beat_002.mp4`, in beat order.\n"
+            "- In structured_output, include `segment_video_paths` with the ordered "
+            "segment paths that were actually rendered.\n"
+            "- In structured_output, include `render_mode` as `segments` and "
+            "`segment_render_complete` as true only when every planned beat segment exists.\n"
+            "- Do not treat a single full-length `video_output` as the primary "
+            "deliverable in this mode; if you also produce one, treat it as a "
+            "convenience artifact.\n"
+            "- If you cannot produce the real beat-level MP4 files, stop and fail "
+            "instead of silently returning a degraded full-render result.\n"
             "- Do not mark `segment_render_complete` true as a placeholder.\n"
         )
     guidance = (
         "\n\nImplementation pass:\n"
         f"- Target final video duration: about {target_duration}.\n"
-        "- The visible scene plan below is approved. "
+        "- The approved build plan/context below was derived from Phase 1 `build_spec`. "
         "Implement from it instead of creating a new plan.\n"
-        "- The structured build specification below is authoritative. Do not redesign the beat structure during implementation.\n"
+        "- The structured build specification below is authoritative. Do not redesign "
+        "the beat structure during implementation.\n"
         "- Continue using the runtime-injected `manim-production` plugin "
         f"rooted at `{plugin_dir}`.\n"
         "- Use `scene-build`, `scene-direction`, `layout-safety`, `narration-sync`, "
@@ -180,9 +196,14 @@ def build_implementation_prompt(
         "- In structured_output, include `build_summary` as a short summary "
         "of what the build phase implemented.\n"
         "- In structured_output, include `deviations_from_plan` as an array, even if it is empty.\n"
-        "- Focus your structured_output effort on the implementation facts that only you know: what beats were actually built, what deviated, and the final narration text.\n"
-        "- The pipeline will derive beat-level narration bookkeeping, coverage flags, and estimated narration duration from the approved build spec when possible.\n"
-        "- In `segments` mode, prioritize writing the real beat files to canonical paths like `segments/<beat_id>.mp4`; the pipeline can discover those files automatically.\n"
+        "- Focus your structured_output effort on the implementation facts that only "
+        "you know: what beats were actually built, what deviated, and the final "
+        "narration text.\n"
+        "- The pipeline will derive beat-level narration bookkeeping, coverage flags, "
+        "and estimated narration duration from the approved build spec when possible.\n"
+        "- In `segments` mode, prioritize writing the real beat files to canonical "
+        "paths like `segments/<beat_id>.mp4`; the pipeline can discover those files "
+        "automatically.\n"
         "- Do not leave `implemented_beats` empty.\n"
         "- Do not omit `build_summary`.\n"
         "- Keep every file inside the task directory only.\n"
@@ -196,7 +217,7 @@ def build_implementation_prompt(
         "unless the user explicitly requests another language.\n"
         "- Make the narration spoken and synchronized with the animation, and cover the full flow "
         "rather than collapsing into a one-sentence summary.\n"
-        "\nApproved visible scene plan:\n"
+        "\nApproved build plan/context:\n"
         f"{plan_text}\n"
     )
     if build_spec is not None:
@@ -227,79 +248,50 @@ async def run_phase1_planning(
 
     planning_result_summary = dispatcher.result_summary
 
-    if not has_visible_scene_plan(dispatcher.collected_text):
-        dispatcher._print("")
-        dispatcher._print("[ERR] Missing required scene plan before implementation.")
-        dispatcher._print(
-            "  The assistant must emit a visible planning pass with Mode, Learning Goal,"
-        )
-        dispatcher._print(
-            "  Audience, Beat List, Narration Outline, Visual Risks, and Build Handoff"
-        )
-        raise RuntimeError(
-            "Claude skipped the required scene-plan pass. "
-            "A visible planning scaffold is mandatory before implementation."
-        )
-
-    if not has_scene_plan_skill_signature(dispatcher.collected_text):
-        dispatcher._print("")
-        dispatcher._print(
-            "  [WARN] Visible plan does not include the optional scene-plan signature."
-        )
-        dispatcher._print("  Continuing because the visible plan itself is present.")
-
-    plan_text = extract_visible_scene_plan_text(dispatcher.collected_text)
     scene_plan_output = dispatcher.get_scene_plan_output()
     if scene_plan_output is None:
         diagnostics = dispatcher.get_phase1_failure_diagnostics()
         dispatcher._print("")
-        dispatcher._print(
-            "  [WARN] Structured planning output missing or invalid. Running a no-tools repair pass."
-        )
+        dispatcher._print("  [ERR] Structured Phase 1 planning output missing or invalid.")
         if diagnostics.get("scene_plan_validation_error"):
             dispatcher._print(
-                "  [WARN] scene_plan_validation_error="
+                "  [ERR] scene_plan_validation_error="
                 f"{diagnostics['scene_plan_validation_error']}"
             )
-
-        repair_prompt = build_scene_plan_repair_prompt(
-            user_text="",
-            target_duration_seconds=target_duration_seconds,
-            visible_plan_text=plan_text,
-            validation_issue=diagnostics.get("scene_plan_validation_error")
-            or "Phase 1 planning did not return a valid structured build_spec output.",
+        dispatcher._print(
+            "  [ERR] raw_structured_output_present="
+            f"{diagnostics.get('raw_structured_output_present')} "
+            f"type={diagnostics.get('raw_structured_output_type')}"
         )
-        repair_options = build_options(
-            cwd=resolved_cwd,
-            system_prompt=system_prompt,
-            max_turns=4,
-            prompt_file=prompt_file,
-            quality=quality,
-            log_callback=log_callback,
-            output_format=PhaseSchemaRegistry.output_format_schema("phase1_planning"),
-            use_default_output_format=False,
-            allowed_tools=[],
+        raise RuntimeError(
+            "Phase 1 planning did not return the required structured build_spec output."
         )
-        async for message in query(prompt=repair_prompt, options=repair_options):
-            dispatcher.dispatch(message)
 
-        scene_plan_output = dispatcher.get_scene_plan_output()
-        if scene_plan_output is None:
-            dispatcher._print("")
-            dispatcher._print("  [ERR] Structured planning output missing or invalid.")
-            dispatcher._print(
-                "  [ERR] raw_structured_output_present="
-                f"{diagnostics.get('raw_structured_output_present')} "
-                f"type={diagnostics.get('raw_structured_output_type')}"
-            )
-            raise RuntimeError(
-                "Phase 1 planning did not return the required structured build_spec output."
-            )
-
+    scene_plan_output = _normalize_phase1_output(
+        scene_plan_output,
+        target_duration_seconds=target_duration_seconds,
+        dispatcher=dispatcher,
+    )
+    plan_text = render_build_spec_markdown(
+        scene_plan_output,
+        target_duration_seconds=target_duration_seconds,
+    )
+    phase1_output_path = persist_phase1_planning_output(
+        scene_plan_output,
+        resolved_cwd=resolved_cwd,
+    )
     dispatcher.partial_build_spec = scene_plan_output.build_spec.model_dump()
     dispatcher.partial_target_duration_seconds = target_duration_seconds
     dispatcher.partial_plan_text = plan_text
-    dispatcher._print("  [PLAN] Visible scene plan accepted.")
+    dispatcher.phase1_output_path = phase1_output_path
+    dispatcher.phase1_diagnostics_snapshot = {
+        **dispatcher.get_phase1_failure_diagnostics(),
+        "accepted": True,
+        "output_path": phase1_output_path,
+        "build_spec_beat_count": len(scene_plan_output.build_spec.beats),
+    }
+    dispatcher._print("  [PLAN] Structured build_spec accepted.")
+    dispatcher._print(f"  [PLAN] Phase 1 contract persisted: {phase1_output_path}")
     dispatcher._print("  [PROGRESS] Phase 2/5: implementation pass")
     if planning_options.allowed_tools:
         dispatcher._print(f"  [SYS] Allowed tools: {', '.join(planning_options.allowed_tools)}")
@@ -308,7 +300,10 @@ async def run_phase1_planning(
         event_callback,
         task_status="running",
         phase="scene",
-        message="Visible scene plan accepted. Beginning implementation pass.",
+        message="Structured build_spec accepted. Beginning implementation pass.",
+        pipeline_output=(
+            dispatcher.get_persistable_pipeline_output() if event_callback is not None else None
+        ),
     )
 
     return planning_result_summary or {}
@@ -325,20 +320,19 @@ async def run_phase2_implementation(
     async for message in query(prompt=implementation_prompt, options=build_options_instance):
         dispatcher.dispatch(message)
         if dispatcher.implementation_started:
-            if not has_visible_scene_plan(dispatcher.collected_text):
+            if not getattr(dispatcher, "partial_build_spec", None):
                 dispatcher._print("")
-                dispatcher._print("[ERR] Blocking implementation before visible scene plan.")
+                dispatcher._print("[ERR] Blocking implementation before Phase 1 build_spec.")
                 if dispatcher.implementation_start_reason:
                     dispatcher._print(
                         f"  First implementation step: {dispatcher.implementation_start_reason}"
                     )
                 dispatcher._print(
-                    "  Emit the required planning scaffold before writing scene.py, "
+                    "  Emit the required structured Phase 1 build_spec before writing scene.py, "
                     "editing Python files, or running Manim."
                 )
                 raise RuntimeError(
-                    "Claude began implementation before emitting the required "
-                    "visible scene-plan pass"
+                    "Claude began implementation before emitting the required Phase 1 build_spec"
                 )
 
     return dispatcher.result_summary or {}

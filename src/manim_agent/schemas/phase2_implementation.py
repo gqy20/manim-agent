@@ -26,7 +26,7 @@ class Phase2ImplementationOutput(BaseModel):
     )
     deviations_from_plan: list[str] = Field(
         default_factory=list,
-        description="Explicit deviations from the visible plan, if any.",
+        description="Explicit deviations from the approved build plan/context, if any.",
     )
     render_mode: str | None = Field(
         default=None,

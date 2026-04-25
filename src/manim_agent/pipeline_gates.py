@@ -8,17 +8,6 @@ from pathlib import Path
 from .schemas import BuildSpec, PipelineOutput
 from .segment_renderer import discover_segment_video_paths
 
-PLAN_SECTION_HEADINGS = (
-    "Mode",
-    "Learning Goal",
-    "Audience",
-    "Beat List",
-    "Narration Outline",
-    "Visual Risks",
-    "Build Handoff",
-)
-PLAN_SKILL_SIGNATURE = "mp-scene-plan-v1"
-
 
 def estimate_spoken_duration_seconds(text: str) -> float:
     """Roughly estimate spoken duration for mixed Chinese/Latin narration."""
@@ -112,44 +101,6 @@ def build_fallback_narration(user_text: str) -> str:
     if cleaned:
         return cleaned
     return "下面我们来看这个动画的主要内容。"
-
-
-def has_visible_scene_plan(collected_text: list[str]) -> bool:
-    """Check whether the assistant emitted the required planning scaffold."""
-    if not collected_text:
-        return False
-
-    text = "\n".join(collected_text)
-    matches = 0
-    for heading in PLAN_SECTION_HEADINGS:
-        if re.search(
-            rf"(?im)^\s*(?:#+\s*|\d+\.\s*)?{re.escape(heading)}\s*:?\s*$",
-            text,
-        ):
-            matches += 1
-    return matches >= len(PLAN_SECTION_HEADINGS)
-
-
-def has_scene_plan_skill_signature(collected_text: list[str]) -> bool:
-    """Check whether the visible plan includes the scene-plan skill canary."""
-    if not collected_text:
-        return False
-
-    text = "\n".join(collected_text)
-    return bool(
-        re.search(
-            rf"(?im)^\s*Skill Signature\s*:\s*{re.escape(PLAN_SKILL_SIGNATURE)}\s*$",
-            text,
-        )
-    )
-
-
-def extract_visible_scene_plan_text(collected_text: list[str], max_chars: int = 6000) -> str:
-    """Return a bounded slice of assistant text for downstream review context."""
-    text = "\n".join(part.strip() for part in collected_text if part and part.strip()).strip()
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars]
 
 
 def has_structured_build_summary(po: PipelineOutput | None) -> bool:

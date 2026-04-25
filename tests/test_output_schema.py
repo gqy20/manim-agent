@@ -99,22 +99,32 @@ class TestOutputFormatSchema:
     def test_schema_has_valid_structure(self):
         """schema 包含有效的结构（properties 和 type）。"""
         schema = PhaseSchemaRegistry.output_format_schema("pipeline_output")
-        inner = schema["json_schema"]["schema"]
+        inner = schema["schema"]
         assert "properties" in inner
         assert inner["type"] == "object"
         props = inner["properties"]
         assert "video_output" in props
         assert "scene_file" in props
 
+    def test_schema_matches_installed_claude_agent_sdk_contract(self):
+        """SDK forwards output_format['schema'] as --json-schema."""
+        schema = PhaseSchemaRegistry.output_format_schema("phase1_planning")
+        assert schema["type"] == "json_schema"
+        assert "schema" in schema
+        assert "json_schema" not in schema
+        assert set(schema["schema"]["properties"]) == {"build_spec"}
+        assert "$defs" not in schema["schema"]
+        assert "$ref" not in str(schema["schema"])
+
     def test_schema_optionals_allow_null(self):
         """可选字段在 schema 中允许 null。"""
         schema = PhaseSchemaRegistry.output_format_schema("pipeline_output")
-        props = schema["json_schema"]["schema"]["properties"]
+        props = schema["schema"]["properties"]
         for field in ("scene_file", "scene_class", "duration_seconds", "narration", "source_code"):
             assert field in props, f"Missing field: {field}"
 
     def test_narration_schema_mentions_simplified_chinese_default(self):
         """narration 字段描述要明确默认中文口播要求。"""
         schema = PhaseSchemaRegistry.output_format_schema("pipeline_output")
-        narration = schema["json_schema"]["schema"]["properties"]["narration"]
+        narration = schema["schema"]["properties"]["narration"]
         assert "Simplified Chinese" in narration["description"]

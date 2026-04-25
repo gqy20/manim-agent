@@ -8,16 +8,22 @@ import sys
 
 # Ensure project root is on sys.path for the parent process import.
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
+_SRC_ROOT = os.path.join(_PROJECT_ROOT, "src")
+for _path in (_PROJECT_ROOT, _SRC_ROOT):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 # Also set PYTHONPATH so uvicorn's reloader subprocess (spawned via
-# multiprocessing on Windows) can resolve "backend.main".
+# multiprocessing on Windows) can resolve "backend.main" and the src-layout
+# "manim_agent" package.
 _existing = os.environ.get("PYTHONPATH", "")
-_prefix = _PROJECT_ROOT if not _existing else f"{_PROJECT_ROOT}{os.pathsep}{_existing}"
+_prefix_parts = [_PROJECT_ROOT, _SRC_ROOT]
+if _existing:
+    _prefix_parts.append(_existing)
+_prefix = os.pathsep.join(_prefix_parts)
 os.environ["PYTHONPATH"] = _prefix
 
-import uvicorn
+import uvicorn  # noqa: E402 - sys.path/PYTHONPATH must be patched before uvicorn starts.
 
 if __name__ == "__main__":
     reload_flag = os.environ.get("RELOAD", "false").lower() in {"1", "true", "yes", "on"}

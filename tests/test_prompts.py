@@ -89,3 +89,27 @@ class TestGetPrompt:
         assert "/scene-plan" in result
         assert "/scene-build" in result
         assert "layout-safety" in result
+
+
+class TestGetPlanningPrompt:
+    def test_get_planning_prompt_is_planning_only(self):
+        result = prompts.get_planning_prompt()
+
+        assert "规划阶段" in result
+        assert "不写代码" in result
+        assert "不渲染" in result
+        assert "phase1_planning" in result
+        assert "scene.py" not in result
+        assert "manim -q" not in result
+
+    def test_get_planning_prompt_validates_preset_and_quality(self):
+        with pytest.raises(ValueError, match="preset"):
+            prompts.get_planning_prompt(preset="invalid_preset")
+
+        with pytest.raises(ValueError, match="quality"):
+            prompts.get_planning_prompt(quality="ultra")
+
+    def test_get_planning_prompt_segments_mode_mentions_segment_ids(self):
+        result = prompts.get_planning_prompt(render_mode="segments")
+
+        assert "segments/<beat_id>.mp4" in result

@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import json
 
-from backend.routes import _format_exception_message
+from backend.routes import _format_exception_message, _task_update_kwargs
 from backend.sse_manager import SSESubscriptionManager
 from backend.task_store import TaskStore
 
@@ -17,12 +17,15 @@ class TestTaskStoreResponseNormalization:
             "id": "task-1",
             "user_text": "test",
             "status": "completed",
-            "created_at": datetime.datetime(2026, 4, 11, 13, 0, 0, tzinfo=datetime.timezone.utc),
-            "completed_at": datetime.datetime(2026, 4, 11, 13, 5, 0, tzinfo=datetime.timezone.utc),
+            "created_at": datetime.datetime(2026, 4, 11, 13, 0, 0, tzinfo=datetime.UTC),
+            "completed_at": datetime.datetime(2026, 4, 11, 13, 5, 0, tzinfo=datetime.UTC),
             "video_path": "/out.mp4",
             "error": None,
             "options": '{"voice_id":"female-tianmei","quality":"high"}',
-            "pipeline_output": '{"video_output":"/out.mp4","scene_file":"scene.py"}',
+            "pipeline_output": (
+                '{"video_output":"/out.mp4","scene_file":"scene.py",'
+                '"phase1_planning":{"build_spec":{"mode":"teaching-animation"}}}'
+            ),
         }
 
         response = store.to_response(task)
@@ -33,6 +36,11 @@ class TestTaskStoreResponseNormalization:
         assert response.pipeline_output is not None
         assert response.pipeline_output.video_output == "/out.mp4"
         assert response.pipeline_output.scene_file == "scene.py"
+        assert response.pipeline_output.phase1_planning is not None
+        assert (
+            response.pipeline_output.phase1_planning["build_spec"]["mode"]
+            == "teaching-animation"
+        )
 
     def test_to_response_keeps_pipeline_output_none_when_missing(self):
         store = TaskStore()
@@ -70,6 +78,24 @@ class TestExceptionFormatting:
     def test_empty_exception_message_still_includes_type_name(self):
         message = _format_exception_message(RuntimeError())
         assert "RuntimeError" in message
+
+
+class TestTaskUpdateKwargs:
+    def test_omits_missing_pipeline_output_to_preserve_existing_phase1_data(self):
+        assert _task_update_kwargs(error="phase2 failed", pipeline_output=None) == {
+            "error": "phase2 failed",
+        }
+
+    def test_includes_pipeline_output_when_available(self):
+        pipeline_output = {"phase1_planning": {"build_spec": {"mode": "proof"}}}
+
+        assert _task_update_kwargs(
+            video_path="/out.mp4",
+            pipeline_output=pipeline_output,
+        ) == {
+            "video_path": "/out.mp4",
+            "pipeline_output": pipeline_output,
+        }
 
 
 class TestSSEManager:

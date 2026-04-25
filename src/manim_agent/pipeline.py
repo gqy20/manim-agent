@@ -4,7 +4,7 @@
 解说生成、render review、PO 元数据填充等）。
 """
 
-import asyncio
+import asyncio  # noqa: F401 - compatibility patch surface for tests/callers.
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -12,9 +12,10 @@ from typing import Any
 
 from claude_agent_sdk import query
 
-from . import prompts
-from . import music_client, render_review, tts_client, video_builder
-from .schemas import PhaseSchemaRegistry
+from . import music_client, prompts, render_review, tts_client, video_builder  # noqa: F401
+from . import pipeline_narration as _pipeline_narration_module
+from . import pipeline_phases12 as _pipeline_phases12_module
+from . import pipeline_phases345 as _pipeline_phases345_module
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 from .hooks import activate_hook_state, create_hook_state, reset_hook_state
 from .pipeline_config import build_options as _build_options
@@ -26,30 +27,25 @@ from .pipeline_gates import (
     merge_result_summaries,
 )
 from .pipeline_narration import generate_narration
-from . import pipeline_narration as _pipeline_narration_module
 from .pipeline_phases12 import (
     build_implementation_prompt,
     build_scene_plan_prompt,
     run_phase1_planning,
     run_phase2_implementation,
 )
-from . import pipeline_phases12 as _pipeline_phases12_module
 from .pipeline_phases345 import (
     run_phase3_render,
     run_phase4_tts,
     run_phase5_mux,
     run_render_review,
 )
-from . import pipeline_phases345 as _pipeline_phases345_module
+from .schemas import PhaseSchemaRegistry
 
 logger = logging.getLogger(__name__)
 
-# ── Re-exported helpers for backward compatibility ─────────────────
+# ── Test patch hooks ─────────────────
 
 
-# Kept for backward compatibility with test patches:
-# tests/test_pipeline_redlights.py patches manim_agent.pipeline._stderr_handler
-# tests/test_main_dispatcher_pipeline.py patches manim_agent.pipeline._run_render_review
 stderr_handler = _stderr_handler
 _run_render_review = run_render_review
 
@@ -82,28 +78,35 @@ async def run_pipeline(
     resolved_cwd = str(Path(cwd).resolve())
     bgm_volume = min(max(bgm_volume, 0.0), 1.0)
     render_mode = render_mode.strip().lower() or "full"
-    full_system_prompt = prompts.get_prompt(
+    planning_system_prompt = prompts.get_planning_prompt(
+        preset=preset,
+        quality=quality,
+        render_mode=render_mode,
+    )
+    implementation_system_prompt = prompts.get_prompt(
         user_text="",
         preset=preset,
         quality=quality,
         cwd=resolved_cwd,
     )
-    system_prompt = full_system_prompt
 
     planning_options = _build_options(
         cwd=resolved_cwd,
-        system_prompt=system_prompt,
+        system_prompt=planning_system_prompt,
         max_turns=min(max_turns, 16),
         prompt_file=prompt_file,
         quality=quality,
         log_callback=log_callback,
         output_format=PhaseSchemaRegistry.output_format_schema("phase1_planning"),
         use_default_output_format=False,
-        allowed_tools=["Read", "Glob", "Grep"],
+        tools=[],
+        allowed_tools=[],
+        disallowed_tools=["Read", "Write", "Edit", "Bash", "Glob", "Grep"],
+        skills=[],
     )
     build_opts = _build_options(
         cwd=resolved_cwd,
-        system_prompt=system_prompt,
+        system_prompt=implementation_system_prompt,
         max_turns=max_turns,
         prompt_file=prompt_file,
         quality=quality,
@@ -118,6 +121,8 @@ async def run_pipeline(
         output_cwd=resolved_cwd,
         hook_state=hook_state,
     )
+    if _dispatcher_ref is not None:
+        _dispatcher_ref.append(dispatcher)
     if event_callback is not None:
         dispatcher.event_callback = event_callback
 
@@ -169,18 +174,23 @@ async def run_pipeline(
         # ══════════════════════════════════════════════
         planning_result_summary: dict[str, Any] | None = None
         hook_state.allowed_tools = (
-            set(planning_options.allowed_tools) if planning_options.allowed_tools is not None else None
+            set(planning_options.allowed_tools)
+            if planning_options.allowed_tools is not None
+            else None
         )
         planning_prompt = build_scene_plan_prompt(
             user_text,
             target_duration_seconds,
-            resolved_cwd,
+            cwd=None,
+            preset=preset,
+            quality=quality,
+            render_mode=render_mode,
         )
         planning_result_summary = await run_phase1_planning(
             planning_prompt=planning_prompt,
             target_duration_seconds=target_duration_seconds,
             planning_options=planning_options,
-            system_prompt=system_prompt,
+            system_prompt=planning_system_prompt,
             quality=quality,
             prompt_file=prompt_file,
             log_callback=log_callback,
@@ -218,9 +228,6 @@ async def run_pipeline(
             event_callback=event_callback,
             cli_stderr_lines=_cli_stderr_lines,
         )
-
-        if _dispatcher_ref is not None:
-            _dispatcher_ref.append(dispatcher)
 
         phase2_po = dispatcher.get_pipeline_output()
         phase2_po = apply_phase2_build_spec_defaults(
@@ -261,7 +268,7 @@ async def run_pipeline(
             result_summary=result_summary,
             target_duration_seconds=target_duration_seconds,
             resolved_cwd=resolved_cwd,
-            system_prompt=system_prompt,
+            system_prompt=implementation_system_prompt,
             quality=quality,
             prompt_file=prompt_file,
             log_callback=log_callback,
@@ -287,7 +294,7 @@ async def run_pipeline(
             po=po,
             video_output=video_output,
             cwd=resolved_cwd,
-            system_prompt=system_prompt,
+            system_prompt=implementation_system_prompt,
             quality=quality,
             prompt_file=prompt_file,
             log_callback=_counting_log_callback,

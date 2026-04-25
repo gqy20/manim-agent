@@ -57,8 +57,20 @@ function ToolIcon({ name }: { name: string }) {
     Bash: ">_",
     Read: "R",
     Glob: "*",
+    StructuredOutput: "{}",
   };
   return <span className="font-mono text-[10px]">{iconMap[name] || "?"}</span>;
+}
+
+function formatToolValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 function StatsBar({ events }: { events: SSEEvent[] }) {
@@ -226,9 +238,9 @@ function classifyLog(line: string): string {
 
 function LogLine({ text, timestamp }: { text: string; timestamp: string }) {
   return (
-    <div className="my-0.5 grid grid-cols-[5.25rem_minmax(0,1fr)] items-start gap-x-1.5">
-      <span className={TIMESTAMP_COL_CLASS}>{formatEventTime(timestamp)}</span>
-      <pre className={`${classifyLog(text)} min-w-0 whitespace-pre-wrap break-all text-left font-mono`}>
+    <div className="my-0.5 flex flex-col">
+      <span className={`${TIMESTAMP_COL_CLASS}`}>{formatEventTime(timestamp)}</span>
+      <pre className={`${classifyLog(text)} min-w-0 whitespace-pre-wrap break-all text-left font-mono mt-[2px]`}>
         {text}
       </pre>
     </div>
@@ -236,34 +248,41 @@ function LogLine({ text, timestamp }: { text: string; timestamp: string }) {
 }
 
 function ToolStartView({ payload, timestamp }: { payload: ToolStartPayload; timestamp: string }) {
+  const entries = Object.entries(payload.input_summary).slice(0, 4);
+
   return (
-    <div className="my-1 flex items-start gap-2 rounded-md border border-blue-500/15 bg-blue-500/[0.04] px-3 py-2">
+    <div className="my-1 flex min-w-0 items-start gap-2 rounded-md border border-blue-500/15 bg-blue-500/[0.04] px-3 py-2">
       <span className={`${TIMESTAMP_COL_CLASS} select-none`}>{formatEventTime(timestamp)}</span>
-      <span className="mt-[3px] shrink-0 text-blue-400/80">
+      <span className="mt-[5px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-blue-300/80">
         <ToolIcon name={payload.name} />
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="rounded-sm bg-blue-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-blue-400">
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+          <span className="shrink-0 rounded-sm bg-blue-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-blue-400">
             CALL
           </span>
-          <span className="text-[11px] font-medium text-blue-300">{payload.name}</span>
-          <span className="text-[10px] font-mono text-blue-500/40 ml-auto">{payload.tool_use_id.slice(-8)}</span>
+          <span className="min-w-0 truncate text-[11px] font-semibold text-blue-200" title={payload.name}>
+            {payload.name}
+          </span>
+          <span className="shrink-0 text-[10px] font-mono text-blue-500/40">
+            {payload.tool_use_id.slice(-8)}
+          </span>
         </div>
-        {Object.keys(payload.input_summary).length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-2 text-[10px] font-mono text-blue-200/50">
-            {Object.entries(payload.input_summary)
-              .slice(0, 4)
-              .map(([key, value]) => (
-                <div key={key} className="flex items-center bg-black/20 rounded-md px-2 py-0.5 max-w-full">
-                  <span className="text-blue-300/40 mr-1">{key}:</span>
-                  <span className="truncate max-w-[200px] text-blue-200/80">
-                    {typeof value === "string"
-                      ? value
-                      : JSON.stringify(value)}
-                  </span>
+        {entries.length > 0 && (
+          <div className="mt-2 space-y-1.5 text-[10px] font-mono">
+            {entries.map(([key, value]) => (
+              <div
+                key={key}
+                className="min-w-0 overflow-hidden rounded-md border border-blue-400/10 bg-black/25"
+              >
+                <div className="border-b border-blue-400/10 px-2 py-1 text-[9px] uppercase tracking-[0.16em] text-blue-300/45">
+                  {key}
                 </div>
-              ))}
+                <pre className="max-h-20 overflow-hidden whitespace-pre-wrap break-words px-2 py-1.5 leading-relaxed text-blue-100/65">
+                  {formatToolValue(value)}
+                </pre>
+              </div>
+            ))}
           </div>
         )}
       </div>

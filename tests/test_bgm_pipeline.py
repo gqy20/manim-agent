@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,7 +10,6 @@ from ._test_main_dispatcher_helpers import (
     _make_text_block,
     main_module,
 )
-
 
 PLAN_TEXT = """# Mode
 concept-explainer
@@ -39,10 +37,45 @@ Skill Signature: mp-scene-plan-v1
 
 
 @pytest.mark.asyncio
-async def test_pipeline_falls_back_to_voice_only_when_bgm_generation_fails():
+async def test_pipeline_falls_back_to_voice_only_when_bgm_generation_fails(tmp_path):
+    render_path = tmp_path / "media" / "out.mp4"
+    render_path.parent.mkdir(parents=True, exist_ok=True)
+    render_path.write_bytes(b"render")
+
     planning_messages = [
-        _make_assistant_message(_make_text_block(PLAN_TEXT)),
-        _make_result_message(num_turns=1),
+        _make_result_message(
+            num_turns=1,
+            **{
+                "structured_output": {
+                    "build_spec": {
+                        "mode": "concept-explainer",
+                        "learning_goal": "Explain the topic clearly.",
+                        "audience": "Beginners",
+                        "target_duration_seconds": 60,
+                        "beats": [
+                            {
+                                "id": "beat_001_opening",
+                                "title": "Opening",
+                                "visual_goal": "Introduce the topic.",
+                                "narration_intent": "Opening line",
+                                "target_duration_seconds": 20,
+                                "required_elements": [],
+                                "segment_required": True,
+                            },
+                            {
+                                "id": "beat_002_main_idea",
+                                "title": "Main idea",
+                                "visual_goal": "Explain the main concept.",
+                                "narration_intent": "Main explanation",
+                                "target_duration_seconds": 40,
+                                "required_elements": [],
+                                "segment_required": True,
+                            },
+                        ],
+                    },
+                }
+            },
+        ),
     ]
     build_messages = [
         _make_assistant_message(_make_text_block("implementation complete")),
@@ -93,6 +126,7 @@ async def test_pipeline_falls_back_to_voice_only_when_bgm_generation_fails():
             new_callable=AsyncMock,
             return_value=60.0,
         ),
+        patch("manim_agent.pipeline.run_phase3_render", new_callable=AsyncMock) as mock_phase3,
         patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
         patch(
             "manim_agent.pipeline.music_client.generate_instrumental",
@@ -100,9 +134,29 @@ async def test_pipeline_falls_back_to_voice_only_when_bgm_generation_fails():
             side_effect=RuntimeError("bgm unavailable"),
         ) as mock_bgm,
         patch(
+            "manim_agent.audio_orchestrator.video_builder.concat_audios",
+            new_callable=AsyncMock,
+            return_value="out/audio_track.mp3",
+        ),
+        patch(
             "manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock
         ) as mock_mux,
     ):
+        mock_phase3.return_value = (
+            MagicMock(
+                narration="Narration for the finished video.",
+                duration_seconds=60.0,
+                scene_file="scene.py",
+                scene_class="GeneratedScene",
+                implemented_beats=["Opening", "Main idea"],
+                build_summary="Built the planned animation beats.",
+                beat_to_narration_map=["Opening -> intro", "Main idea -> explanation"],
+                narration_coverage_complete=True,
+                estimated_narration_duration_seconds=60.0,
+            ),
+            str(render_path.resolve()),
+            ["frame-1.png"],
+        )
         mock_tts.return_value = MagicMock(
             audio_path="out/audio.mp3",
             subtitle_path="out/sub.srt",
@@ -120,15 +174,16 @@ async def test_pipeline_falls_back_to_voice_only_when_bgm_generation_fails():
             no_tts=False,
             bgm_enabled=True,
             target_duration_seconds=60,
-        )
+            cwd=str(tmp_path),
+    )
 
     assert result == "output/final.mp4"
-    mock_tts.assert_awaited_once()
+    assert mock_tts.await_count >= 1
     mock_bgm.assert_awaited_once()
     mock_mux.assert_awaited_once_with(
-        video_path=str(Path("media/out.mp4").resolve()),
-        audio_path="out/audio.mp3",
-        subtitle_path="out/sub.srt",
+        video_path=str(render_path.resolve()),
+        audio_path="out/audio_track.mp3",
+        subtitle_path=None,
         output_path="output/final.mp4",
         bgm_path=None,
         bgm_volume=0.12,

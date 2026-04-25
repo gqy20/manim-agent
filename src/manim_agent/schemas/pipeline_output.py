@@ -1,8 +1,7 @@
 """Final PipelineOutput schema - merged result of all phases.
 
-This schema serves as the unified output format for the entire pipeline.
-It maintains backward compatibility with the original flat field structure
-while also providing phase sub-objects for better organization.
+This schema serves as the unified output format for the entire staged pipeline.
+It stores both top-level delivery fields and phase sub-objects for traceability.
 """
 
 from __future__ import annotations
@@ -21,8 +20,7 @@ from .phase5_mux import Phase5MuxOutput
 class PipelineOutput(BaseModel):
     """Final merged output from the entire pipeline.
 
-    Maintains backward compatibility with the original flat field structure.
-    Phase-specific outputs are also stored in sub-objects for traceability.
+    Stores top-level delivery fields and phase-specific outputs.
     """
 
     video_output: str | None = Field(
@@ -60,7 +58,7 @@ class PipelineOutput(BaseModel):
     )
     deviations_from_plan: list[str] = Field(
         default_factory=list,
-        description="Explicit deviations from the visible plan, if any.",
+        description="Explicit deviations from the approved build plan/context, if any.",
     )
     beat_to_narration_map: list[str] = Field(
         default_factory=list,
@@ -201,7 +199,7 @@ class PipelineOutput(BaseModel):
     )
     plan_text: str | None = Field(
         default=None,
-        description="Visible scene plan emitted before implementation.",
+        description="Build plan/context derived from the Phase 1 build_spec.",
     )
     review_summary: str | None = Field(
         default=None,

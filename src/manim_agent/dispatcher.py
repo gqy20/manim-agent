@@ -3,8 +3,9 @@
 import json
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -20,16 +21,16 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from .schemas import Phase1PlanningOutput as ScenePlanOutput, PipelineOutput
 from .hooks import _HookState, get_hook_state, normalize_path_string
 from .pipeline_events import (
     EventType,
     PipelineEvent,
-    ThinkingPayload,
     ProgressPayload,
+    ThinkingPayload,
     ToolResultPayload,
     ToolStartPayload,
 )
+from .schemas import Phase1PlanningOutput, PipelineOutput
 from .segment_renderer import discover_segment_video_paths
 
 logger = logging.getLogger(__name__)
@@ -100,10 +101,10 @@ class _MessageDispatcher:
         self._assistant_msg_count: int = 0
         # ── PipelineOutput ──
         self.pipeline_output: PipelineOutput | None = None
-        self.scene_plan_output: ScenePlanOutput | None = None
+        self.scene_plan_output: Phase1PlanningOutput | None = None
         self._structured_output_candidate: PipelineOutput | None = None
         self._result_output_candidate: PipelineOutput | None = None
-        self._scene_plan_output_candidate: ScenePlanOutput | None = None
+        self._scene_plan_output_candidate: Phase1PlanningOutput | None = None
         self.raw_result_text: str | None = None
         self.raw_structured_output: Any = None
         self.scene_plan_validation_error: str | None = None
@@ -175,7 +176,8 @@ class _MessageDispatcher:
             return self.pipeline_output
         if not self._saw_completed_task_notification and not hasattr(self, "_result_message"):
             logger.debug(
-                "get_pipeline_output: neither completed task notification nor ResultMessage observed; "
+                "get_pipeline_output: neither completed task notification nor "
+                "ResultMessage observed; "
                 "text/structured fallback only",
             )
         # fallback：文件系统扫描已渲染的 mp4
@@ -212,7 +214,7 @@ class _MessageDispatcher:
         self._sync_compat_attrs()
         return self.pipeline_output
 
-    def get_scene_plan_output(self) -> ScenePlanOutput | None:
+    def get_scene_plan_output(self) -> Phase1PlanningOutput | None:
         """Return the best-known structured planning output, if any."""
         if self.scene_plan_output is not None:
             return self.scene_plan_output
@@ -249,7 +251,12 @@ class _MessageDispatcher:
         """Return the best-known structured output, even for partial or failed runs."""
         po = self.get_pipeline_output()
         if po is not None:
-            return po.model_dump()
+            payload = po.model_dump()
+            if payload.get("phase1_planning") is None:
+                scene_plan_output = getattr(self, "scene_plan_output", None)
+                if scene_plan_output is not None:
+                    payload["phase1_planning"] = scene_plan_output.model_dump()
+            return payload
 
         discovered_video = self._discover_rendered_video_path()
         discovered_segments = self._discover_rendered_segment_paths()
@@ -309,11 +316,16 @@ class _MessageDispatcher:
             "review_blocking_issues": list(getattr(self, "partial_review_blocking_issues", [])),
             "review_suggested_edits": list(getattr(self, "partial_review_suggested_edits", [])),
             "review_frame_paths": list(getattr(self, "partial_review_frame_paths", [])),
+            "phase1_planning": None,
         }
 
         scene_file = payload["scene_file"]
         if scene_file and scene_file in self._hook_state.captured_source_code:
             payload["source_code"] = self._hook_state.captured_source_code[scene_file]
+
+        scene_plan_output = getattr(self, "scene_plan_output", None)
+        if payload["phase1_planning"] is None and scene_plan_output is not None:
+            payload["phase1_planning"] = scene_plan_output.model_dump()
 
         if any(value not in (None, "", [], {}) for value in payload.values()):
             return payload
@@ -438,7 +450,7 @@ class _MessageDispatcher:
                 if self.scene_plan_output is None:
                     self.scene_plan_output = scene_plan_output
                 logger.debug(
-                    "_handle_result: ScenePlanOutput validated with %d beat(s)",
+                    "_handle_result: Phase1PlanningOutput validated with %d beat(s)",
                     len(scene_plan_output.build_spec.beats),
                 )
             except Exception as e:
@@ -725,6 +737,8 @@ class _MessageDispatcher:
         )
         current.plan_text = incoming.plan_text or current.plan_text
         current.review_summary = incoming.review_summary or current.review_summary
+        if incoming.phase1_planning is not None and current.phase1_planning is None:
+            current.phase1_planning = incoming.phase1_planning
         current.review_approved = (
             incoming.review_approved
             if incoming.review_approved is not None
@@ -749,7 +763,8 @@ class _MessageDispatcher:
             return text_candidate
         if not self._saw_completed_task_notification and not hasattr(self, "_result_message"):
             logger.debug(
-                "_discover_rendered_video_path: skip filesystem scan before completion signal/result"
+                "_discover_rendered_video_path: skip filesystem scan before "
+                "completion signal/result"
             )
             return None
         if not self.output_cwd:
@@ -873,7 +888,7 @@ class _MessageDispatcher:
         raw: Any,
         *,
         source: str,
-    ) -> ScenePlanOutput:
+    ) -> Phase1PlanningOutput:
         logger.debug(
             "_build_scene_plan_output_from_raw[%s]: raw type=%s",
             source,
@@ -888,7 +903,7 @@ class _MessageDispatcher:
             )
         if not isinstance(raw, dict):
             raise ValueError(f"{source} unexpected type: {type(raw).__name__}")
-        return ScenePlanOutput.model_validate(raw)
+        return Phase1PlanningOutput.model_validate(raw)
 
     def _build_pipeline_output_from_result_text(self, raw_result: str) -> PipelineOutput | None:
         """Parse compatibility fallback output from ResultMessage.result."""
@@ -1120,7 +1135,6 @@ class _MessageDispatcher:
 
     def _log_tool_use(self, block: ToolUseBlock) -> None:
         """打印工具调用信息 + 发射 TOOL_START 结构化事件。"""
-        icon = _EMOJI.get(block.name.lower(), "\u25b6")
         input_summary = self._summarize_input(block.input)
         logger.debug("_log_tool_use: id=%s, name=%s", block.id, block.name)
         logger.debug("_log_tool_use: summary=%s", input_summary)

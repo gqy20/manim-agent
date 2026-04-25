@@ -62,30 +62,49 @@ def _make_result_message(**overrides) -> ResultMessage:
     return ResultMessage(**defaults)
 
 
-def _make_scene_plan_text() -> str:
-    return """Mode
-Teaching animation
-Learning Goal
-Explain the core idea clearly.
-Audience
-Beginner learners.
-Beat List
-1. Hook
-2. Main idea
-3. Wrap-up
-Narration Outline
-Open with intuition, then explain the main relationship.
-Visual Risks
-Avoid overcrowding labels.
-Build Handoff
-Implement the beats in order and keep narration aligned.
-"""
-
-
 def _make_two_stage_query_side_effect(build_messages):
     planning_messages = [
-        _make_assistant_message(_make_text_block(_make_scene_plan_text())),
-        _make_result_message(num_turns=1, result="planning complete"),
+        _make_result_message(
+            num_turns=1,
+            result="planning complete",
+            structured_output={
+                "build_spec": {
+                    "mode": "teaching-animation",
+                    "learning_goal": "Explain the core idea clearly.",
+                    "audience": "Beginner learners.",
+                    "target_duration_seconds": 60,
+                    "beats": [
+                        {
+                            "id": "beat_001_hook",
+                            "title": "Hook",
+                            "visual_goal": "Open with a simple visual hook.",
+                            "narration_intent": "Introduce the intuition.",
+                            "target_duration_seconds": 10,
+                            "required_elements": ["title", "simple shape"],
+                            "segment_required": True,
+                        },
+                        {
+                            "id": "beat_002_main_idea",
+                            "title": "Main idea",
+                            "visual_goal": "Show the main relationship clearly.",
+                            "narration_intent": "Explain the core relationship.",
+                            "target_duration_seconds": 35,
+                            "required_elements": ["labels", "arrows"],
+                            "segment_required": True,
+                        },
+                        {
+                            "id": "beat_003_wrap_up",
+                            "title": "Wrap-up",
+                            "visual_goal": "Summarize the takeaway visually.",
+                            "narration_intent": "Restate the final takeaway.",
+                            "target_duration_seconds": 15,
+                            "required_elements": ["summary text"],
+                            "segment_required": True,
+                        },
+                    ],
+                },
+            },
+        ),
     ]
     call_count = {"value": 0}
 

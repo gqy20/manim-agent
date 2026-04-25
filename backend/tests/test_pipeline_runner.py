@@ -1,5 +1,5 @@
-from pathlib import Path
 import json
+from pathlib import Path
 
 from backend.pipeline_runner import _canonicalize_pipeline_artifacts, _write_failure_diagnostics
 
@@ -65,3 +65,41 @@ def test_write_failure_diagnostics_persists_phase1_artifacts(tmp_path):
     assert payload["error_message"] == "phase1 failed"
     assert payload["phase1"]["scene_plan_validation_error"] == "build_spec missing beats"
     assert payload["pipeline_output_snapshot"]["plan_text"] == "## Mode\nproof"
+
+
+def test_write_failure_diagnostics_prefers_frozen_phase1_snapshot(tmp_path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    (task_dir / "phase1_planning.json").write_text(
+        json.dumps({"build_spec": {"mode": "proof"}}),
+        encoding="utf-8",
+    )
+
+    class _FakeDispatcher:
+        phase1_diagnostics_snapshot = {
+            "accepted": True,
+            "raw_structured_output_present": True,
+            "raw_structured_output_type": "dict",
+            "output_path": "old/path/phase1_planning.json",
+        }
+
+        def get_phase1_failure_diagnostics(self):
+            return {
+                "accepted": False,
+                "raw_structured_output_present": False,
+                "raw_structured_output_type": None,
+            }
+
+        def get_persistable_pipeline_output(self):
+            return {"plan_text": "## Mode\nproof"}
+
+    diagnostics_path = _write_failure_diagnostics(
+        task_dir=task_dir,
+        dispatcher=_FakeDispatcher(),
+        error_message="phase2 failed",
+    )
+
+    payload = json.loads(diagnostics_path.read_text(encoding="utf-8"))
+    assert payload["phase1"]["accepted"] is True
+    assert payload["phase1"]["raw_structured_output_present"] is True
+    assert payload["phase1"]["output_path"] == str((task_dir / "phase1_planning.json").resolve())

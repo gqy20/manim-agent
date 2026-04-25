@@ -14,6 +14,17 @@ from ._test_main_dispatcher_helpers import (
 )
 
 
+def _phase2_output(**overrides):
+    data = {
+        "video_output": "/out.mp4",
+        "implemented_beats": ["Hook", "Main idea", "Wrap-up"],
+        "build_summary": "Built the planned teaching beats.",
+        "deviations_from_plan": [],
+    }
+    data.update(overrides)
+    return data
+
+
 class TestTTSNarrationFlow:
     @pytest.mark.asyncio
     async def test_tts_uses_narration_when_available(self):
@@ -21,10 +32,9 @@ class TestTTSNarrationFlow:
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
                 num_turns=1,
-                structured_output={
-                    "video_output": "/out.mp4",
-                    "narration": "First show a circle, then morph it into a square.",
-                },
+                structured_output=_phase2_output(
+                    narration="First show a circle, then morph it into a square.",
+                ),
             ),
         ]
         captured_tts_text: list[str] = []
@@ -75,7 +85,7 @@ class TestTTSNarrationFlow:
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
                 num_turns=1,
-                structured_output={"video_output": "/out.mp4"},
+                structured_output=_phase2_output(),
             ),
         ]
         captured_tts_text: list[str] = []
@@ -135,10 +145,10 @@ class TestTTSNarrationFlow:
             ),
             _make_result_message(
                 num_turns=1,
-                structured_output={
-                    "video_output": "/ignored.mp4",
-                    "narration": "Narration from structured output.",
-                },
+                structured_output=_phase2_output(
+                    video_output="/ignored.mp4",
+                    narration="Narration from structured output.",
+                ),
             ),
         ]
         captured_tts_text: list[str] = []

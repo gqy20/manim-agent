@@ -52,10 +52,10 @@ Treat the plugin as already provisioned by the runtime when the task starts.
 Do not test plugin availability with Python imports, package checks, shell probes, or filesystem heuristics.
 Do not use Bash, Read, ls, find, or other filesystem checks to verify whether the plugin exists.
 Do not decide to bypass the plugin workflow because a manual probe failed.
-Use the plugin as the primary workflow guide across planning, coding, rendering, narration, and review.
-Before coding, produce a visible scene plan and then implement from that plan instead of improvising directly in code.
-Apply the relevant plugin skills during planning, build, direction, narration, and render review.
-Route the work through `/scene-plan`, `/scene-build`, `/scene-direction`, `/layout-safety`, `/narration-sync`, and `/render-review` as the stage cues for this workflow.
+Use the plugin as the primary workflow guide across coding, rendering, narration, and review.
+Before coding, use the approved Phase 1 `build_spec` and build plan/context instead of improvising directly in code.
+Apply the relevant plugin skills during build, direction, narration, and render review.
+Route the work through `/scene-build`, `/scene-direction`, `/layout-safety`, `/narration-sync`, and `/render-review` as the stage cues for this workflow.
 Use the `layout-safety` skill as an advisory audit for dense beats with labels, formulas, braces, arrows, or other objects that can overlap, and interpret its warnings with visual judgment.
 If plugin behavior seems unavailable or inconsistent, continue following the plugin workflow and report the issue in your final summary instead of switching to a non-plugin workflow.
 # Working Directory
@@ -95,6 +95,78 @@ If plugin behavior seems unavailable or inconsistent, continue following the plu
 """
 
 
+PLANNING_SYSTEM_PROMPT: str = """# 角色
+你是 Manim 教学动画流水线的 Phase 1 规划阶段。
+你的唯一任务是把用户需求整理成紧凑的教学场景规划，以及可机器消费的构建契约。
+
+# 阶段边界
+- 只产出结构化规划结果。
+- 不写代码。
+- 不编辑文件。
+- 不渲染。
+- 不检查仓库、任务目录、插件路径或文件系统。
+- 不开始实现，也不提出 shell 命令。
+- 如果需要实现细节，只能写成 Build Handoff 指导。
+
+# 构建契约
+用 Phase 1 的 `phase1_planning` schema 返回 structured_output。
+`build_spec` 是交给实现阶段的唯一权威契约。
+不要额外输出 Markdown plan、JSON 代码块、解释文字或总结。
+顶层只能包含 `build_spec`，不要包一层 `phase1_planning`。
+不要添加 `meta`、`visual_style_directives`、`narration_notes`。
+beat 字段只能使用 `id`、`title`、`visual_goal`、`narration_intent`、
+`target_duration_seconds`、`required_elements`、`segment_required`。
+不要使用 `beat_id`、`teaching_point`、`segment_requirements`。
+
+# 规划质量
+- 默认使用 3 到 6 个 beats。
+- 每个 beat 只承载一个新的教学点。
+- 规划要足够紧凑，可以直接交给实现阶段。
+- 优先使用视觉递进，避免堆砌大量文字。
+- 如果用户明确要求语言，遵循用户要求；否则按简体中文解说来规划。
+"""
+
+
+def _validate_prompt_options(preset: str, quality: str) -> None:
+    valid_presets = {"default", *PRESET_SUFFIXES.keys()}
+    if preset not in valid_presets:
+        raise ValueError(f"Invalid preset '{preset}'. Must be one of: {sorted(valid_presets)}")
+
+    if quality not in QUALITY_FLAGS:
+        raise ValueError(
+            f"Invalid quality '{quality}'. Must be one of: {sorted(QUALITY_FLAGS.keys())}"
+        )
+
+
+def get_planning_prompt(
+    preset: str = "default",
+    quality: str = "high",
+    render_mode: str = "full",
+) -> str:
+    """Build the Phase 1 planning-only system prompt."""
+    _validate_prompt_options(preset, quality)
+    render_mode = (render_mode or "full").strip().lower() or "full"
+
+    prompt = PLANNING_SYSTEM_PROMPT
+    prompt += (
+        "\n# 产品约束\n"
+        f"- Preset: {preset}.\n"
+        f"- Quality target: {quality}.\n"
+        f"- Render mode expected downstream: {render_mode}.\n"
+    )
+    if render_mode == "segments":
+        prompt += (
+            "- 为后续 beat-level segments 做规划，使用稳定 beat ids，"
+            "便于之后生成 `segments/<beat_id>.mp4`。\n"
+        )
+
+    suffix = PRESET_SUFFIXES.get(preset, "")
+    if suffix:
+        prompt += suffix
+
+    return prompt
+
+
 def get_prompt(
     user_text: str,
     preset: str = "default",
@@ -114,16 +186,7 @@ def get_prompt(
     Raises:
         ValueError: preset 或 quality 不在允许范围内。
     """
-    valid_presets = {"default", *PRESET_SUFFIXES.keys()}
-    if preset not in valid_presets:
-        raise ValueError(
-            f"Invalid preset '{preset}'. Must be one of: {sorted(valid_presets)}"
-        )
-
-    if quality not in QUALITY_FLAGS:
-        raise ValueError(
-            f"Invalid quality '{quality}'. Must be one of: {sorted(QUALITY_FLAGS.keys())}"
-        )
+    _validate_prompt_options(preset, quality)
 
     # 构建基础 prompt
     quality_flag = QUALITY_FLAGS[quality]

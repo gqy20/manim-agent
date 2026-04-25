@@ -9,9 +9,8 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from manim_agent.pipeline_events import EventType, PipelineEvent
 from .log_config import log_event
-from .storage.r2_client import R2Client, is_r2_url, r2_object_key
+from .storage.r2_client import R2Client, r2_object_key
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +127,19 @@ def _write_failure_diagnostics(
     try:
         task_dir.mkdir(parents=True, exist_ok=True)
         diagnostics_path = task_dir / "phase_failure_diagnostics.json"
+        phase1_diagnostics = getattr(dispatcher, "phase1_diagnostics_snapshot", None)
+        if phase1_diagnostics is None:
+            phase1_diagnostics = dispatcher.get_phase1_failure_diagnostics()
+        phase1_artifact_path = task_dir / "phase1_planning.json"
+        if phase1_artifact_path.exists():
+            phase1_diagnostics = {
+                **phase1_diagnostics,
+                "accepted": phase1_diagnostics.get("accepted", True),
+                "output_path": str(phase1_artifact_path.resolve()),
+            }
         payload = {
             "error_message": error_message,
-            "phase1": dispatcher.get_phase1_failure_diagnostics(),
+            "phase1": phase1_diagnostics,
             "pipeline_output_snapshot": dispatcher.get_persistable_pipeline_output(),
         }
         diagnostics_path.write_text(
@@ -259,7 +268,7 @@ async def _pipeline_body(
         )
         return _video_url, po_data
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         timeout_min = _PIPELINE_TIMEOUT_SECONDS / 60
         error_message = (
             f"Pipeline exceeded the allowed runtime ({timeout_min:.0f} min) "
@@ -273,7 +282,7 @@ async def _pipeline_body(
             timeout_seconds=_PIPELINE_TIMEOUT_SECONDS,
         )
         log_callback(f"[TIMEOUT] {error_message}")
-        log_callback(f"[TIMEOUT] Set MANIM_PIPELINE_TIMEOUT_SECONDS to adjust.")
+        log_callback("[TIMEOUT] Set MANIM_PIPELINE_TIMEOUT_SECONDS to adjust.")
         partial_po_data = None
         if dispatcher_ref:
             dispatcher = dispatcher_ref[0]

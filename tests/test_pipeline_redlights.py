@@ -10,6 +10,17 @@ from manim_agent.schemas import Phase3RenderReviewOutput as RenderReviewOutput
 from ._test_main_dispatcher_helpers import _make_two_stage_query_side_effect
 
 
+def _phase2_output(**overrides):
+    data = {
+        "video_output": "/out.mp4",
+        "implemented_beats": ["Hook", "Main idea", "Wrap-up"],
+        "build_summary": "Built the planned teaching beats.",
+        "deviations_from_plan": [],
+    }
+    data.update(overrides)
+    return data
+
+
 def _make_text_block(text: str):
     from claude_agent_sdk import TextBlock
 
@@ -67,11 +78,11 @@ class TestPipelinePhaseLogsViaCallback:
         logs: list[str] = []
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
-            _make_result_message(num_turns=1, structured_output={"video_output": "/out.mp4"}),
+            _make_result_message(num_turns=1, structured_output=_phase2_output()),
         ]
 
         with (
-            patch("claude_agent_sdk.query") as mock_query,
+            patch("manim_agent.pipeline.query") as mock_query,
             patch("manim_agent.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
             patch(
                 "manim_agent.video_builder.build_final_video", new_callable=AsyncMock
@@ -112,7 +123,7 @@ class TestPipelinePhaseLogsViaCallback:
         logs: list[str] = []
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
-            _make_result_message(num_turns=1, structured_output={"video_output": "/out.mp4"}),
+            _make_result_message(num_turns=1, structured_output=_phase2_output()),
         ]
         mock_tts_result = MagicMock(
             audio_path="/tmp/audio.mp3",
@@ -122,7 +133,7 @@ class TestPipelinePhaseLogsViaCallback:
         )
 
         with (
-            patch("claude_agent_sdk.query") as mock_query,
+            patch("manim_agent.pipeline.query") as mock_query,
             patch("manim_agent.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
             patch(
                 "manim_agent.video_builder.build_final_video", new_callable=AsyncMock

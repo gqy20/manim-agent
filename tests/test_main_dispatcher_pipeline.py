@@ -36,12 +36,10 @@ Implement in one focused scene.
 
 def _planning_messages():
     return [
-        _make_assistant_message(_make_text_block(_SCENE_PLAN_TEXT)),
         _make_result_message(
             num_turns=1,
             total_cost_usd=0.001,
             structured_output={
-                "markdown_plan": _SCENE_PLAN_TEXT,
                 "build_spec": {
                     "mode": "quick-demo",
                     "learning_goal": "Show one clean transformation.",

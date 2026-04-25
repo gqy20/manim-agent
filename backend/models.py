@@ -87,6 +87,7 @@ class PipelineOutputData(BaseModel):
     run_cost_usd: float | None = None
     target_duration_seconds: int | None = None
     plan_text: str | None = None
+    phase1_planning: dict[str, Any] | None = None
     review_summary: str | None = None
     review_approved: bool | None = None
     review_blocking_issues: list[str] = Field(default_factory=list)

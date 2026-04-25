@@ -8,7 +8,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from .dispatcher import _EMOJI
 from .pipeline_events import EventType, PipelineEvent, StatusPayload
@@ -69,7 +69,10 @@ def build_options(
     log_callback: Callable[[str], None] | None = None,
     output_format: dict[str, Any] | None = None,
     use_default_output_format: bool = True,
+    tools: list[str] | None = None,
     allowed_tools: list[str] | None = None,
+    disallowed_tools: list[str] | None = None,
+    skills: list[str] | Literal["all"] | None = None,
 ) -> Any:
     """Build ClaudeAgentOptions, forwarding to runtime_options.build_options."""
     return _runtime_build_options(
@@ -81,7 +84,10 @@ def build_options(
         log_callback=log_callback,
         output_format=output_format,
         use_default_output_format=use_default_output_format,
+        tools=tools,
         allowed_tools=allowed_tools,
+        disallowed_tools=disallowed_tools,
+        skills=skills,
         error_prefix=_EMOJI["cross"],
     )
 
@@ -92,6 +98,7 @@ def emit_status(
     task_status: str,
     phase: str | None = None,
     message: str | None = None,
+    pipeline_output: dict[str, Any] | None = None,
 ) -> None:
     """Emit a structured status event when an SSE callback is available."""
     if event_callback is None:
@@ -103,6 +110,7 @@ def emit_status(
                 task_status=task_status,
                 phase=phase,
                 message=message,
+                pipeline_output=pipeline_output,
             ),
         )
     )
