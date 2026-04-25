@@ -98,7 +98,7 @@ def _format_exception_message(exc: Exception) -> str:
 
 def _cleanup_output_dir(output_dir: Path, *, keep_mp4: bool = True) -> None:
     """Remove non-essential files from a task's output directory."""
-    extensions_to_keep = {".log", ".json", ".txt"}
+    extensions_to_keep = {".log", ".json", ".py", ".txt"}
     if keep_mp4:
         extensions_to_keep.add(".mp4")
     try:

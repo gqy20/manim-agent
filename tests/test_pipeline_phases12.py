@@ -1,5 +1,6 @@
 """Tests for pipeline_phases12 module (Phase1 planning + Phase2 implementation)."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -500,6 +501,9 @@ class TestPhase2ImplementationLogic:
                 "deviations_from_plan": [],
             }
         )
+        (tmp_path / "scene.py").write_text("from manim import *\n", encoding="utf-8")
+        (tmp_path / "media").mkdir()
+        (tmp_path / "media" / "out.mp4").write_bytes(b"video")
         dispatcher = MagicMock()
         dispatcher.get_phase2_implementation_output.return_value = phase2_output
         dispatcher.get_scene_plan_output.return_value = None
@@ -525,8 +529,19 @@ class TestPhase2ImplementationLogic:
             )
 
         assert result == {"turns": 1}
-        assert (tmp_path / "phase2_implementation.json").exists()
-        assert dispatcher.pipeline_output.phase2_implementation == phase2_output
+        phase2_json = tmp_path / "phase2_implementation.json"
+        assert phase2_json.exists()
+        assert (tmp_path / "phase2_scene.py").read_text(encoding="utf-8") == (
+            "from manim import *\n"
+        )
+        assert (tmp_path / "phase2_video.mp4").read_bytes() == b"video"
+        frozen = json.loads(phase2_json.read_text(encoding="utf-8"))
+        assert frozen["scene_file"] == str(tmp_path / "phase2_scene.py")
+        assert frozen["video_output"] == str(tmp_path / "phase2_video.mp4")
+        assert dispatcher.pipeline_output.phase2_implementation.scene_file == str(
+            tmp_path / "phase2_scene.py"
+        )
+        assert dispatcher.pipeline_output.video_output == str(tmp_path / "phase2_video.mp4")
         assert dispatcher.pipeline_output.narration == phase2_output.narration
 
     @pytest.mark.asyncio

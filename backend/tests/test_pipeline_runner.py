@@ -1,7 +1,11 @@
 import json
 from pathlib import Path
 
-from backend.pipeline_runner import _canonicalize_pipeline_artifacts, _write_failure_diagnostics
+from backend.pipeline_runner import (
+    _canonicalize_pipeline_artifacts,
+    _cleanup_output_dir,
+    _write_failure_diagnostics,
+)
 
 
 def test_canonicalize_preserves_raw_video_output_and_sets_final_video_output(tmp_path):
@@ -103,3 +107,23 @@ def test_write_failure_diagnostics_prefers_frozen_phase1_snapshot(tmp_path):
     assert payload["phase1"]["accepted"] is True
     assert payload["phase1"]["raw_structured_output_present"] is True
     assert payload["phase1"]["output_path"] == str((task_dir / "phase1_planning.json").resolve())
+
+
+def test_cleanup_output_dir_keeps_phase2_top_level_artifacts(tmp_path):
+    task_dir = tmp_path / "task"
+    task_dir.mkdir()
+    (task_dir / "phase2_scene.py").write_text("from manim import *\n", encoding="utf-8")
+    (task_dir / "phase2_video.mp4").write_bytes(b"video")
+    (task_dir / "phase2_implementation.json").write_text("{}", encoding="utf-8")
+    (task_dir / "scratch.tmp").write_text("temp", encoding="utf-8")
+    media_dir = task_dir / "media"
+    media_dir.mkdir()
+    (media_dir / "cache.mp4").write_bytes(b"cache")
+
+    _cleanup_output_dir(task_dir, keep_mp4=True)
+
+    assert (task_dir / "phase2_scene.py").exists()
+    assert (task_dir / "phase2_video.mp4").exists()
+    assert (task_dir / "phase2_implementation.json").exists()
+    assert not (task_dir / "scratch.tmp").exists()
+    assert not media_dir.exists()

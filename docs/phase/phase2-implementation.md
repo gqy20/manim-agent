@@ -173,7 +173,11 @@ Phase 2 验收成功后立即冻结写入：
 
 ```text
 backend/output/{task_id}/phase2_implementation.json
+backend/output/{task_id}/phase2_scene.py
+backend/output/{task_id}/phase2_video.mp4
 ```
+
+`phase2_scene.py` 是 Agent 实际生成脚本的稳定副本。`phase2_video.mp4` 是 Phase 2 主渲染视频的稳定副本。`phase2_implementation.json` 中的 `scene_file` 和 `video_output` 会指向这些顶层稳定 artifact，而不是 Manim 深层 `media/` 缓存路径。
 
 随后 pipeline 发出携带 Phase 2 快照的状态事件写入数据库：
 
@@ -189,6 +193,8 @@ backend/output/{task_id}/phase2_implementation.json
 ```
 
 该写入发生在 Phase 3 之前，因此可以独立核对 Phase 2 是否完成，不依赖后续 render review、TTS、mux 或最终视频是否成功。
+
+后端 cleanup 可以删除 `media/`、`audio/`、`review_frames/`、`__pycache__` 等缓存目录，但必须保留顶层冻结 artifact。这样失败任务也能事后复查 Phase 2 的结构化输出、代码脚本和主渲染视频。
 
 ## 传给下一阶段
 

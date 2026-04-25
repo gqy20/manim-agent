@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -149,6 +150,43 @@ def persist_phase2_implementation_output(
         encoding="utf-8",
     )
     return str(output_path)
+
+
+def freeze_phase2_artifacts(
+    phase2_output: Phase2ImplementationOutput,
+    *,
+    resolved_cwd: str,
+) -> Phase2ImplementationOutput:
+    """Copy Phase 2 executable artifacts to stable top-level task files.
+
+    Manim writes videos under cache-like ``media/`` directories that backend
+    cleanup removes. Stable copies make Phase 2 independently auditable after
+    later phases fail or cleanup runs.
+    """
+    root = Path(resolved_cwd).resolve()
+    normalized = phase2_output.model_copy(deep=True)
+
+    if normalized.scene_file:
+        scene_path = Path(normalized.scene_file)
+        if not scene_path.is_absolute():
+            scene_path = root / scene_path
+        if scene_path.exists():
+            frozen_scene = root / "phase2_scene.py"
+            if scene_path.resolve() != frozen_scene.resolve():
+                shutil.copy2(scene_path, frozen_scene)
+            normalized.scene_file = str(frozen_scene)
+
+    if normalized.video_output:
+        video_path = Path(normalized.video_output)
+        if not video_path.is_absolute():
+            video_path = root / video_path
+        if video_path.exists():
+            frozen_video = root / "phase2_video.mp4"
+            if video_path.resolve() != frozen_video.resolve():
+                shutil.copy2(video_path, frozen_video)
+            normalized.video_output = str(frozen_video)
+
+    return normalized
 
 
 def build_pipeline_output_from_phase2(
@@ -388,6 +426,11 @@ async def run_phase2_implementation(
             "Phase 2 implementation did not return the required structured implementation output."
         )
 
+    phase2_output = freeze_phase2_artifacts(
+        phase2_output,
+        resolved_cwd=resolved_cwd,
+    )
+    dispatcher.phase2_implementation_output = phase2_output
     phase2_output_path = persist_phase2_implementation_output(
         phase2_output,
         resolved_cwd=resolved_cwd,

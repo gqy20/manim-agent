@@ -319,7 +319,7 @@ def _cleanup_output_dir(output_dir: Path, *, keep_mp4: bool = True) -> None:
         # so we can still verify output quickly without filling disk.
         keep_mp4 = _should_keep_local_video(output_dir.name)
 
-    extensions_to_keep = {".log", ".json", ".txt"}
+    extensions_to_keep = {".log", ".json", ".py", ".txt"}
     if keep_mp4:
         extensions_to_keep.add(".mp4")
     try:
