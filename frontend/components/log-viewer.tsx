@@ -251,40 +251,42 @@ function ToolStartView({ payload, timestamp }: { payload: ToolStartPayload; time
   const entries = Object.entries(payload.input_summary).slice(0, 4);
 
   return (
-    <div className="my-1 flex min-w-0 items-start gap-2 rounded-md border border-blue-500/15 bg-blue-500/[0.04] px-3 py-2">
+    <div className="my-1 flex min-w-0 flex-col gap-1.5 rounded-md border border-blue-500/15 bg-blue-500/[0.04] px-3 py-2">
       <span className={`${TIMESTAMP_COL_CLASS} select-none`}>{formatEventTime(timestamp)}</span>
-      <span className="mt-[5px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-blue-300/80">
-        <ToolIcon name={payload.name} />
-      </span>
-      <div className="min-w-0 flex-1 overflow-hidden">
-        <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
-          <span className="shrink-0 rounded-sm bg-blue-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-blue-400">
-            CALL
-          </span>
-          <span className="min-w-0 truncate text-[11px] font-semibold text-blue-200" title={payload.name}>
-            {payload.name}
-          </span>
-          <span className="shrink-0 text-[10px] font-mono text-blue-500/40">
-            {payload.tool_use_id.slice(-8)}
-          </span>
-        </div>
-        {entries.length > 0 && (
-          <div className="mt-2 space-y-1.5 text-[10px] font-mono">
-            {entries.map(([key, value]) => (
-              <div
-                key={key}
-                className="min-w-0 overflow-hidden rounded-md border border-blue-400/10 bg-black/25"
-              >
-                <div className="border-b border-blue-400/10 px-2 py-1 text-[9px] uppercase tracking-[0.16em] text-blue-300/45">
-                  {key}
-                </div>
-                <pre className="max-h-20 overflow-hidden whitespace-pre-wrap break-words px-2 py-1.5 leading-relaxed text-blue-100/65">
-                  {formatToolValue(value)}
-                </pre>
-              </div>
-            ))}
+      <div className="flex items-start gap-2">
+        <span className="mt-[3px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-blue-300/80">
+          <ToolIcon name={payload.name} />
+        </span>
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+            <span className="shrink-0 rounded-sm bg-blue-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-blue-400">
+              CALL
+            </span>
+            <span className="min-w-0 truncate text-[11px] font-semibold text-blue-200" title={payload.name}>
+              {payload.name}
+            </span>
+            <span className="shrink-0 text-[10px] font-mono text-blue-500/40">
+              {payload.tool_use_id.slice(-8)}
+            </span>
           </div>
-        )}
+          {entries.length > 0 && (
+            <div className="mt-2 space-y-1.5 text-[10px] font-mono">
+              {entries.map(([key, value]) => (
+                <div
+                  key={key}
+                  className="min-w-0 overflow-hidden rounded-md border border-blue-400/10 bg-black/25"
+                >
+                  <div className="border-b border-blue-400/10 px-2 py-1 text-[9px] uppercase tracking-[0.16em] text-blue-300/45">
+                    {key}
+                  </div>
+                  <pre className="max-h-20 overflow-hidden whitespace-pre-wrap break-words px-2 py-1.5 leading-relaxed text-blue-100/65">
+                    {formatToolValue(value)}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -296,19 +298,21 @@ function ToolResultView({ payload, timestamp }: { payload: ToolResultPayload; ti
     : "border-green-500/10 bg-green-500/[0.04] text-green-300";
 
   return (
-    <div className={`my-0.5 flex items-center gap-2 rounded-md border px-3 py-1.5 ${tone}`}>
+    <div className={`my-0.5 flex flex-col gap-1 rounded-md border px-3 py-1.5 ${tone}`}>
       <span className={`${TIMESTAMP_COL_CLASS} select-none`}>{formatEventTime(timestamp)}</span>
-      <span className={`rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider ${payload.is_error ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}`}>
-        {payload.is_error ? "ERR" : "OK"}
-      </span>
-      {payload.content && (
-        <span className="max-w-[280px] truncate text-[11px] text-current/75">
-          {payload.content.length > 120 ? `${payload.content.slice(0, 120)}...` : payload.content}
+      <div className="flex items-center gap-2">
+        <span className={`rounded-sm px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider ${payload.is_error ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}`}>
+          {payload.is_error ? "ERR" : "OK"}
         </span>
-      )}
-      {payload.duration_ms != null && (
-        <span className="ml-auto shrink-0 text-[10px] font-mono text-muted-foreground/40 opacity-70">{payload.duration_ms}ms</span>
-      )}
+        {payload.content && (
+          <span className="max-w-[280px] truncate text-[11px] text-current/75">
+            {payload.content.length > 120 ? `${payload.content.slice(0, 120)}...` : payload.content}
+          </span>
+        )}
+        {payload.duration_ms != null && (
+          <span className="ml-auto shrink-0 text-[10px] font-mono text-muted-foreground/40 opacity-70">{payload.duration_ms}ms</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -318,9 +322,9 @@ function ThinkingView({ payload, timestamp }: { payload: ThinkingPayload; timest
   const preview = payload.preview ?? `${payload.thinking.slice(0, 97)}...`;
 
   return (
-    <div className="my-0.5 flex items-start gap-2 border-l-2 border-purple-500/25 py-1 pl-3">
+    <div className="my-0.5 flex flex-col border-l-2 border-purple-500/25 py-1 pl-3">
       <span className={TIMESTAMP_COL_CLASS}>{formatEventTime(timestamp)}</span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 mt-[2px]">
         <button
           type="button"
           onClick={() => setExpanded((current) => !current)}
@@ -353,9 +357,9 @@ function ThinkingView({ payload, timestamp }: { payload: ThinkingPayload; timest
 
 function ProgressView({ payload, timestamp }: { payload: ProgressPayload; timestamp: string }) {
   return (
-    <div className="my-1 flex w-full max-w-full flex-col gap-2 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] text-muted-foreground/60 sm:flex-row sm:items-center sm:justify-between sm:py-1.5">
+    <div className="my-1 flex w-full max-w-full flex-col gap-1.5 rounded-md border border-white/5 bg-white/[0.02] px-3 py-2 text-[11px] text-muted-foreground/60">
+      <span className={`${TIMESTAMP_COL_CLASS} select-none`}>{formatEventTime(timestamp)}</span>
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-        <span className={`${TIMESTAMP_COL_CLASS} select-none`}>{formatEventTime(timestamp)}</span>
         <span className="rounded-sm bg-white/5 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-white/40">
           STEP
         </span>
@@ -368,8 +372,8 @@ function ProgressView({ payload, timestamp }: { payload: ProgressPayload; timest
           <span className="font-mono font-medium text-blue-400/80">{payload.tool_uses}</span>
           <span className="text-[10px] text-white/30">tools</span>
         </span>
+        <span className="ml-auto text-[10px] font-mono text-white/40 opacity-70">{(payload.elapsed_ms / 1000).toFixed(1)}s</span>
       </div>
-      <span className="text-[10px] font-mono text-white/40 opacity-70">{(payload.elapsed_ms / 1000).toFixed(1)}s</span>
     </div>
   );
 }
@@ -390,8 +394,9 @@ function StatusView({
       : "border-cyan-500/20 bg-cyan-500/[0.05] text-cyan-300";
 
   return (
-    <div className={`my-1 rounded-md border px-3 py-2 ${tone}`}>
-      <div className="flex items-center gap-2.5 text-[11px] font-medium">
+    <div className={`my-1 flex flex-col rounded-md border px-3 py-2 ${tone}`}>
+      <span className={`${TIMESTAMP_COL_CLASS} select-none text-current/40`}>{formatEventTime(timestamp)}</span>
+      <div className="flex items-center gap-2.5 text-[11px] font-medium mt-[2px]">
         <span className="flex items-center justify-center w-[18px] h-[18px] rounded-sm bg-current/10 text-[10px] tracking-tighter">
           {isDone ? "✓" : isError ? "✕" : "⟳"}
         </span>
@@ -401,7 +406,6 @@ function StatusView({
             {payload.phase}
           </span>
         )}
-        <span className={`${TIMESTAMP_COL_CLASS} ml-auto w-auto text-current/40`}>{formatEventTime(timestamp)}</span>
       </div>
       {payload.message && <p className="mt-2 text-[11px] leading-relaxed text-current/75 break-words">{payload.message}</p>}
     </div>
