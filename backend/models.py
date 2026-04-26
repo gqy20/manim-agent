@@ -67,6 +67,15 @@ class PipelineOutputData(BaseModel):
     beat_to_narration_map: list[str] = Field(default_factory=list)
     narration_coverage_complete: bool | None = None
     estimated_narration_duration_seconds: float | None = None
+    render_mode: str | None = None
+    segment_render_complete: bool | None = None
+    beats: list[dict[str, Any]] = Field(default_factory=list)
+    audio_segments: list[dict[str, Any]] = Field(default_factory=list)
+    timeline_path: str | None = None
+    timeline_total_duration_seconds: float | None = None
+    segment_render_plan_path: str | None = None
+    segment_video_paths: list[str] = Field(default_factory=list)
+    audio_concat_path: str | None = None
     source_code: str | None = None
     audio_path: str | None = None
     bgm_path: str | None = None
@@ -87,7 +96,14 @@ class PipelineOutputData(BaseModel):
     run_cost_usd: float | None = None
     target_duration_seconds: int | None = None
     plan_text: str | None = None
+    mode: str | None = None
+    learning_goal: str | None = None
+    audience: str | None = None
     phase1_planning: dict[str, Any] | None = None
+    phase2_implementation: dict[str, Any] | None = None
+    phase3_render_review: dict[str, Any] | None = None
+    phase4_tts: dict[str, Any] | None = None
+    phase5_mux: dict[str, Any] | None = None
     review_summary: str | None = None
     review_approved: bool | None = None
     review_blocking_issues: list[str] = Field(default_factory=list)
@@ -95,6 +111,13 @@ class PipelineOutputData(BaseModel):
     review_frame_paths: list[str] = Field(default_factory=list)
     review_frame_analyses: list[dict] = Field(default_factory=list)
     review_vision_analysis_used: bool | None = None
+    intro_requested: bool | None = None
+    outro_requested: bool | None = None
+    intro_spec: dict[str, Any] | None = None
+    outro_spec: dict[str, Any] | None = None
+    intro_video_path: str | None = None
+    outro_video_path: str | None = None
+    intro_outro_backend: str | None = None
 
 
 class TaskResponse(BaseModel):

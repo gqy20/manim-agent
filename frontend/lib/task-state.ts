@@ -18,6 +18,13 @@ function mergeList(prev: string[], next: string[] | undefined): string[] {
   return next;
 }
 
+function mergeArray<T>(prev: T[] | undefined, next: T[] | undefined): T[] | undefined {
+  if (!next || next.length === 0) {
+    return prev;
+  }
+  return next;
+}
+
 function mergeNumberMap(
   prev: Record<string, number>,
   next: Record<string, number> | undefined,
@@ -63,6 +70,22 @@ function mergePipelineOutput(
       prev.estimated_narration_duration_seconds,
       next.estimated_narration_duration_seconds,
     ),
+    render_mode: mergeNullableValue(prev.render_mode ?? null, next.render_mode),
+    segment_render_complete: mergeNullableValue(
+      prev.segment_render_complete ?? null,
+      next.segment_render_complete,
+    ),
+    timeline_path: mergeNullableValue(prev.timeline_path ?? null, next.timeline_path),
+    timeline_total_duration_seconds: mergeNullableValue(
+      prev.timeline_total_duration_seconds ?? null,
+      next.timeline_total_duration_seconds,
+    ),
+    segment_render_plan_path: mergeNullableValue(
+      prev.segment_render_plan_path ?? null,
+      next.segment_render_plan_path,
+    ),
+    segment_video_paths: mergeArray(prev.segment_video_paths, next.segment_video_paths),
+    audio_concat_path: mergeNullableValue(prev.audio_concat_path ?? null, next.audio_concat_path),
     source_code: mergeNullableValue(prev.source_code, next.source_code),
     audio_path: mergeNullableValue(prev.audio_path, next.audio_path),
     bgm_path: mergeNullableValue(prev.bgm_path, next.bgm_path),
@@ -92,7 +115,19 @@ function mergePipelineOutput(
     mode: mergeNullableValue(prev.mode, next.mode),
     learning_goal: mergeNullableValue(prev.learning_goal, next.learning_goal),
     audience: mergeNullableValue(prev.audience, next.audience),
+    phase1_planning: mergeNullableValue(prev.phase1_planning ?? null, next.phase1_planning),
+    phase2_implementation: mergeNullableValue(
+      prev.phase2_implementation ?? null,
+      next.phase2_implementation,
+    ),
+    phase3_render_review: mergeNullableValue(
+      prev.phase3_render_review ?? null,
+      next.phase3_render_review,
+    ),
+    phase4_tts: mergeNullableValue(prev.phase4_tts ?? null, next.phase4_tts),
+    phase5_mux: mergeNullableValue(prev.phase5_mux ?? null, next.phase5_mux),
     beats: next.beats ?? prev.beats,
+    audio_segments: mergeArray(prev.audio_segments, next.audio_segments),
     review_summary: mergeNullableValue(prev.review_summary, next.review_summary),
     review_approved: mergeNullableValue(prev.review_approved, next.review_approved),
     review_blocking_issues: mergeList(
@@ -104,6 +139,21 @@ function mergePipelineOutput(
       next.review_suggested_edits,
     ),
     review_frame_paths: mergeList(prev.review_frame_paths, next.review_frame_paths),
+    review_frame_analyses: mergeArray(prev.review_frame_analyses, next.review_frame_analyses),
+    review_vision_analysis_used: mergeNullableValue(
+      prev.review_vision_analysis_used ?? null,
+      next.review_vision_analysis_used,
+    ),
+    intro_requested: mergeNullableValue(prev.intro_requested ?? null, next.intro_requested),
+    outro_requested: mergeNullableValue(prev.outro_requested ?? null, next.outro_requested),
+    intro_spec: mergeNullableValue(prev.intro_spec ?? null, next.intro_spec),
+    outro_spec: mergeNullableValue(prev.outro_spec ?? null, next.outro_spec),
+    intro_video_path: mergeNullableValue(prev.intro_video_path ?? null, next.intro_video_path),
+    outro_video_path: mergeNullableValue(prev.outro_video_path ?? null, next.outro_video_path),
+    intro_outro_backend: mergeNullableValue(
+      prev.intro_outro_backend ?? null,
+      next.intro_outro_backend,
+    ),
   };
 }
 

@@ -1,22 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
 import { BookOpen, Target, Users, Clock } from "lucide-react";
 import type { PipelineOutputData } from "@/types";
 
-interface PlanBeat {
-  id: string;
-  title: string;
-  visual_goal: string;
-  narration_intent: string;
-  target_duration_seconds: number | null;
-}
-
 interface PlanCardProps {
-  pipelineOutput: Pick<
-    PipelineOutputData,
-    "plan_text" | "mode" | "learning_goal" | "audience" | "beats" | "target_duration_seconds"
-  > | null;
+  pipelineOutput: PipelineOutputData | null;
 }
 
 function formatDuration(seconds: number | null): string {
@@ -28,16 +16,10 @@ function formatDuration(seconds: number | null): string {
 }
 
 export function PlanCard({ pipelineOutput }: PlanCardProps) {
-  const beats = useMemo(
-    () => (pipelineOutput?.beats?.length ? pipelineOutput.beats : []),
-    [pipelineOutput?.beats],
-  );
+  const buildSpec = pipelineOutput?.phase1_planning?.build_spec;
+  const beats = buildSpec?.beats?.length ? buildSpec.beats : pipelineOutput?.beats ?? [];
 
-  const totalBeatDuration = useMemo(
-    () =>
-      beats.reduce((sum, b) => sum + (b.target_duration_seconds ?? 0), 0),
-    [beats],
-  );
+  const totalBeatDuration = beats.reduce((sum, b) => sum + (b.target_duration_seconds ?? 0), 0);
 
   if (!pipelineOutput || (!pipelineOutput.plan_text && beats.length === 0)) {
     return null;
@@ -52,15 +34,15 @@ export function PlanCard({ pipelineOutput }: PlanCardProps) {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Meta bar */}
         <div className="flex shrink-0 items-center gap-4 border-b border-white/5 px-5 py-3">
-          {pipelineOutput.mode && (
+          {buildSpec?.mode && (
             <span className="rounded-full border border-violet-400/20 bg-violet-500/8 px-2.5 py-0.5 text-[9px] font-mono uppercase tracking-wider text-violet-300/80">
-              {pipelineOutput.mode}
+              {buildSpec.mode}
             </span>
           )}
-          {pipelineOutput.target_duration_seconds != null && (
+          {(buildSpec?.target_duration_seconds ?? pipelineOutput.target_duration_seconds) != null && (
             <span className="flex items-center gap-1 text-[9px] font-mono text-white/35">
               <Clock className="h-3 w-3" />
-              Target {formatDuration(pipelineOutput.target_duration_seconds)}
+              Target {formatDuration(buildSpec?.target_duration_seconds ?? pipelineOutput.target_duration_seconds)}
             </span>
           )}
           {totalBeatDuration > 0 && (
@@ -71,21 +53,21 @@ export function PlanCard({ pipelineOutput }: PlanCardProps) {
         </div>
 
         {/* Goal & Audience row */}
-        {(pipelineOutput.learning_goal || pipelineOutput.audience) && (
+        {(buildSpec?.learning_goal || buildSpec?.audience) && (
           <div className="flex shrink-0 gap-4 border-b border-white/4 px-5 py-2.5">
-            {pipelineOutput.learning_goal && (
+            {buildSpec?.learning_goal && (
               <div className="flex items-start gap-1.5 min-w-0 flex-1">
-                <Target className="mt-0.5 h-3.5 w-3.3 shrink-0 text-emerald-400/60" />
+                <Target className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400/60" />
                 <span className="truncate text-[10px] leading-relaxed text-white/50">
-                  {pipelineOutput.learning_goal}
+                  {buildSpec.learning_goal}
                 </span>
               </div>
             )}
-            {pipelineOutput.audience && (
+            {buildSpec?.audience && (
               <div className="flex items-start gap-1.5 min-w-0 flex-1">
                 <Users className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-400/60" />
                 <span className="truncate text-[10px] leading-relaxed text-white/45">
-                  {pipelineOutput.audience}
+                  {buildSpec.audience}
                 </span>
               </div>
             )}

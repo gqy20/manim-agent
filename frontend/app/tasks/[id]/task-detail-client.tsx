@@ -8,7 +8,6 @@ import Link from "next/link";
 import { ArrowLeft, Check, Copy, FileCode2, Film, Loader2, Play, Terminal, Trash2, XCircle } from "lucide-react";
 
 import { LogViewer } from "@/components/log-viewer";
-import { PlanCard } from "@/components/plan-card";
 import { PipelinePhaseCards } from "@/components/pipeline-phase-cards";
 import { VideoPlayer } from "@/components/video-player";
 import { Button } from "@/components/ui/button";
@@ -162,12 +161,48 @@ function VideoPipelinePlaceholder({
     };
   }, [phase, ttsTransportMode]);
 
+  const hasPipelineOutput = pipelineOutput != null;
+
   if (taskStatus === "failed") {
     const handleCopy = () => {
       navigator.clipboard.writeText(errorMessage ?? "");
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     };
+
+    if (hasPipelineOutput) {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className="shrink-0 rounded-xl border border-red-500/15 bg-red-500/[0.04] p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <XCircle className="h-4 w-4 shrink-0 text-red-400/80" />
+                <div className="min-w-0">
+                  <div className="text-[10px] font-mono uppercase tracking-widest text-red-300/80">
+                    Render Failed
+                  </div>
+                  {errorMessage && (
+                    <p className="mt-1 line-clamp-2 text-[10px] text-red-100/42">
+                      {errorMessage}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {errorMessage && (
+                <button
+                  onClick={handleCopy}
+                  className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/8 bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-mono text-white/40 transition-all hover:border-cyan-500/25 hover:text-cyan-400 hover:bg-cyan-500/5"
+                >
+                  {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              )}
+            </div>
+          </div>
+          <PipelinePhaseCards pipelineOutput={pipelineOutput} />
+        </div>
+      );
+    }
 
     return (
       <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center overflow-hidden rounded-xl border border-red-500/15 bg-black/40 shadow-2xl ring-1 ring-red-500/10 backdrop-blur-xl transition-all duration-300 xl:aspect-auto xl:min-h-0 xl:flex-1">
@@ -230,18 +265,8 @@ function VideoPipelinePlaceholder({
     );
   }
 
-  const hasPlanData = pipelineOutput != null && (
-    (pipelineOutput.beats != null && pipelineOutput.beats.length > 0) ||
-    (pipelineOutput.plan_text != null && pipelineOutput.plan_text.length > 0)
-  );
-
-  if (hasPlanData) {
-    return <PlanCard pipelineOutput={pipelineOutput} />;
-  }
-
-  const phaseCards = <PipelinePhaseCards pipelineOutput={pipelineOutput ?? null} />;
-  if (phaseCards) {
-    return phaseCards;
+  if (hasPipelineOutput) {
+    return <PipelinePhaseCards pipelineOutput={pipelineOutput} />;
   }
 
   return (
@@ -764,7 +789,12 @@ export default function TaskDetailClient() {
           </div>
           <div className="mt-3 flex min-h-0 flex-1 flex-col">
             {showVideo && stableVideoSrc ? (
-              <VideoPlayer src={stableVideoSrc} />
+              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+                <div className="shrink-0">
+                  <VideoPlayer src={stableVideoSrc} />
+                </div>
+                <PipelinePhaseCards pipelineOutput={task.pipeline_output} />
+              </div>
             ) : (
               <VideoPipelinePlaceholder
                 isRunning={isRunning}
