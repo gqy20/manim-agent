@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import Link from "next/link";
-import { ArrowLeft, Check, Copy, FileCode2, Film, Loader2, Play, Terminal, Trash2, XCircle } from "lucide-react";
+import { ArrowLeft, Check, Copy, FileCode2, Film, Loader2, Play, Terminal, Trash2, X, XCircle } from "lucide-react";
 
 import { LogViewer } from "@/components/log-viewer";
 import { PipelinePhaseCards } from "@/components/pipeline-phase-cards";
@@ -428,6 +428,67 @@ function ManimScriptPanel({
   );
 }
 
+function PipelineReportModal({
+  pipelineOutput,
+  taskId,
+  open,
+  onClose,
+}: {
+  pipelineOutput: PipelineOutputData | null;
+  taskId: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-stretch justify-end bg-black/55 backdrop-blur-sm">
+      <button
+        type="button"
+        aria-label="Close report"
+        className="absolute inset-0 cursor-default"
+        onClick={onClose}
+      />
+      <aside className="relative z-10 flex h-full w-full max-w-3xl flex-col border-l border-white/10 bg-background/96 shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/8 px-5 py-4">
+          <div className="min-w-0">
+            <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-cyan-400/70">
+              Pipeline Report
+            </div>
+            <div className="mt-1 truncate font-mono text-sm text-white/70">{taskId}</div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            onClick={onClose}
+            className="border-white/10 bg-white/[0.03] text-white/60 hover:bg-white/[0.08] hover:text-white"
+            aria-label="Close report"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-4">
+          <PipelinePhaseCards pipelineOutput={pipelineOutput} variant="embedded" />
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 export default function TaskDetailClient() {
   const router = useRouter();
   const params = useParams();
@@ -439,6 +500,7 @@ export default function TaskDetailClient() {
   const [stableVideoSrc, setStableVideoSrc] = useState<string | null>(null);
   const [terminating, setTerminating] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const containerRef = useRef<HTMLElement>(null);
   const refreshInFlightRef = useRef(false);
 
@@ -650,6 +712,7 @@ export default function TaskDetailClient() {
 
   const isRunning = task.status === "running" || task.status === "pending";
   const showVideo = !!stableVideoSrc;
+  const hasPipelineReport = task.pipeline_output != null;
 
   const voiceSummary = task.options.no_tts
     ? "No narration"
@@ -786,15 +849,22 @@ export default function TaskDetailClient() {
               <Play className="h-4 w-4" />
               <h2 className="text-[11px] font-mono uppercase tracking-widest">Output Video</h2>
             </div>
+            {hasPipelineReport && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setReportOpen(true)}
+                className="h-7 border-white/10 bg-white/[0.03] px-2.5 text-[10px] font-mono uppercase tracking-widest text-white/50 hover:bg-cyan-500/[0.08] hover:text-cyan-300"
+              >
+                <FileCode2 className="mr-1.5 h-3.5 w-3.5" />
+                Report
+              </Button>
+            )}
           </div>
           <div className="mt-3 flex min-h-0 flex-1 flex-col">
             {showVideo && stableVideoSrc ? (
-              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-                <div className="shrink-0">
-                  <VideoPlayer src={stableVideoSrc} />
-                </div>
-                <PipelinePhaseCards pipelineOutput={task.pipeline_output} />
-              </div>
+              <VideoPlayer src={stableVideoSrc} />
             ) : (
               <VideoPipelinePlaceholder
                 isRunning={isRunning}
@@ -809,6 +879,12 @@ export default function TaskDetailClient() {
           </div>
         </section>
       </div>
+      <PipelineReportModal
+        pipelineOutput={task.pipeline_output}
+        taskId={task.id}
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+      />
     </main>
   );
 }

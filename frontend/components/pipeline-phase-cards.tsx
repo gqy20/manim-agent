@@ -23,6 +23,7 @@ import type { FrameAnalysisOutput, PipelineOutputData } from "@/types";
 
 interface PipelinePhaseCardsProps {
   pipelineOutput: PipelineOutputData | null;
+  variant?: "panel" | "embedded";
 }
 
 function formatDuration(seconds: number | null | undefined): string {
@@ -379,7 +380,7 @@ function MuxSection({ d }: { d: PipelineOutputData }) {
   );
 }
 
-export function PipelinePhaseCards({ pipelineOutput }: PipelinePhaseCardsProps) {
+export function PipelinePhaseCards({ pipelineOutput, variant = "panel" }: PipelinePhaseCardsProps) {
   if (!pipelineOutput) return null;
 
   const sections = [
@@ -393,6 +394,14 @@ export function PipelinePhaseCards({ pipelineOutput }: PipelinePhaseCardsProps) 
 
   if (sections.length === 0) return null;
 
+  if (variant === "embedded") {
+    return (
+      <div className="space-y-3">
+        {sections}
+      </div>
+    );
+  }
+
   return (
     <div className="gsap-plan-card relative flex aspect-video w-full flex-col overflow-hidden rounded-xl border border-cyan-500/10 bg-black/50 shadow-2xl ring-1 ring-cyan-500/8 backdrop-blur-xl xl:aspect-auto xl:min-h-0 xl:flex-1">
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent" />
@@ -403,9 +412,7 @@ export function PipelinePhaseCards({ pipelineOutput }: PipelinePhaseCardsProps) 
         </div>
         <span className="text-[9px] font-mono text-white/28">{sections.length} phases</span>
       </div>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto custom-scrollbar p-3">
-        {sections}
-      </div>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto custom-scrollbar p-3">{sections}</div>
     </div>
   );
 }
