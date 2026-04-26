@@ -89,6 +89,10 @@ function mergePipelineOutput(
       next.target_duration_seconds,
     ),
     plan_text: mergeNullableValue(prev.plan_text, next.plan_text),
+    mode: mergeNullableValue(prev.mode, next.mode),
+    learning_goal: mergeNullableValue(prev.learning_goal, next.learning_goal),
+    audience: mergeNullableValue(prev.audience, next.audience),
+    beats: next.beats ?? prev.beats,
     review_summary: mergeNullableValue(prev.review_summary, next.review_summary),
     review_approved: mergeNullableValue(prev.review_approved, next.review_approved),
     review_blocking_issues: mergeList(

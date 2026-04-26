@@ -262,6 +262,31 @@ async def run_pipeline(
             trace_id=pipeline_trace_id,
             beats_count=len(build_spec.beats) if hasattr(build_spec, 'beats') else None,
         )
+        if build_spec is not None:
+            _beats = getattr(build_spec, "beats", None) or []
+            _emit_status(
+                event_callback,
+                task_status="running",
+                phase="planning",
+                message="Phase 1 planning complete. Build spec ready.",
+                pipeline_output={
+                    "plan_text": plan_text or "",
+                    "target_duration_seconds": target_duration_seconds,
+                    "mode": getattr(build_spec, "mode", None),
+                    "learning_goal": getattr(build_spec, "learning_goal", None),
+                    "audience": getattr(build_spec, "audience", None),
+                    "beats": [
+                        {
+                            "id": getattr(b, "id", None),
+                            "title": getattr(b, "title", ""),
+                            "visual_goal": getattr(b, "visual_goal", ""),
+                            "narration_intent": getattr(b, "narration_intent", ""),
+                            "target_duration_seconds": getattr(b, "target_duration_seconds", None),
+                        }
+                        for b in _beats
+                    ],
+                },
+            )
         dispatcher.expected_output = "phase2_script_draft"
         dispatcher.partial_render_mode = render_mode
         dispatcher.partial_segment_render_complete = False
@@ -334,6 +359,23 @@ async def run_pipeline(
             beats_count=len(draft_analysis.expected_beat_ids),
             metadata={"analysis_path": draft_analysis_path},
         )
+        if draft_output is not None:
+            _emit_status(
+                event_callback,
+                task_status="running",
+                phase="script_draft",
+                message="Phase 2A script draft accepted.",
+                pipeline_output={
+                    "scene_file": getattr(draft_output, "scene_file", None),
+                    "scene_class": getattr(draft_output, "scene_class", None),
+                    "implemented_beats": list(getattr(draft_output, "implemented_beats", []) or []),
+                    "build_summary": getattr(draft_output, "build_summary", None) or "",
+                    "estimated_duration_seconds": getattr(draft_output, "estimated_duration_seconds", None) or 0,
+                    "beat_timing_seconds": dict(getattr(draft_output, "beat_timing_seconds", {}) or {}),
+                    "plan_text": plan_text or "",
+                    "target_duration_seconds": target_duration_seconds,
+                },
+            )
 
         dispatcher.expected_output = "phase2_implementation"
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2B/5: render implementation pass")

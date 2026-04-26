@@ -69,6 +69,16 @@ export interface PipelineOutputData {
   run_cost_usd: number | null;
   target_duration_seconds: number | null;
   plan_text: string | null;
+  mode: string | null;
+  learning_goal: string | null;
+  audience: string | null;
+  beats: Array<{
+    id: string;
+    title: string;
+    visual_goal: string;
+    narration_intent: string;
+    target_duration_seconds: number | null;
+  }> | null;
   review_summary: string | null;
   review_approved: boolean | null;
   review_blocking_issues: string[];

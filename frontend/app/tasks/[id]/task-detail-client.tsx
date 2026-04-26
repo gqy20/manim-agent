@@ -8,6 +8,7 @@ import Link from "next/link";
 import { ArrowLeft, Check, Copy, FileCode2, Film, Loader2, Play, Terminal, Trash2, XCircle } from "lucide-react";
 
 import { LogViewer } from "@/components/log-viewer";
+import { PlanCard } from "@/components/plan-card";
 import { VideoPlayer } from "@/components/video-player";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -16,7 +17,7 @@ import { logger } from "@/lib/logger";
 import { getDisplayPhaseForTask } from "@/lib/pipeline-phase";
 import { connectTaskEvents } from "@/lib/sse-client";
 import { mergeTaskState } from "@/lib/task-state";
-import type { SSEEvent, Task, TaskStatus } from "@/types";
+import type { PipelineOutputData, SSEEvent, Task, TaskStatus } from "@/types";
 import { isStatusPayload } from "@/types";
 
 type VideoPlaceholderPhase = "init" | "scene" | "render" | "tts" | "mux" | "done";
@@ -112,12 +113,19 @@ function VideoPipelinePlaceholder({
   events,
   createdAt,
   completedAt,
+  errorMessage,
+  pipelineOutput,
 }: {
   isRunning: boolean;
   taskStatus: TaskStatus;
   events: SSEEvent[];
   createdAt: string;
   completedAt: string | null;
+  errorMessage?: string | null;
+  pipelineOutput?: Pick<
+    PipelineOutputData,
+    "plan_text" | "mode" | "learning_goal" | "audience" | "beats" | "target_duration_seconds"
+  > | null;
 }) {
   const phase = useMemo(
     () => detectVideoPlaceholderPhase(events, taskStatus),
@@ -125,6 +133,7 @@ function VideoPipelinePlaceholder({
   );
   const ttsTransportMode = useMemo(() => detectTtsTransportMode(events), [events]);
   const [runtimeNow, setRuntimeNow] = useState(() => Date.now());
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -156,17 +165,41 @@ function VideoPipelinePlaceholder({
   }, [phase, ttsTransportMode]);
 
   if (taskStatus === "failed") {
+    const handleCopy = () => {
+      navigator.clipboard.writeText(errorMessage ?? "");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    };
+
     return (
-      <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300">
+      <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center overflow-hidden rounded-xl border border-red-500/15 bg-black/40 shadow-2xl ring-1 ring-red-500/10 backdrop-blur-xl transition-all duration-300">
         <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 via-transparent to-transparent" />
-        <div className="relative z-10 flex flex-col items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-red-500/20 bg-gradient-to-br from-red-500/10 to-red-950/30 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
-            <XCircle className="h-6 w-6 text-red-400/80" />
+        <div className="relative z-10 flex flex-col gap-3 p-4 w-full overflow-auto custom-scrollbar">
+          <div className="flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-500/20 bg-gradient-to-br from-red-500/10 to-red-950/30 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
+                <XCircle className="h-5 w-5 text-red-400/80" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-mono uppercase tracking-widest text-red-400/90">Render Failed</span>
+                <span className="text-[10px] font-mono text-white/30">Pipeline execution error</span>
+              </div>
+            </div>
+            {errorMessage && (
+              <button
+                onClick={handleCopy}
+                className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/8 bg-white/[0.04] px-2.5 py-1.5 text-[10px] font-mono text-white/40 transition-all hover:border-cyan-500/25 hover:text-cyan-400 hover:bg-cyan-500/5"
+              >
+                {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                {copied ? "Copied" : "Copy"}
+              </button>
+            )}
           </div>
-          <div className="flex flex-col items-center space-y-1 text-center">
-            <span className="text-[11px] font-mono uppercase tracking-widest text-red-400/80">Render Failed</span>
-            <span className="text-[10px] font-mono text-white/30">CHECK LOGS FOR TRACEBACK</span>
-          </div>
+          {errorMessage && (
+            <pre className="whitespace-pre-wrap break-words rounded-lg border border-red-500/10 bg-red-500/[0.03] p-3 font-mono text-[11px] leading-relaxed text-red-300/70 max-h-[calc(100%-4rem)] overflow-auto custom-scrollbar">
+              {errorMessage}
+            </pre>
+          )}
         </div>
       </div>
     );
@@ -197,6 +230,15 @@ function VideoPipelinePlaceholder({
         </div>
       </div>
     );
+  }
+
+  const hasPlanData = pipelineOutput != null && (
+    (pipelineOutput.beats != null && pipelineOutput.beats.length > 0) ||
+    (pipelineOutput.plan_text != null && pipelineOutput.plan_text.length > 0)
+  );
+
+  if (hasPlanData) {
+    return <PlanCard pipelineOutput={pipelineOutput} />;
   }
 
   return (
@@ -617,7 +659,7 @@ export default function TaskDetailClient() {
   return (
     <main
       ref={containerRef}
-      className="container mx-auto flex min-h-[var(--app-content-height)] w-full max-w-[1800px] flex-1 flex-col space-y-3 px-4 pb-4 sm:px-6 md:px-10 md:pb-6"
+      className="container mx-auto flex w-full max-w-[1800px] flex-1 flex-col space-y-3 px-4 pb-4 sm:px-6 md:px-10 md:pb-6"
     >
       <div className="gsap-header flex flex-col gap-3 pt-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -682,12 +724,6 @@ export default function TaskDetailClient() {
           <strong className="font-semibold">Error:</strong> {eventsError}
         </div>
       )}
-      {task.error && (
-        <div className="gsap-header glass-card rounded-xl border border-destructive/20 bg-destructive/[0.04] p-4 text-sm text-red-400 backdrop-blur-sm">
-          <strong>Task Error:</strong> {task.error}
-        </div>
-      )}
-
       <div className="relative mt-2 grid min-h-0 gap-4 xl:grid-cols-[300px_minmax(0,1fr)] xl:items-start">
         <section
           ref={detailLeftRef}
@@ -763,6 +799,8 @@ export default function TaskDetailClient() {
                 events={logs}
                 createdAt={task.created_at}
                 completedAt={task.completed_at}
+                errorMessage={task.error}
+                pipelineOutput={task.pipeline_output}
               />
             )}
           </div>
