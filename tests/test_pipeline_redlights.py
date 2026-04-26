@@ -7,6 +7,7 @@ import pytest
 
 from manim_agent import pipeline as main_module
 from manim_agent.schemas import Phase3RenderReviewOutput as RenderReviewOutput
+from manim_agent.schemas.phase3_5_narration import Phase3_5NarrationOutput
 
 from ._test_main_dispatcher_helpers import (
     _make_two_stage_query_side_effect,
@@ -76,6 +77,16 @@ class TestPipelinePhaseLogsViaCallback:
             patch(
                 "manim_agent.pipeline._run_render_review", new_callable=AsyncMock
             ) as mock_review,
+            patch(
+                "manim_agent.pipeline.generate_narration",
+                new_callable=AsyncMock,
+                return_value=Phase3_5NarrationOutput(
+                    narration="测试口播文案内容。",
+                    beat_coverage=["第一部分", "第二部分"],
+                    char_count=10,
+                    generation_method="llm",
+                ),
+            ),
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_tts.return_value = MagicMock(
@@ -141,6 +152,16 @@ class TestPipelinePhaseLogsViaCallback:
             patch(
                 "manim_agent.pipeline._run_render_review", new_callable=AsyncMock
             ) as mock_review,
+            patch(
+                "manim_agent.pipeline.generate_narration",
+                new_callable=AsyncMock,
+                return_value=Phase3_5NarrationOutput(
+                    narration="测试 MUX 口播文案。",
+                    beat_coverage=["第一部分"],
+                    char_count=9,
+                    generation_method="llm",
+                ),
+            ),
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
             mock_tts.return_value = mock_tts_result

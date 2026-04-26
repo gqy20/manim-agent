@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from manim_agent.schemas import Phase3RenderReviewOutput as RenderReviewOutput
+from manim_agent.schemas.phase3_5_narration import Phase3_5NarrationOutput
 
 from ._test_main_dispatcher_helpers import (
     _make_assistant_message,
@@ -46,7 +47,12 @@ class TestTTSNarrationFlow:
             patch(
                 "manim_agent.pipeline.generate_narration",
                 new_callable=AsyncMock,
-                return_value="First show a circle, then morph it into a square.",
+                return_value=Phase3_5NarrationOutput(
+                    narration="First show a circle, then morph it into a square.",
+                    beat_coverage=["Introduce the intuition.", "Explain the core relationship.", "Restate the final takeaway."],
+                    char_count=68,
+                    generation_method="llm",
+                ),
             ),
             patch("manim_agent.pipeline.tts_client.synthesize", side_effect=capture_tts),
             patch(

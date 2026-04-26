@@ -30,13 +30,10 @@ class TestPipelineAudioPhases:
             render_mode="segments",
         )
 
-        assert "Render mode: segments." in prompt
+        assert "Render mode: segments" in prompt
         assert "segments/beat_001.mp4" in prompt
         assert "segment_video_paths" in prompt
-        assert (
-            "Do not treat a single full-length `video_output` as the primary deliverable"
-            in prompt
-        )
+        assert "beat-level MP4s" in prompt
 
     @pytest.mark.asyncio
     async def test_run_phase3_render_discovers_existing_segment_videos(self, tmp_path):

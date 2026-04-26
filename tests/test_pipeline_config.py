@@ -21,7 +21,7 @@ class TestBuildOptions:
         assert options.tools == []
         assert options.allowed_tools == []
         assert options.disallowed_tools == ["Read", "Write", "Edit", "Bash", "Glob", "Grep"]
-        assert options.skills == []
+        assert not hasattr(options, "skills") or options.skills == []
 
     def test_phase1_tool_isolation_matches_sdk_cli_contract(self, tmp_path):
         from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport

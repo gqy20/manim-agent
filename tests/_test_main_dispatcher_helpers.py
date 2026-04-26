@@ -83,6 +83,14 @@ def _phase2_output(**overrides):
         "implemented_beats": ["Hook", "Main idea", "Wrap-up"],
         "build_summary": "Built the planned teaching beats.",
         "deviations_from_plan": [],
+        "narration": "First show a circle, then morph it into a square.",
+        "beat_to_narration_map": [
+            "Introduce the intuition with a visual hook.",
+            "Explain the core relationship clearly.",
+            "Restate the final takeaway.",
+        ],
+        "narration_coverage_complete": True,
+        "estimated_narration_duration_seconds": 12.0,
     }
     data.update(overrides)
     return data
