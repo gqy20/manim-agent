@@ -111,15 +111,17 @@ Phase 3 抽帧使用**独立子目录**，避免覆盖 Phase 2B 的 review frame
 
 通过 `extract_review_frames(video_path, output_dir, implemented_beats, review_subdir="phase3_review_frames")` 实现。
 
-## `no_render_review` 开关
+## `no_render_review` 开关（默认关闭）
 
-CLI 参数 `--no-render-review` 可跳过整个 Phase 3 Review 部分：
+Phase 3 Render Review **默认禁用**（`no_render_review=True`），跳过独立的 Agent 视觉审查以加速 pipeline。
+
+如需启用，使用 CLI 参数：
 
 ```
-python -m manim_agent --no-render-review "你的需求"
+python -m manim_agent --render-review "你的需求"
 ```
 
-跳过时的行为：
+默认跳过时的行为：
 
 - Part A (Resolve) 正常执行（仍验证 video_output 存在等前置条件）
 - Part B (Review) 被跳过
@@ -132,7 +134,7 @@ python -m manim_agent --no-render-review "你的需求"
   - `po.review_frame_analyses = []`
   - `po.review_vision_analysis_used = False`
 
-这使 `--no-render-review` 成为加速调试的有效手段，同时保持下游 Phase 3.5/4/5 的数据契约不变。
+这使默认运行速度更快。需要严格质量门控时用 `--render-review` 显式开启。下游 Phase 3.5/4/5 的数据契约不受影响。
 
 ## 验收规则
 
@@ -172,4 +174,4 @@ Phase 3 通过后，`PipelineOutput` 会包含：
 - `render-review` 依赖模型真实读取抽帧；需要继续通过日志和结构化 `frame_analyses` 核对。
 - 抽帧质量会影响 review 判断，如果抽帧覆盖不足，可能漏掉中间视觉问题。
 - segment 模式会生成 review track，后续还需要明确该 track 与最终 segment mux 的关系。
-- Review 是独立 Agent 调用（`query()` 绕过 dispatcher），耗时较长，可通过 `--no-render-review` 跳过。
+- Review 是独立 Agent 调用（`query()` 绕过 dispatcher），耗时较长，默认跳过；需用 `--render-review` 显式启用。

@@ -75,7 +75,7 @@ async def run_pipeline(
     model: str = "speech-2.8-hd",
     quality: str = "high",
     no_tts: bool = False,
-    no_render_review: bool = False,
+    no_render_review: bool = True,
     bgm_enabled: bool = False,
     bgm_prompt: str | None = None,
     bgm_volume: float = 0.12,

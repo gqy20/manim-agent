@@ -116,9 +116,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Backend for intro/outro generation (default: revideo).",
     )
     parser.add_argument(
-        "--no-render-review",
+        "--render-review",
         action="store_true",
-        help="Skip Phase 3 AI visual review of rendered frames.",
+        help="Enable Phase 3 AI visual review of rendered frames (disabled by default).",
     )
 
     return parser.parse_args(argv)
