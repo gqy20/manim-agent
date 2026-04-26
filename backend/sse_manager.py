@@ -8,6 +8,7 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Union
 
+from manim_agent.event_store import EventStore
 from manim_agent.pipeline_events import EventType, PipelineEvent
 from backend.models import SSEEvent
 
@@ -25,9 +26,10 @@ def _now_iso() -> str:
 class SSESubscriptionManager:
     """Manages per-task event buffering and asyncio.Queue subscriptions."""
 
-    def __init__(self) -> None:
+    def __init__(self, event_store: EventStore | None = None) -> None:
         self._buffers: dict[str, deque[str]] = {}
         self._subscribers: dict[str, list[asyncio.Queue[Any]]] = {}
+        self._event_store = event_store
         self._logger = logging.getLogger(__name__)
 
     def subscribe(self, task_id: str, *, replay: bool = True) -> asyncio.Queue[Any]:
@@ -40,13 +42,38 @@ class SSESubscriptionManager:
             len(self._subscribers.get(task_id, [])),
         )
 
-        buf = self._buffers.get(task_id)
-        if replay and buf:
-            for item in buf:
-                try:
-                    q.put_nowait(item)
-                except asyncio.QueueFull:
-                    break
+        # Prefer EventStore replay (full history) over in-memory buffer
+        if replay and self._event_store is not None:
+            try:
+                historical = self._event_store.replay_for_sse(task_id)
+                for item in historical:
+                    try:
+                        q.put_nowait(item)
+                    except asyncio.QueueFull:
+                        break
+                self._logger.debug(
+                    "SSE subscribe replayed from EventStore task=%s count=%d",
+                    task_id,
+                    len(historical),
+                )
+            except Exception:
+                self._logger.warning("EventStore replay failed task=%s", task_id, exc_info=True)
+                # Fall through to buffer replay
+                buf = self._buffers.get(task_id)
+                if buf:
+                    for item in buf:
+                        try:
+                            q.put_nowait(item)
+                        except asyncio.QueueFull:
+                            break
+        else:
+            buf = self._buffers.get(task_id)
+            if replay and buf:
+                for item in buf:
+                    try:
+                        q.put_nowait(item)
+                    except asyncio.QueueFull:
+                        break
 
         subscribers = self._subscribers.setdefault(task_id, [])
         subscribers.append(q)
@@ -76,6 +103,11 @@ class SSESubscriptionManager:
     def cleanup(self, task_id: str) -> None:
         self._buffers.pop(task_id, None)
         self._subscribers.pop(task_id, None)
+        if self._event_store is not None:
+            try:
+                self._event_store.cleanup(task_id)
+            except Exception:
+                self._logger.warning("EventStore cleanup failed task=%s", task_id, exc_info=True)
         self._logger.debug("SSE cleanup task=%s", task_id)
 
     def push(self, task_id: str, data: Union[str, PipelineEvent]) -> None:
@@ -84,6 +116,13 @@ class SSESubscriptionManager:
         if serialized is None:
             self._logger.debug("SSE push skipped task=%s", task_id)
             return
+
+        # Persist to EventStore when available
+        if self._event_store is not None and isinstance(data, PipelineEvent):
+            try:
+                self._event_store.append(task_id, data)
+            except Exception:
+                self._logger.warning("EventStore append failed task=%s", task_id, exc_info=True)
 
         buf = self._buffers.setdefault(task_id, deque(maxlen=_MAX_BUFFER_SIZE))
         buf.append(serialized)

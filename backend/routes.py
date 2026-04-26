@@ -35,6 +35,8 @@ from .models import (
 from .pipeline_runner import PipelineExecutionError, _pipeline_body
 from .sse_manager import SSESubscriptionManager
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
+
+from manim_agent.event_store import EventStore
 from .task_runtime import (
     TaskRuntime,
     TaskTerminationRequested,
@@ -54,10 +56,12 @@ clarify_router = APIRouter(prefix="/api", tags=["clarify"])
 logger = logging.getLogger(__name__)
 
 _store: TaskStore  # set via set_store()
-_sse_mgr: SSESubscriptionManager = SSESubscriptionManager()
 
 _r2_client: R2Client | None = None
 _OUTPUT_ROOT = Path("backend/output")
+_EVENT_STORE_DIR = _OUTPUT_ROOT / "events"
+_event_store: EventStore = EventStore(store_dir=str(_EVENT_STORE_DIR))
+_sse_mgr: SSESubscriptionManager = SSESubscriptionManager(event_store=_event_store)
 _DEFAULT_KEEP_LOCAL_MP4_TASKS = 20
 _TERMINAL_TASK_STATUSES = {
     TaskStatus.COMPLETED.value,

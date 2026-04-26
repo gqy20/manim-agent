@@ -18,9 +18,14 @@ from . import pipeline_phases12 as _pipeline_phases12_module
 from . import pipeline_phases345 as _pipeline_phases345_module
 from .dispatcher import _EMOJI, _LOG_SEPARATOR, _MessageDispatcher
 from .hooks import activate_hook_state, create_hook_state, reset_hook_state
-from .pipeline_config import build_options as _build_options
-from .pipeline_config import emit_status as _emit_status
-from .pipeline_config import stderr_handler as _stderr_handler
+from .phase2_script_analyzer import analyze_phase2_script, persist_phase2_script_analysis
+from .pipeline_config import (
+    build_options as _build_options,
+    emit_status as _emit_status,
+    emit_phase_enter as _emit_phase_enter,
+    emit_phase_exit as _emit_phase_exit,
+    stderr_handler as _stderr_handler,
+)
 from .pipeline_gates import (
     apply_phase2_build_spec_defaults,
     implementation_contract_issue,
@@ -40,6 +45,7 @@ from .pipeline_phases345 import (
     run_render_review,
 )
 from .schemas import PhaseSchemaRegistry
+from .pipeline_trace import TraceSpan, create_trace_id, span_context
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +139,10 @@ async def run_pipeline(
     if event_callback is not None:
         dispatcher.event_callback = event_callback
 
+    # ── 接入 Trace/Span 全链路追踪 ──
+    pipeline_trace_id = create_trace_id()
+    TraceSpan._emit_event_fn = event_callback  # 让 span enter/exit 自动发射到 SSE
+
     dispatcher._print(f"\n{_LOG_SEPARATOR}")
     dispatcher._print(
         f"  Claude Agent Log                              Session: {build_opts.session_id[:8]}..."
@@ -179,6 +189,7 @@ async def run_pipeline(
         # ══════════════════════════════════════════════
         # Phase 1/5: Scene Planning Pass
         # ══════════════════════════════════════════════
+        _emit_phase_enter(event_callback, phase_id="phase1", phase_name="Scene Planning", trace_id=pipeline_trace_id)
         planning_result_summary: dict[str, Any] | None = None
         hook_state.allowed_tools = (
             set(planning_options.allowed_tools)
@@ -207,10 +218,16 @@ async def run_pipeline(
 
         plan_text = dispatcher.partial_plan_text
         build_spec = getattr(dispatcher, "partial_build_spec", None)
+        _emit_phase_exit(
+            event_callback, phase_id="phase1", phase_name="Scene Planning",
+            trace_id=pipeline_trace_id,
+            beats_count=len(build_spec.beats) if hasattr(build_spec, 'beats') else None,
+        )
         dispatcher.expected_output = "phase2_implementation"
         dispatcher.partial_render_mode = render_mode
         dispatcher.partial_segment_render_complete = False
         dispatcher._print(f"  {_EMOJI['gear']} Phase 2/5: implementation pass")
+        _emit_phase_enter(event_callback, phase_id="phase2", phase_name="Implementation", trace_id=pipeline_trace_id)
         if build_opts.allowed_tools:
             dispatcher._print(f"  [SYS] Allowed tools: {', '.join(build_opts.allowed_tools)}")
         hook_state.allowed_tools = (
@@ -254,8 +271,34 @@ async def run_pipeline(
             raise RuntimeError(
                 f"Phase 2 implementation output is incomplete. Blocking issue: {phase2_issue}"
             )
+        phase2_analysis = analyze_phase2_script(
+            scene_file=getattr(phase2_po, "scene_file", None),
+            scene_class=getattr(phase2_po, "scene_class", None),
+            build_spec=build_spec,
+            target_duration_seconds=target_duration_seconds,
+            output_dir=resolved_cwd,
+        )
+        phase2_analysis_path = persist_phase2_script_analysis(
+            phase2_analysis,
+            output_dir=resolved_cwd,
+        )
+        dispatcher._print(f"  [BUILD] Phase 2 script analysis persisted: {phase2_analysis_path}")
+        if not phase2_analysis.accepted:
+            for issue in phase2_analysis.issues:
+                dispatcher._print(f"  [BUILD][ERR] {issue}")
+            raise RuntimeError(
+                "Phase 2 script analysis failed. Blocking issue: "
+                + "; ".join(phase2_analysis.issues)
+            )
         dispatcher.pipeline_output = phase2_po
         dispatcher.expected_output = "pipeline_output"
+        _emit_phase_exit(
+            event_callback, phase_id="phase2", phase_name="Implementation",
+            trace_id=pipeline_trace_id,
+            turn_count=dispatcher.result_summary.get("turns") if dispatcher.result_summary else None,
+            beats_count=len(phase2_po.implemented_beats) if phase2_po else None,
+        )
+        _emit_phase_enter(event_callback, phase_id="phase3", phase_name="Render+Review", trace_id=pipeline_trace_id)
         _emit_status(
             event_callback,
             task_status="running",
@@ -298,6 +341,12 @@ async def run_pipeline(
         # ══════════════════════════════════════════════
         # Phase 3.5/5: Narration Generation Pass
         # ══════════════════════════════════════════════
+        _emit_phase_exit(
+            event_callback, phase_id="phase3", phase_name="Render+Review",
+            trace_id=pipeline_trace_id,
+            status="ok" if po else "error",
+        )
+        _emit_phase_enter(event_callback, phase_id="phase3_5", phase_name="Narration", trace_id=pipeline_trace_id)
         dispatcher._print(f"  {_EMOJI['gear']} Phase 3.5/5: narration generation")
         _emit_status(
             event_callback,
@@ -329,9 +378,14 @@ async def run_pipeline(
             po.run_duration_ms = result_summary.get("duration_ms")
             po.run_cost_usd = result_summary.get("cost_usd")
 
-        # ══════════════════════════════════════════════
+        # ════════════════════════════════════════════
         # Phase 4+5/5: TTS Synthesis + Video Mux
         # ══════════════════════════════════════════════
+        _emit_phase_exit(
+            event_callback, phase_id="phase3_5", phase_name="Narration",
+            trace_id=pipeline_trace_id,
+        )
+        _emit_phase_enter(event_callback, phase_id="phase4", phase_name="TTS+Mux", trace_id=pipeline_trace_id)
         if no_tts:
             if po is not None:
                 po.final_video_output = video_output
@@ -341,6 +395,14 @@ async def run_pipeline(
             )
             dispatcher._print(
                 "  [SKIP] Phase 5/5 skipped: Video muxing requires TTS output and is disabled."
+            )
+            _emit_phase_exit(
+                event_callback, phase_id="phase4", phase_name="TTS+Mux",
+                trace_id=pipeline_trace_id, status="cancelled",
+            )
+            _emit_phase_exit(
+                event_callback, phase_id="phase5", phase_name="Mux",
+                trace_id=pipeline_trace_id, status="cancelled",
             )
             _emit_status(
                 event_callback,
@@ -376,6 +438,14 @@ async def run_pipeline(
             bgm_volume=bgm_volume,
             intro_outro=intro_outro,
             event_callback=event_callback,
+        )
+        _emit_phase_exit(
+            event_callback, phase_id="phase4", phase_name="TTS",
+            trace_id=pipeline_trace_id, status="ok",
+        )
+        _emit_phase_exit(
+            event_callback, phase_id="phase5", phase_name="Mux",
+            trace_id=pipeline_trace_id, status="ok",
         )
 
         dispatcher._print(f"\n{_EMOJI['check']} Video generation complete: {final_video}")

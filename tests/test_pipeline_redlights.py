@@ -23,6 +23,33 @@ def _phase2_output(**overrides):
     return data
 
 
+def _write_mock_scene(path):
+    path.write_text(
+        """
+from manim import *
+
+class GeneratedScene(Scene):
+    def construct(self):
+        self.beat_001_hook()
+        self.beat_002_main_idea()
+        self.beat_003_wrap_up()
+
+    def beat_001_hook(self):
+        self.play(FadeIn(Square()), run_time=10)
+        self.wait(1)
+
+    def beat_002_main_idea(self):
+        self.play(FadeIn(Circle()), run_time=35)
+        self.wait(1)
+
+    def beat_003_wrap_up(self):
+        self.play(FadeIn(Triangle()), run_time=15)
+        self.wait(1)
+""",
+        encoding="utf-8",
+    )
+
+
 def _make_text_block(text: str):
     from claude_agent_sdk import TextBlock
 
@@ -79,11 +106,16 @@ class TestPipelinePhaseLogsViaCallback:
     async def test_tts_phase_logs_via_callback(self, tmp_path):
         logs: list[str] = []
         (tmp_path / "out.mp4").write_bytes(b"render")
+        _write_mock_scene(tmp_path / "scene.py")
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
                 num_turns=1,
-                structured_output=_phase2_output(video_output="out.mp4"),
+                structured_output=_phase2_output(
+                    video_output="out.mp4",
+                    scene_file="scene.py",
+                    scene_class="GeneratedScene",
+                ),
             ),
         ]
 
@@ -133,11 +165,16 @@ class TestPipelinePhaseLogsViaCallback:
     async def test_mux_phase_logs_via_callback(self, tmp_path):
         logs: list[str] = []
         (tmp_path / "out.mp4").write_bytes(b"render")
+        _write_mock_scene(tmp_path / "scene.py")
         mock_messages = [
             _make_assistant_message(_make_text_block("render complete")),
             _make_result_message(
                 num_turns=1,
-                structured_output=_phase2_output(video_output="out.mp4"),
+                structured_output=_phase2_output(
+                    video_output="out.mp4",
+                    scene_file="scene.py",
+                    scene_class="GeneratedScene",
+                ),
             ),
         ]
         mock_tts_result = MagicMock(

@@ -168,6 +168,14 @@ not invoke `.venv/Scripts/python` directly.
 
 # Implementation Rules
 - Use Manim Community Edition imports: `from manim import *`.
+- Use beat-first code structure. Implement one method per approved build_spec
+  beat using the exact beat id as the method name, for example
+  `def beat_001_setup(self): ...`.
+- Keep `construct()` as an orchestration method that calls the beat methods in
+  approved order. Do not put the whole animation directly inside `construct()`.
+- Store cross-beat mobjects on `self` with clear names when later beats need them.
+- End every beat method with a readable completed state and `self.wait(0.3)` or
+  longer before the next beat starts.
 - Keep text readable and avoid dense object overlap.
 - Use waits and transitions to make the requested duration plausible.
 - If render fails, inspect the error, edit the scene, and render again.

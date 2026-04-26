@@ -118,6 +118,8 @@ class TestGetImplementationPrompt:
         assert "tofu boxes" in result
         assert "completion frame" in result
         assert "final theorem" in result.lower()
+        assert "beat-first" in result
+        assert "construct()" in result
 
     def test_get_implementation_prompt_validates_preset_and_quality(self):
         with pytest.raises(ValueError, match="preset"):

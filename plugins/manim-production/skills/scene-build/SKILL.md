@@ -27,7 +27,14 @@ Implement Manim code from a scene plan.
 ## Beat-to-code mapping
 
 - Each beat should correspond to one visible stage in `construct()`.
-- Prefer comments that mark beat boundaries.
+- Implement one method per approved beat, using the exact beat id as the method
+  name when it is a valid Python identifier, for example
+  `def beat_001_setup(self): ...`.
+- Keep `construct()` as a thin orchestration method that calls beat methods in
+  approved order. Do not place the full animation directly in `construct()`.
+- Use `self.<descriptive_name>` or `self.scene_state` for mobjects that must
+  persist across beats.
+- Prefer comments that mark beat boundaries inside each beat method.
 - Keep each beat focused on one reveal, transform, or emphasis change.
 - Keep narration aligned to the current beat.
 - Each beat must reach a readable completion frame before the next beat title or

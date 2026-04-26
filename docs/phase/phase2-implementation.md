@@ -37,6 +37,10 @@ Phase 2 不再复用通用 `prompts.get_prompt()`。
 
 Phase 2 system prompt 还负责约束可稳定渲染的生成方式：
 
+- 使用 beat-first 代码结构：每个 `build_spec.beats[*].id` 对应一个同名方法，例如 `beat_001_setup()`。
+- `construct()` 只负责编排，按 Phase 1 顺序调用各 beat 方法，不把全部动画逻辑直接堆在 `construct()`。
+- 跨 beat 共享的 mobject 必须保存在 `self.<name>` 或明确的 scene state 中。
+- 每个 beat 方法末尾必须停留在清晰完成态，并包含不少于 `0.3s` 的 hold。
 - 不在 `Text()` 中直接使用 Unicode 上标或非常用数学符号，例如 `²`、`³`、`√`、`≤`、`≥`。
 - 只有在当前任务中确认 LaTeX 能成功渲染后，才使用 `MathTex` 表达公式；否则用多个安全 `Text` 对象组合上标标签。
 - 每个 beat 必须先到达清晰可读的完成态，并短暂停留，再切换到下一个 beat 标题。
@@ -158,6 +162,23 @@ expected_output = "pipeline_output"
 - `full` 模式下必须有真实 `video_output`，且路径指向存在的 MP4 文件。
 - `segments` 模式下必须存在真实 segment 文件，并设置 `segment_render_complete=true`。
 - Phase 2 gate 前不会自动发现或回填 `video_output` / `segment_video_paths`。
+- Phase 2 structured output 通过后，pipeline 会运行本地脚本分析并写入：
+
+```text
+backend/output/{task_id}/phase2_script_analysis.json
+```
+
+该分析检查：
+
+- `scene.py` 是否包含 `GeneratedScene`。
+- 是否存在与 Phase 1 beat ids 对齐的 beat 方法。
+- `construct()` 是否按顺序调用这些 beat 方法。
+- 每个 beat 方法是否有完成态 hold。
+- 静态估算的 `run_time + wait` 是否明显低于目标时长。
+- 是否在 `Text()` 中直接使用不稳定数学 glyph。
+- 是否存在典型硬编码 offset 式伪拼接逻辑。
+
+脚本分析失败时，Phase 2 直接失败，不进入 Phase 3。
 
 ## 本地派生
 
