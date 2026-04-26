@@ -19,6 +19,9 @@ dependencies = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+manim_agent = ["model_pricing.json"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

@@ -50,18 +50,6 @@ function formatEventTime(timestamp: string): string {
   });
 }
 
-function ToolIcon({ name }: { name: string }) {
-  const iconMap: Record<string, string> = {
-    Write: "W",
-    Edit: "E",
-    Bash: ">_",
-    Read: "R",
-    Glob: "*",
-    StructuredOutput: "{}",
-  };
-  return <span className="font-mono text-[10px]">{iconMap[name] || "?"}</span>;
-}
-
 function formatToolValue(value: unknown): string {
   if (typeof value === "string") {
     return value;
@@ -71,6 +59,26 @@ function formatToolValue(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function getToolDisplayName(name: string): string {
+  if (name === "StructuredOutput") return "Output";
+  return name;
+}
+
+function getToolSummaryKeys(payload: ToolStartPayload): string[] {
+  if (payload.name === "Read" || payload.name === "Edit") {
+    return [];
+  }
+  return Object.keys(payload.input_summary)
+    .filter((key) => key !== "file_path")
+    .slice(0, 3);
+}
+
+function formatCny(value: number): string {
+  if (value < 0.01) return `£¤${value.toFixed(4)}`;
+  if (value < 1) return `£¤${value.toFixed(3)}`;
+  return `£¤${value.toFixed(2)}`;
 }
 
 function StatsBar({ events }: { events: SSEEvent[] }) {
@@ -131,6 +139,11 @@ function StatsBar({ events }: { events: SSEEvent[] }) {
         <>
           <span title="Current turn">TURN {stats.lastProgress.turn}</span>
           <span title="Token usage">{stats.lastProgress.total_tokens.toLocaleString()} TOKENS</span>
+          {stats.lastProgress.estimated_cost_cny != null && (
+            <span title={`Estimated local token cost (${stats.lastProgress.pricing_model ?? "unknown pricing"})`}>
+              {formatCny(stats.lastProgress.estimated_cost_cny)}
+            </span>
+          )}
           <span title="Elapsed">{(stats.lastProgress.elapsed_ms / 1000).toFixed(1)}S</span>
         </>
       )}
@@ -250,6 +263,8 @@ function LogLine({ text, timestamp }: { text: string; timestamp: string }) {
 function ToolStartView({ payload, timestamp }: { payload: ToolStartPayload; timestamp: string }) {
   const [expanded, setExpanded] = useState(false);
   const entries = Object.entries(payload.input_summary).slice(0, 4);
+  const summaryKeys = getToolSummaryKeys(payload);
+  const displayName = getToolDisplayName(payload.name);
 
   return (
     <div className="my-0.5 flex min-w-0 flex-col border-l-2 border-blue-500/18 py-1 pl-3">
@@ -263,22 +278,20 @@ function ToolStartView({ payload, timestamp }: { payload: ToolStartPayload; time
           className="inline-block text-[10px] text-blue-300/70 transition-transform"
           style={{ transform: expanded ? "rotate(90deg)" : "none" }}
         >
-          â–¶
+          ?
         </span>
-        <span className="shrink-0 rounded-sm bg-blue-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-blue-400">
-          CALL
+        <span className="shrink-0 font-semibold" title={payload.name}>
+          {displayName}
         </span>
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-blue-500/8 text-blue-300/75">
-          <ToolIcon name={payload.name} />
-        </span>
-        <span className="min-w-0 truncate font-semibold" title={payload.name}>
-          {payload.name}
-        </span>
-        {entries.length > 0 && (
-          <span className="min-w-0 truncate text-white/30">
-            {entries.map(([key]) => key).join(", ")}
-          </span>
+        {summaryKeys.length > 0 && (
+          <>
+            <span className="shrink-0 text-white/18">¡¤</span>
+            <span className="min-w-0 truncate text-white/30">
+              {summaryKeys.join(", ")}
+            </span>
+          </>
         )}
+        <span className="shrink-0 text-white/18">¡¤</span>
         <span className="ml-auto shrink-0 font-mono text-[10px] text-blue-500/35">
           {payload.tool_use_id.slice(-8)}
         </span>
@@ -349,7 +362,7 @@ function ThinkingView({ payload, timestamp }: { payload: ThinkingPayload; timest
           className="flex w-full items-center gap-2 text-left text-[11px] text-purple-300/80 hover:text-purple-300"
         >
           <span className="inline-block transition-transform text-[10px]" style={{ transform: expanded ? "rotate(90deg)" : "none" }}>
-            â–¶
+            ?
           </span>
           <span className="rounded-sm bg-purple-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-purple-400">
             THINK
@@ -386,6 +399,14 @@ function ProgressView({ payload, timestamp }: { payload: ProgressPayload; timest
           <span className="font-mono font-medium text-cyan-400/80">{payload.total_tokens.toLocaleString()}</span>
           <span className="text-[10px] text-white/30">tokens</span>
         </span>
+        {payload.estimated_cost_cny != null && (
+          <span className="flex items-center gap-1">
+            <span className="font-mono font-medium text-emerald-300/75">
+              {formatCny(payload.estimated_cost_cny)}
+            </span>
+            <span className="text-[10px] text-white/30">est.</span>
+          </span>
+        )}
         <span className="flex items-center gap-1">
           <span className="font-mono font-medium text-blue-400/80">{payload.tool_uses}</span>
           <span className="text-[10px] text-white/30">tools</span>
@@ -416,7 +437,7 @@ function StatusView({
       <span className={`${TIMESTAMP_COL_CLASS} select-none text-current/40`}>{formatEventTime(timestamp)}</span>
       <div className="flex items-center gap-2.5 text-[11px] font-medium mt-[2px]">
         <span className="flex items-center justify-center w-[18px] h-[18px] rounded-sm bg-current/10 text-[10px] tracking-tighter">
-          {isDone ? "âœ“" : isError ? "âœ•" : "âŸ³"}
+          {isDone ? "?" : isError ? "?" : "?"}
         </span>
         <span className="uppercase tracking-widest text-[10px] font-bold opacity-80">{payload.task_status}</span>
         {payload.phase && (

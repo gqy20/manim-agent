@@ -237,6 +237,14 @@ export interface ProgressPayload {
   total_tokens: number;
   tool_uses: number;
   elapsed_ms: number;
+  model_name?: string | null;
+  pricing_model?: string | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cache_read_tokens?: number | null;
+  cache_write_tokens?: number | null;
+  estimated_cost_cny?: number | null;
+  cost_estimate_note?: string | null;
   last_tool_name: string | null;
 }
 

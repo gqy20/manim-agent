@@ -37,6 +37,7 @@ from .schemas import (
     PipelineOutput,
 )
 from .segment_renderer import discover_segment_video_paths
+from .token_pricing import estimate_token_cost_cny
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,7 @@ class _MessageDispatcher:
         self._msg_count: int = 0
         self._msg_type_stats: dict[str, int] = {}
         self._assistant_msg_count: int = 0
+        self.last_model_name: str | None = None
         # ── PipelineOutput ──
         self.pipeline_output: PipelineOutput | None = None
         self.scene_plan_output: Phase1PlanningOutput | None = None
@@ -386,6 +388,8 @@ class _MessageDispatcher:
             len(msg.content),
             msg.message_id,
         )
+        if msg.model:
+            self.last_model_name = msg.model
         for block in msg.content:
             if isinstance(block, TextBlock):
                 self._log_text(block.text)
@@ -586,6 +590,7 @@ class _MessageDispatcher:
     def _handle_task_progress(self, msg: TaskProgressMessage) -> None:
         """处理任务进度消息 + 发射 PROGRESS 结构化事件。"""
         usage = msg.usage
+        cost_estimate = estimate_token_cost_cny(self.last_model_name, usage)
         self._print(
             f"  {_EMOJI['gear']} Progress: "
             f"{usage['total_tokens']} tokens, "
@@ -602,6 +607,14 @@ class _MessageDispatcher:
                     total_tokens=usage["total_tokens"],
                     tool_uses=usage["tool_uses"],
                     elapsed_ms=usage["duration_ms"],
+                    model_name=cost_estimate.get("model_name"),
+                    pricing_model=cost_estimate.get("pricing_model"),
+                    input_tokens=cost_estimate.get("input_tokens"),
+                    output_tokens=cost_estimate.get("output_tokens"),
+                    cache_read_tokens=cost_estimate.get("cache_read_tokens"),
+                    cache_write_tokens=cost_estimate.get("cache_write_tokens"),
+                    estimated_cost_cny=cost_estimate.get("estimated_cost_cny"),
+                    cost_estimate_note=cost_estimate.get("cost_estimate_note"),
                     last_tool_name=None,
                 ),
             )

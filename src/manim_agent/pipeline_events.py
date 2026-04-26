@@ -83,6 +83,20 @@ class ProgressPayload(BaseModel):
     total_tokens: int = Field(..., description="累计 token 消耗")
     tool_uses: int = Field(..., description="累计工具调用次数")
     elapsed_ms: int = Field(..., description="pipeline 已运行时间（毫秒）")
+    model_name: Optional[str] = Field(default=None, description="Model name reported by SDK")
+    pricing_model: Optional[str] = Field(default=None, description="Matched local pricing model")
+    input_tokens: Optional[int] = Field(default=None, description="Input token count")
+    output_tokens: Optional[int] = Field(default=None, description="Output token count")
+    cache_read_tokens: Optional[int] = Field(default=None, description="Cache-read token count")
+    cache_write_tokens: Optional[int] = Field(default=None, description="Cache-write token count")
+    estimated_cost_cny: Optional[float] = Field(
+        default=None,
+        description="Estimated CNY cost from local pricing table",
+    )
+    cost_estimate_note: Optional[str] = Field(
+        default=None,
+        description="How the local token cost estimate was derived",
+    )
     last_tool_name: Optional[str] = Field(
         None,
         description="最近使用的工具名称",
