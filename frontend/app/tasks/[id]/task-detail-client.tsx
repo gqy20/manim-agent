@@ -510,15 +510,16 @@ function SourceCodeDrawer({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[85] flex items-stretch justify-end bg-black/55 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/62 p-3 backdrop-blur-sm sm:p-6">
       <button
         type="button"
         aria-label="Close source code"
         className="absolute inset-0 cursor-default"
         onClick={onClose}
       />
-      <aside className="relative z-10 flex h-full w-full max-w-5xl flex-col border-l border-white/10 bg-background/96 shadow-2xl">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/8 px-5 py-4">
+      <section className="relative z-10 flex h-[min(88dvh,920px)] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-white/10 bg-background/96 shadow-2xl ring-1 ring-cyan-500/10">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/35 to-transparent" />
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/8 bg-white/[0.025] px-5 py-4">
           <div className="min-w-0">
             <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-cyan-400/70">
               Source Code
@@ -554,7 +555,7 @@ function SourceCodeDrawer({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto bg-black/40 custom-scrollbar">
+        <div className="min-h-0 flex-1 overflow-auto bg-black/45 custom-scrollbar">
           {sourceCode ? (
             <div className="w-max min-w-full py-4 font-mono text-[12px] leading-5 text-left">
               {lines.map((line, index) => (
@@ -574,7 +575,7 @@ function SourceCodeDrawer({
             </div>
           )}
         </div>
-      </aside>
+      </section>
     </div>
   );
 }
