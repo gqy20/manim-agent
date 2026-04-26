@@ -67,11 +67,10 @@ function getToolDisplayName(name: string): string {
 }
 
 function getToolSummaryKeys(payload: ToolStartPayload): string[] {
-  if (payload.name === "Read" || payload.name === "Edit") {
-    return [];
-  }
+  if (payload.name === "Read" || payload.name === "Edit") return [];
+
   return Object.keys(payload.input_summary)
-    .filter((key) => key !== "file_path")
+    .filter((key) => key !== "file_path" && key !== "replace_all")
     .slice(0, 3);
 }
 
@@ -278,20 +277,20 @@ function ToolStartView({ payload, timestamp }: { payload: ToolStartPayload; time
           className="inline-block text-[10px] text-blue-300/70 transition-transform"
           style={{ transform: expanded ? "rotate(90deg)" : "none" }}
         >
-          ?
+          &gt;
         </span>
         <span className="shrink-0 font-semibold" title={payload.name}>
           {displayName}
         </span>
         {summaryKeys.length > 0 && (
           <>
-            <span className="shrink-0 text-white/18">·</span>
+            <span className="shrink-0 text-white/18">/</span>
             <span className="min-w-0 truncate text-white/30">
               {summaryKeys.join(", ")}
             </span>
           </>
         )}
-        <span className="shrink-0 text-white/18">·</span>
+        <span className="shrink-0 text-white/18">/</span>
         <span className="ml-auto shrink-0 font-mono text-[10px] text-blue-500/35">
           {payload.tool_use_id.slice(-8)}
         </span>
@@ -362,7 +361,7 @@ function ThinkingView({ payload, timestamp }: { payload: ThinkingPayload; timest
           className="flex w-full items-center gap-2 text-left text-[11px] text-purple-300/80 hover:text-purple-300"
         >
           <span className="inline-block transition-transform text-[10px]" style={{ transform: expanded ? "rotate(90deg)" : "none" }}>
-            ?
+            ▶
           </span>
           <span className="rounded-sm bg-purple-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-purple-400">
             THINK
@@ -437,7 +436,7 @@ function StatusView({
       <span className={`${TIMESTAMP_COL_CLASS} select-none text-current/40`}>{formatEventTime(timestamp)}</span>
       <div className="flex items-center gap-2.5 text-[11px] font-medium mt-[2px]">
         <span className="flex items-center justify-center w-[18px] h-[18px] rounded-sm bg-current/10 text-[10px] tracking-tighter">
-          {isDone ? "?" : isError ? "?" : "?"}
+          {isDone ? "✓" : isError ? "✕" : "⟳"}
         </span>
         <span className="uppercase tracking-widest text-[10px] font-bold opacity-80">{payload.task_status}</span>
         {payload.phase && (
