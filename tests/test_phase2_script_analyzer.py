@@ -113,7 +113,7 @@ class GeneratedScene(Scene):
     )
 
     assert not analysis.accepted
-    assert any("Unstable math glyph" in issue for issue in analysis.issues)
+    assert any("Unstable math glyph" in w for w in analysis.warnings)
     assert any("Estimated script duration" in issue for issue in analysis.issues)
     assert any("hard-coded offset" in issue for issue in analysis.issues)
     assert analysis.beat_duration_seconds == {

@@ -143,7 +143,7 @@ def analyze_phase2_script(
             )
 
     glyph_issues = _unstable_text_glyph_issues(tree)
-    issues.extend(glyph_issues)
+    warnings.extend(glyph_issues)
 
     if _looks_like_random_rearrangement(source):
         issues.append(
