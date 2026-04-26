@@ -8,76 +8,18 @@ import pytest
 from manim_agent import pipeline as main_module
 from manim_agent.schemas import Phase3RenderReviewOutput as RenderReviewOutput
 
-from ._test_main_dispatcher_helpers import _make_two_stage_query_side_effect
-
-
-def _phase2_output(**overrides):
-    data = {
-        "video_output": "/out.mp4",
-        "implemented_beats": ["Hook", "Main idea", "Wrap-up"],
-        "build_summary": "Built the planned teaching beats.",
-        "narration": "大家好，今天我们按照计划逐步讲解这个动画，从开场到核心过程再到总结收束。",
-        "deviations_from_plan": [],
-    }
-    data.update(overrides)
-    return data
+from ._test_main_dispatcher_helpers import (
+    _make_two_stage_query_side_effect,
+    _make_text_block,
+    _make_assistant_message,
+    _make_result_message,
+    _DEFAULT_DRAFT_SOURCE,
+    _phase2_output,
+)
 
 
 def _write_mock_scene(path):
-    path.write_text(
-        """
-from manim import *
-
-class GeneratedScene(Scene):
-    def construct(self):
-        self.beat_001_hook()
-        self.beat_002_main_idea()
-        self.beat_003_wrap_up()
-
-    def beat_001_hook(self):
-        self.play(FadeIn(Square()), run_time=10)
-        self.wait(1)
-
-    def beat_002_main_idea(self):
-        self.play(FadeIn(Circle()), run_time=35)
-        self.wait(1)
-
-    def beat_003_wrap_up(self):
-        self.play(FadeIn(Triangle()), run_time=15)
-        self.wait(1)
-""",
-        encoding="utf-8",
-    )
-
-
-def _make_text_block(text: str):
-    from claude_agent_sdk import TextBlock
-
-    return TextBlock(text=text)
-
-
-def _make_assistant_message(*blocks):
-    from claude_agent_sdk import AssistantMessage
-
-    return AssistantMessage(content=list(blocks), model="claude-sonnet-4-20250514")
-
-
-def _make_result_message(**overrides):
-    from claude_agent_sdk import ResultMessage
-
-    defaults = dict(
-        subtype="result",
-        duration_ms=5000,
-        duration_api_ms=4500,
-        is_error=False,
-        num_turns=3,
-        session_id="sess-abc",
-        stop_reason="end_turn",
-        total_cost_usd=0.0123,
-        usage={"input_tokens": 1000, "output_tokens": 2000},
-    )
-    defaults.update(overrides)
-    return ResultMessage(**defaults)
+    path.write_text(_DEFAULT_DRAFT_SOURCE, encoding="utf-8")
 
 
 class TestStderrHandlerForwardsToCallback:

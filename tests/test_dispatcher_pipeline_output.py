@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from ._test_main_dispatcher_helpers import (
     TaskNotificationMessage,
     _make_result_message,
@@ -140,6 +142,33 @@ class TestDispatcherPipelineOutput:
         assert d.pipeline_output is None
         assert d._result_output_candidate is None
 
+    def test_phase2_script_draft_expected_output_only_parses_draft_schema(self):
+        d = _MessageDispatcher(verbose=False, expected_output="phase2_script_draft")
+        d.dispatch(
+            _make_result_message(
+                num_turns=1,
+                result=json.dumps({"video_output": "/should/not/parse.mp4"}),
+                structured_output={
+                    "scene_file": "scene.py",
+                    "scene_class": "GeneratedScene",
+                    "implemented_beats": ["Intro"],
+                    "build_summary": "Built the beat-first script draft.",
+                    "beat_timing_seconds": {"Intro": 6.0},
+                    "estimated_duration_seconds": 6.0,
+                    "deviations_from_plan": [],
+                    "source_code": (
+                        "from manim import *\n\nclass GeneratedScene(Scene):\n    pass\n"
+                    ),
+                },
+            )
+        )
+
+        draft_output = d.get_phase2_script_draft_output()
+        assert draft_output is not None
+        assert draft_output.scene_file == "scene.py"
+        assert d.pipeline_output is None
+        assert d.get_phase2_implementation_output() is None
+
     def test_get_pipeline_output_none_when_no_result_signal(self):
         d = _MessageDispatcher(verbose=False)
         d.dispatch(_make_result_message(num_turns=1))
@@ -273,3 +302,66 @@ class TestDispatcherPipelineOutput:
         assert po.scene_class == "GeneratedScene"
         assert po.narration == "这是合并后的中文解说。"
         assert po.duration_seconds == 8
+
+
+def test_persistable_output_includes_phase1_planning():
+    """From former test_dispatcher_pipeline_output_persistence.py."""
+    d = _MessageDispatcher(verbose=False, expected_output="phase1_planning")
+    d.dispatch(
+        _make_result_message(
+            num_turns=1,
+            structured_output={
+                "build_spec": {
+                    "mode": "teaching-animation",
+                    "learning_goal": "Explain a key idea.",
+                    "audience": "Beginner learners",
+                    "target_duration_seconds": 60,
+                    "beats": [
+                        {
+                            "id": "beat_001_intro",
+                            "title": "Intro",
+                            "visual_goal": "Show title card.",
+                            "narration_intent": "Set up context.",
+                            "target_duration_seconds": 12,
+                            "required_elements": ["title"],
+                            "segment_required": True,
+                        },
+                    ],
+                },
+            },
+        )
+    )
+    payload = d.get_persistable_pipeline_output()
+
+    assert payload is not None
+    assert payload["phase1_planning"] is not None
+    assert payload["phase1_planning"]["build_spec"]["mode"] == "teaching-animation"
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_ref_is_available_when_phase1_fails(tmp_path):
+    """From former test_pipeline_dispatcher_ref.py."""
+    from unittest.mock import AsyncMock, patch
+
+    from manim_agent import pipeline
+
+    dispatcher_ref = []
+
+    with patch(
+        "manim_agent.pipeline.run_phase1_planning",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("phase1 boom"),
+    ):
+        with pytest.raises(RuntimeError, match="phase1 boom"):
+            await pipeline.run_pipeline(
+                user_text="test",
+                output_path=str(tmp_path / "final.mp4"),
+                no_tts=True,
+                cwd=str(tmp_path),
+                _dispatcher_ref=dispatcher_ref,
+            )
+
+    assert len(dispatcher_ref) == 1
+    diagnostics = dispatcher_ref[0].get_phase1_failure_diagnostics()
+    assert diagnostics["raw_structured_output_present"] is False
+    assert diagnostics["raw_structured_output_type"] is None

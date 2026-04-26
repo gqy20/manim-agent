@@ -25,35 +25,13 @@ from manim_agent.pipeline_events import (
 
 
 class TestEventType:
-    def test_has_log_type(self):
-        assert "log" in [e.value for e in EventType]
-
-    def test_has_status_type(self):
-        assert "status" in [e.value for e in EventType]
-
-    def test_has_error_type(self):
-        assert "error" in [e.value for e in EventType]
-
-    def test_has_tool_start_type(self):
-        assert "tool_start" in [e.value for e in EventType]
-
-    def test_has_tool_result_type(self):
-        assert "tool_result" in [e.value for e in EventType]
-
-    def test_has_thinking_type(self):
-        assert "thinking" in [e.value for e in EventType]
-
-    def test_has_progress_type(self):
-        assert "progress" in [e.value for e in EventType]
-
-    def test_total_event_types(self):
-        """应包含所有调试所需的事件类别。"""
+    def test_all_expected_event_types_present(self):
         expected = {
             "log", "status", "error",
             "tool_start", "tool_result",
             "thinking", "progress",
-            "trace_span",       # Trace/Span 进入/退出
-            "phase_boundary",   # Phase 边界（进入/退出）
+            "trace_span",
+            "phase_boundary",
         }
         actual = {e.value for e in EventType}
         assert expected == actual
@@ -256,55 +234,29 @@ class TestPipelineEventProgress:
 class TestRoundtripSerialization:
     """验证 PipelineEvent 可序列化→反序列化，且与 SSEEvent 兼容。"""
 
-    def test_log_roundtrip(self):
-        original = PipelineEvent(event_type=EventType.LOG, data="test line")
-        serialized = original.model_dump()
-        restored = PipelineEvent.model_validate(serialized)
-        assert restored.event_type == EventType.LOG
-        assert restored.data == "test line"
-
-    def test_tool_start_roundtrip(self):
-        payload = ToolStartPayload(
-            tool_use_id="tu_001",
-            name="Edit",
-            input_summary={"file_path": "scene.py"},
-        )
-        original = PipelineEvent(event_type=EventType.TOOL_START, data=payload)
-        restored = PipelineEvent.model_validate(original.model_dump())
-        assert restored.data.tool_use_id == "tu_001"
-
-    def test_tool_result_roundtrip(self):
-        payload = ToolResultPayload(
-            tool_use_id="tu_002",
-            name="Read",
-            is_error=False,
-            content="file contents here",
-            duration_ms=100,
-        )
-        original = PipelineEvent(
-            event_type=EventType.TOOL_RESULT, data=payload,
-        )
-        restored = PipelineEvent.model_validate(original.model_dump())
-        assert restored.data.content == "file contents here"
-
-    def test_thinking_roundtrip(self):
-        payload = ThinkingPayload(
-            thinking="deep thoughts",
-            preview="deep thoughts",
-            signature="sig-xyz",
-        )
-        original = PipelineEvent(event_type=EventType.THINKING, data=payload)
-        restored = PipelineEvent.model_validate(original.model_dump())
-        assert restored.data.signature == "sig-xyz"
-
-    def test_progress_roundtrip(self):
-        payload = ProgressPayload(
-            turn=5, total_tokens=9999, tool_uses=12,
-            elapsed_ms=30000, last_tool_name="Write",
-        )
-        original = PipelineEvent(event_type=EventType.PROGRESS, data=payload)
-        restored = PipelineEvent.model_validate(original.model_dump())
-        assert restored.data.turn == 5
+    def test_various_payloads_roundtrip(self):
+        cases = [
+            PipelineEvent(event_type=EventType.LOG, data="test line"),
+            PipelineEvent(
+                event_type=EventType.TOOL_START,
+                data=ToolStartPayload(tool_use_id="tu_001", name="Edit", input_summary={"file_path": "scene.py"}),
+            ),
+            PipelineEvent(
+                event_type=EventType.TOOL_RESULT,
+                data=ToolResultPayload(tool_use_id="tu_002", name="Read", is_error=False, content="ok", duration_ms=100),
+            ),
+            PipelineEvent(
+                event_type=EventType.THINKING,
+                data=ThinkingPayload(thinking="deep", preview="deep", signature="sig-xyz"),
+            ),
+            PipelineEvent(
+                event_type=EventType.PROGRESS,
+                data=ProgressPayload(turn=5, total_tokens=9999, tool_uses=12, elapsed_ms=30000, last_tool_name="Write"),
+            ),
+        ]
+        for original in cases:
+            restored = PipelineEvent.model_validate(original.model_dump())
+            assert restored.event_type == original.event_type
 
     def test_timestamp_auto_generated(self):
         """不传 timestamp 时自动生成。"""

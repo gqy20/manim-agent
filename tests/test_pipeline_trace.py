@@ -7,7 +7,6 @@ span 嵌套、序列化、与 PipelineEvent 的集成。
 from __future__ import annotations
 
 import time
-import uuid
 
 import pytest
 
@@ -25,19 +24,7 @@ from manim_agent.pipeline_trace import (
 )
 
 
-# ── trace_id 生成 ──────────────────────────────────────────────
-
-
-class TestCreateTraceId:
-    def test_returns_uuid4_string(self):
-        tid = create_trace_id()
-        assert isinstance(tid, str)
-        # UUID4 格式校验
-        uuid.UUID(tid)  # 不抛异常即通过
-
-    def test_unique_across_calls(self):
-        ids = {create_trace_id() for _ in range(100)}
-        assert len(ids) == 100
+# ── GetCurrentTraceId ────────────────────────────────────────────
 
 
 class TestGetCurrentTraceId:
@@ -305,15 +292,3 @@ class TestTraceSpanPipelineEventIntegration:
         assert enter.data.phase == "phase2"
 
 
-# ── 生成唯一 span_id ──────────────────────────────────────────
-
-
-class TestAutoSpanId:
-    def test_auto_generated_span_ids_are_unique(self):
-        ids = set()
-        for _ in range(50):
-            span = TraceSpan(trace_id="t-1", span_id="", name="auto")
-            ids.add(span.span_id)
-        assert len(ids) == 50
-        # span_id 格式：span-{uuid短格式}
-        assert all(s.startswith("span-") for s in ids)

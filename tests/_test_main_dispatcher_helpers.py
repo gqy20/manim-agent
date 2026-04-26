@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+from pathlib import Path
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -14,8 +14,23 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from manim_agent.dispatcher import _MessageDispatcher
 from manim_agent import pipeline as main_module
+from manim_agent.dispatcher import _MessageDispatcher
+
+__all__ = [
+    "TaskNotificationMessage",
+    "_MessageDispatcher",
+    "_make_assistant_message",
+    "_make_result_message",
+    "_make_text_block",
+    "_make_thinking_block",
+    "_make_tool_result_block",
+    "_make_tool_use_block",
+    "_make_two_stage_query_side_effect",
+    "_phase2_output",
+    "_DEFAULT_DRAFT_SOURCE",
+    "main_module",
+]
 
 
 def _make_text_block(text: str) -> TextBlock:
@@ -62,7 +77,69 @@ def _make_result_message(**overrides) -> ResultMessage:
     return ResultMessage(**defaults)
 
 
+def _phase2_output(**overrides):
+    data = {
+        "video_output": "out.mp4",
+        "implemented_beats": ["Hook", "Main idea", "Wrap-up"],
+        "build_summary": "Built the planned teaching beats.",
+        "deviations_from_plan": [],
+    }
+    data.update(overrides)
+    return data
+
+
+_DEFAULT_DRAFT_SOURCE = """
+from manim import *
+
+class GeneratedScene(Scene):
+    def construct(self):
+        self.beat_001_hook()
+        self.beat_002_main_idea()
+        self.beat_003_wrap_up()
+
+    def beat_001_hook(self):
+        self.play(FadeIn(Square()), run_time=10)
+        self.wait(1)
+
+    def beat_002_main_idea(self):
+        self.play(FadeIn(Circle()), run_time=35)
+        self.wait(1)
+
+    def beat_003_wrap_up(self):
+        self.play(FadeIn(Triangle()), run_time=15)
+        self.wait(1)
+"""
+
+
+def _make_script_draft_messages(cwd: str | None = None):
+    if cwd:
+        scene_path = Path(cwd) / "scene.py"
+        if not scene_path.exists():
+            scene_path.write_text(_DEFAULT_DRAFT_SOURCE, encoding="utf-8")
+    return [
+        _make_result_message(
+            num_turns=1,
+            result="script draft complete",
+            structured_output={
+                "scene_file": "scene.py",
+                "scene_class": "GeneratedScene",
+                "implemented_beats": ["Hook", "Main idea", "Wrap-up"],
+                "build_summary": "Drafted the beat-first scene script.",
+                "beat_timing_seconds": {
+                    "beat_001_hook": 11.0,
+                    "beat_002_main_idea": 36.0,
+                    "beat_003_wrap_up": 16.0,
+                },
+                "estimated_duration_seconds": 63.0,
+                "deviations_from_plan": [],
+                "source_code": _DEFAULT_DRAFT_SOURCE,
+            },
+        ),
+    ]
+
+
 def _make_two_stage_query_side_effect(build_messages):
+    """Return planning, then default Phase 2A draft, then caller's Phase 2B messages."""
     planning_messages = [
         _make_result_message(
             num_turns=1,
@@ -110,7 +187,18 @@ def _make_two_stage_query_side_effect(build_messages):
 
     async def _side_effect(*_args, **_kwargs):
         call_count["value"] += 1
-        messages = planning_messages if call_count["value"] == 1 else build_messages
+        options = _kwargs.get("options")
+        if call_count["value"] == 1:
+            messages = planning_messages
+        elif call_count["value"] == 2:
+            messages = _make_script_draft_messages(getattr(options, "cwd", None))
+        else:
+            cwd = getattr(options, "cwd", None)
+            if cwd:
+                output = Path(cwd) / "out.mp4"
+                if not output.exists():
+                    output.write_bytes(b"render")
+            messages = build_messages
         for message in messages:
             yield message
 

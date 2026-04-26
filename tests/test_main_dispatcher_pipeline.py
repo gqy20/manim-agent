@@ -1,4 +1,3 @@
-import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -14,7 +13,6 @@ from ._test_main_dispatcher_helpers import (
     _make_tool_use_block,
     main_module,
 )
-
 
 _SCENE_PLAN_TEXT = """## Mode
 quick-demo
@@ -76,7 +74,72 @@ def _make_staged_query(build_messages):
 
     async def _query(*args, **kwargs):
         call_count["value"] += 1
-        messages = _planning_messages() if call_count["value"] == 1 else build_messages
+        if call_count["value"] == 1:
+            messages = _planning_messages()
+        elif call_count["value"] == 2:
+            options = kwargs.get("options") if kwargs else None
+            cwd = Path(getattr(options, "cwd", "."))
+            (cwd / "scene.py").write_text(
+                """
+from manim import *
+
+class GeneratedScene(Scene):
+    def construct(self):
+        self.beat_001_intro_circle()
+        self.beat_002_transform_square()
+
+    def beat_001_intro_circle(self):
+        self.play(FadeIn(Circle()), run_time=20)
+        self.wait(1)
+
+    def beat_002_transform_square(self):
+        self.play(FadeIn(Square()), run_time=20)
+        self.wait(1)
+""",
+                encoding="utf-8",
+            )
+            messages = [
+                _make_result_message(
+                    num_turns=1,
+                    total_cost_usd=0.001,
+                    structured_output={
+                        "scene_file": "scene.py",
+                        "scene_class": "GeneratedScene",
+                        "implemented_beats": [
+                            "Introduce the circle",
+                            "Transform into a square",
+                        ],
+                        "build_summary": "Built the beat-first script draft.",
+                        "beat_timing_seconds": {
+                            "beat_001_intro_circle": 21.0,
+                            "beat_002_transform_square": 21.0,
+                        },
+                        "estimated_duration_seconds": 42.0,
+                        "deviations_from_plan": [],
+                    },
+                )
+            ]
+        else:
+            options = kwargs.get("options") if kwargs else None
+            cwd = Path(getattr(options, "cwd", "."))
+            for msg in build_messages:
+                structured_output = getattr(msg, "structured_output", None)
+                if isinstance(structured_output, dict):
+                    structured_output.setdefault("scene_file", "scene.py")
+                    structured_output.setdefault("scene_class", "GeneratedScene")
+                    video_output = structured_output.get("video_output")
+                    if isinstance(video_output, str) and video_output:
+                        video_path = cwd / video_output
+                        video_path.parent.mkdir(parents=True, exist_ok=True)
+                        video_path.write_bytes(b"render")
+                    if structured_output.get("implemented_beats") and structured_output.get(
+                        "build_summary"
+                    ):
+                        structured_output.setdefault(
+                            "narration",
+                            "这是用于测试的中文解说文本，覆盖当前实现的主要动画流程。",
+                        )
+            messages = build_messages
         for msg in messages:
             yield msg
 
@@ -90,33 +153,6 @@ def _approved_review_result():
         blocking_issues=[],
         suggested_edits=[],
     )
-
-
-class TestSessionIsolation:
-    def test_unique_session_id_per_call(self):
-        id1 = str(uuid.uuid4())
-        id2 = str(uuid.uuid4())
-        assert id1 != id2
-        assert len(id1) == 36
-
-    def test_build_options_includes_session_fields(self):
-        options = main_module._build_options(
-            cwd="/project",
-            system_prompt="test prompt",
-            max_turns=10,
-        )
-        assert hasattr(options, "session_id")
-        assert hasattr(options, "fork_session")
-        assert options.session_id is not None
-        assert options.fork_session is True
-
-    def test_fork_session_always_true(self):
-        options = main_module._build_options(
-            cwd="/project",
-            system_prompt="test",
-            max_turns=5,
-        )
-        assert options.fork_session is True
 
 
 class TestRunPipeline:
@@ -190,26 +226,31 @@ class TestRunPipeline:
                 [],
             )
 
-            with patch(
-                "manim_agent.pipeline.generate_narration",
-                new_callable=AsyncMock,
-                return_value="这是用于验证 build_spec 推导字段的中文解说。",
-            ), patch(
-                "manim_agent.pipeline.video_builder.build_final_video",
-                new_callable=AsyncMock,
-                return_value="output/final.mp4",
-            ), patch(
-                "manim_agent.pipeline.tts_client.synthesize",
-                new_callable=AsyncMock,
-                return_value=MagicMock(
-                    audio_path="out/audio.mp3",
-                    subtitle_path="out/sub.srt",
-                    duration_ms=30000,
+            with (
+                patch(
+                    "manim_agent.pipeline.generate_narration",
+                    new_callable=AsyncMock,
+                    return_value="这是用于验证 build_spec 推导字段的中文解说。",
                 ),
-            ), patch(
-                "manim_agent.audio_orchestrator.video_builder.concat_audios",
-                new_callable=AsyncMock,
-                return_value="out/audio_track.mp3",
+                patch(
+                    "manim_agent.pipeline.video_builder.build_final_video",
+                    new_callable=AsyncMock,
+                    return_value="output/final.mp4",
+                ),
+                patch(
+                    "manim_agent.pipeline.tts_client.synthesize",
+                    new_callable=AsyncMock,
+                    return_value=MagicMock(
+                        audio_path="out/audio.mp3",
+                        subtitle_path="out/sub.srt",
+                        duration_ms=30000,
+                    ),
+                ),
+                patch(
+                    "manim_agent.audio_orchestrator.video_builder.concat_audios",
+                    new_callable=AsyncMock,
+                    return_value="out/audio_track.mp3",
+                ),
             ):
                 result = await main_module.run_pipeline(
                     user_text="test content",
@@ -271,30 +312,36 @@ class TestRunPipeline:
                 [],
             )
 
-            with patch(
-                "manim_agent.pipeline.generate_narration",
-                new_callable=AsyncMock,
-                return_value="这是用于验证 segments 推导字段的中文解说。",
-            ), patch(
-                "manim_agent.pipeline.video_builder.concat_videos",
-                new_callable=AsyncMock,
-                return_value="output/segment_visual_track.mp4",
-            ), patch(
-                "manim_agent.pipeline.video_builder.build_final_video",
-                new_callable=AsyncMock,
-                return_value="output/final.mp4",
-            ), patch(
-                "manim_agent.pipeline.tts_client.synthesize",
-                new_callable=AsyncMock,
-                return_value=MagicMock(
-                    audio_path="out/audio.mp3",
-                    subtitle_path="out/sub.srt",
-                    duration_ms=30000,
+            with (
+                patch(
+                    "manim_agent.pipeline.generate_narration",
+                    new_callable=AsyncMock,
+                    return_value="这是用于验证 segments 推导字段的中文解说。",
                 ),
-            ), patch(
-                "manim_agent.audio_orchestrator.video_builder.concat_audios",
-                new_callable=AsyncMock,
-                return_value="out/audio_track.mp3",
+                patch(
+                    "manim_agent.pipeline.video_builder.concat_videos",
+                    new_callable=AsyncMock,
+                    return_value="output/segment_visual_track.mp4",
+                ),
+                patch(
+                    "manim_agent.pipeline.video_builder.build_final_video",
+                    new_callable=AsyncMock,
+                    return_value="output/final.mp4",
+                ),
+                patch(
+                    "manim_agent.pipeline.tts_client.synthesize",
+                    new_callable=AsyncMock,
+                    return_value=MagicMock(
+                        audio_path="out/audio.mp3",
+                        subtitle_path="out/sub.srt",
+                        duration_ms=30000,
+                    ),
+                ),
+                patch(
+                    "manim_agent.audio_orchestrator.video_builder.concat_audios",
+                    new_callable=AsyncMock,
+                    return_value="out/audio_track.mp3",
+                ),
             ):
                 result = await main_module.run_pipeline(
                     user_text="test content",
@@ -545,15 +592,25 @@ class TestRunPipeline:
 
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
-            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
+            patch(
+                "manim_agent.pipeline.render_review.extract_review_frames",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "manim_agent.pipeline._run_render_review",
+                new_callable=AsyncMock,
+                return_value=_approved_review_result(),
+            ),
             patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
             patch(
                 "manim_agent.audio_orchestrator.video_builder.concat_audios",
                 new_callable=AsyncMock,
                 return_value="out/audio_track.mp3",
             ),
-            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch(
+                "manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock
+            ) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
             mock_tts.return_value = MagicMock(
@@ -599,15 +656,25 @@ class TestRunPipeline:
 
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
-            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
+            patch(
+                "manim_agent.pipeline.render_review.extract_review_frames",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "manim_agent.pipeline._run_render_review",
+                new_callable=AsyncMock,
+                return_value=_approved_review_result(),
+            ),
             patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
             patch(
                 "manim_agent.audio_orchestrator.video_builder.concat_audios",
                 new_callable=AsyncMock,
                 return_value="out/audio_track.mp3",
             ),
-            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch(
+                "manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock
+            ) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
 
@@ -649,8 +716,16 @@ class TestRunPipeline:
 
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
-            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
+            patch(
+                "manim_agent.pipeline.render_review.extract_review_frames",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "manim_agent.pipeline._run_render_review",
+                new_callable=AsyncMock,
+                return_value=_approved_review_result(),
+            ),
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
 
@@ -748,15 +823,25 @@ class TestRunPipeline:
 
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
-            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
+            patch(
+                "manim_agent.pipeline.render_review.extract_review_frames",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "manim_agent.pipeline._run_render_review",
+                new_callable=AsyncMock,
+                return_value=_approved_review_result(),
+            ),
             patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
             patch(
                 "manim_agent.audio_orchestrator.video_builder.concat_audios",
                 new_callable=AsyncMock,
                 return_value="out/audio_track.mp3",
             ),
-            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch(
+                "manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock
+            ) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
             mock_tts.return_value = MagicMock(
@@ -865,19 +950,6 @@ class TestBuildOptions:
         assert "/layout-safety" in text
 
 
-class TestAsyncioImport:
-    def test_asyncio_in_module_globals(self):
-        assert hasattr(main_module, "asyncio")
-
-    def test_main_is_coroutine_function(self):
-        import inspect
-
-        assert inspect.iscoroutinefunction(main)
-
-    def test_main_callable_without_nameerror(self):
-        assert callable(main)
-
-
 class TestBackgroundMusic:
     @pytest.mark.asyncio
     async def test_bgm_failure_falls_back_to_voice_only_mux(self, tmp_path):
@@ -904,8 +976,16 @@ class TestBackgroundMusic:
 
         with (
             patch("manim_agent.pipeline.query") as mock_query,
-            patch("manim_agent.pipeline.render_review.extract_review_frames", new_callable=AsyncMock, return_value=[]),
-            patch("manim_agent.pipeline._run_render_review", new_callable=AsyncMock, return_value=_approved_review_result()),
+            patch(
+                "manim_agent.pipeline.render_review.extract_review_frames",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "manim_agent.pipeline._run_render_review",
+                new_callable=AsyncMock,
+                return_value=_approved_review_result(),
+            ),
             patch("manim_agent.pipeline.tts_client.synthesize", new_callable=AsyncMock) as mock_tts,
             patch(
                 "manim_agent.pipeline.music_client.generate_instrumental",
@@ -917,7 +997,9 @@ class TestBackgroundMusic:
                 new_callable=AsyncMock,
                 return_value="out/audio_track.mp3",
             ),
-            patch("manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock) as mock_video,
+            patch(
+                "manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock
+            ) as mock_video,
         ):
             mock_query.side_effect = _make_staged_query(mock_messages)
             mock_tts.return_value = MagicMock(

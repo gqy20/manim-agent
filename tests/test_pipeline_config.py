@@ -3,35 +3,6 @@
 import inspect
 
 
-class TestPipelineConfigExports:
-    """Verify pipeline_config re-exports the functions expected by pipeline.py."""
-
-    def test_build_options_exported(self):
-        from manim_agent.pipeline_config import build_options
-
-        assert callable(build_options)
-
-    def test_stderr_handler_exported(self):
-        from manim_agent.pipeline_config import stderr_handler
-
-        assert callable(stderr_handler)
-
-    def test_emit_status_exported(self):
-        from manim_agent.pipeline_config import emit_status
-
-        assert callable(emit_status)
-
-    def test_resolve_repo_root_exported(self):
-        from manim_agent.pipeline_config import resolve_repo_root
-
-        assert callable(resolve_repo_root)
-
-    def test_resolve_plugin_dir_exported(self):
-        from manim_agent.pipeline_config import resolve_plugin_dir
-
-        assert callable(resolve_plugin_dir)
-
-
 class TestBuildOptions:
     def test_phase1_tool_isolation_options_are_forwarded(self, tmp_path):
         from manim_agent.pipeline_config import build_options
