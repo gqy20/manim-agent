@@ -1,4 +1,3 @@
-import inspect
 from pathlib import Path
 
 import pytest
@@ -65,10 +64,6 @@ class TestParseArgs:
 
 
 class TestStderrHandler:
-    def test_stderr_handler_accepts_log_callback(self):
-        params = inspect.signature(main_module._stderr_handler).parameters
-        assert "log_callback" in params
-
     def test_stderr_handler_forwards_every_line_to_callback(self):
         forwarded = []
 

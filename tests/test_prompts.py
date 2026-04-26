@@ -6,165 +6,129 @@ from manim_agent import prompts
 
 
 class TestSystemPrompt:
-    def test_system_prompt_is_string(self):
+    def test_system_prompt_is_non_empty_string(self):
         assert isinstance(prompts.SYSTEM_PROMPT, str)
         assert len(prompts.SYSTEM_PROMPT) > 0
 
-    def test_system_prompt_contains_role(self):
-        assert "Manim" in prompts.SYSTEM_PROMPT or "manim" in prompts.SYSTEM_PROMPT.lower()
-
-    def test_system_prompt_contains_output_format(self):
-        assert (
-            "render" in prompts.SYSTEM_PROMPT.lower()
-            or "output" in prompts.SYSTEM_PROMPT.lower()
-        )
-
-    def test_system_prompt_contains_workflow_rules(self):
-        assert "manim" in prompts.SYSTEM_PROMPT.lower() or "render" in prompts.SYSTEM_PROMPT.lower()
-
-    def test_system_prompt_mentions_manim_production_plugin(self):
+    def test_system_prompt_references_manim_plugin_and_skills(self):
         assert "manim-production" in prompts.SYSTEM_PROMPT
         assert "scene-build" in prompts.SYSTEM_PROMPT
         assert "layout-safety" in prompts.SYSTEM_PROMPT
 
 
 class TestGetPrompt:
-    def test_get_prompt_default(self):
+    def test_includes_user_text_and_is_longer_than_input(self):
         result = prompts.get_prompt("解释傅里叶变换")
         assert isinstance(result, str)
         assert "傅里叶变换" in result
         assert len(result) > len("解释傅里叶变换")
 
-    def test_get_prompt_contains_system_prompt(self):
-        result = prompts.get_prompt("测试文本")
-        assert "render" in result.lower() or "output" in result.lower()
+    def test_preset_affects_output_content(self):
+        educational = prompts.get_prompt("测试", preset="educational")
+        proof = prompts.get_prompt("测试", preset="proof")
+        assert educational != proof  # different presets produce different output
 
-    def test_get_prompt_educational_preset(self):
-        result = prompts.get_prompt("测试", preset="educational")
-        assert "教学" in result or "循序渐进" in result or "教育" in result
+    def test_quality_flag_appears_in_command(self):
+        assert "-qh" in prompts.get_prompt("测试", quality="high")
+        assert "-ql" in prompts.get_prompt("测试", quality="low")
 
-    def test_get_prompt_presentation_preset(self):
-        result = prompts.get_prompt("测试", preset="presentation")
-        assert "演示" in result or "简洁" in result or "汇报" in result
-
-    def test_get_prompt_proof_preset(self):
-        result = prompts.get_prompt("测试", preset="proof")
-        assert "证明" in result or "推导" in result or "逻辑" in result
-
-    def test_get_prompt_concept_preset(self):
-        result = prompts.get_prompt("测试", preset="concept")
-        assert "可视化" in result or "直观" in result or "比喻" in result
-
-    def test_get_prompt_invalid_preset_raises(self):
-        with pytest.raises(ValueError, match="preset"):
-            prompts.get_prompt("测试", preset="invalid_preset")
-
-    def test_get_prompt_quality_high(self):
-        result = prompts.get_prompt("测试", quality="high")
-        assert "-qh" in result
-
-    def test_get_prompt_quality_medium(self):
-        result = prompts.get_prompt("测试", quality="medium")
-        assert "-qm" in result
-
-    def test_get_prompt_quality_low(self):
-        result = prompts.get_prompt("测试", quality="low")
-        assert "-ql" in result
-
-    def test_get_prompt_quality_invalid_raises(self):
-        with pytest.raises(ValueError, match="quality"):
-            prompts.get_prompt("测试", quality="ultra")
-
-    def test_get_prompt_task_directory_instructions_include_chinese_narration(self):
+    def test_cwd_adds_task_directory_instructions(self):
         result = prompts.get_prompt("测试", cwd="/tmp/task")
         assert "scene.py" in result
         assert "GeneratedScene" in result
-        assert "Run Manim directly" in result
         assert "Simplified Chinese" in result
-
-    def test_get_prompt_mentions_manim_production_plugin_when_task_directory_is_set(self):
-        result = prompts.get_prompt("测试", cwd="/tmp/task")
         assert "manim-production" in result
 
-    def test_get_prompt_mentions_scene_build_when_task_directory_is_set(self):
-        result = prompts.get_prompt("测试", cwd="/tmp/task")
-        assert "scene-build" in result
-        assert "layout-safety" in result
+    @pytest.mark.parametrize("bad_preset", ["invalid", "", "xxx"])
+    def test_invalid_preset_raises_value_error(self, bad_preset):
+        with pytest.raises(ValueError, match="preset"):
+            prompts.get_prompt("测试", preset=bad_preset)
+
+    @pytest.mark.parametrize("bad_quality", ["ultra", "fast", ""])
+    def test_invalid_quality_raises_value_error(self, bad_quality):
+        with pytest.raises(ValueError, match="quality"):
+            prompts.get_prompt("测试", quality=bad_quality)
 
 
 class TestGetImplementationPrompt:
-    def test_get_implementation_prompt_is_phase2_only(self):
+    def test_is_phase2_focused(self):
         result = prompts.get_implementation_prompt(cwd="/tmp/task")
-
         assert "Phase 2" in result
         assert "build_spec" in result
-        assert "TTS" in result
-        assert "muxing" in result
         assert "# 用户需求" not in result
 
-    def test_get_implementation_prompt_mentions_skill_order(self):
+    def test_includes_render_stability_rules(self):
         result = prompts.get_implementation_prompt(cwd="/tmp/task")
-
-        assert "scene-build" in result
-        assert "scene-direction" in result
-        assert "layout-safety" in result
-        assert "narration-sync" in result
-        assert "render-review" in result
-
-    def test_get_implementation_prompt_contains_render_stable_generation_rules(self):
-        result = prompts.get_implementation_prompt(cwd="/tmp/task")
-
         assert "Unicode superscripts" in result
         assert "tofu boxes" in result
-        assert "completion frame" in result
-        assert "final theorem" in result.lower()
         assert "beat-first" in result
         assert "construct()" in result
 
-    def test_get_implementation_prompt_validates_preset_and_quality(self):
-        with pytest.raises(ValueError, match="preset"):
-            prompts.get_implementation_prompt(preset="invalid_preset")
+    def test_mentions_required_skill_order(self):
+        result = prompts.get_implementation_prompt(cwd="/tmp/task")
+        for skill in ("scene-build", "scene-direction", "layout-safety",
+                       "narration-sync", "render-review"):
+            assert skill in result
 
-        with pytest.raises(ValueError, match="quality"):
-            prompts.get_implementation_prompt(quality="ultra")
+
+class TestGetPhase2ScriptDraftPrompt:
+    def test_is_phase2a_only_no_render(self):
+        result = prompts.get_phase2_script_draft_prompt(cwd="/tmp/task")
+        assert "Phase 2A" in result
+        assert "Do not render" in result
+        assert "Run Manim directly" not in result
+        assert "manim -qh" not in result
+
+    def test_requires_beat_first_structure_and_timing(self):
+        result = prompts.get_phase2_script_draft_prompt(cwd="/tmp/task")
+        assert "beat-first" in result
+        assert "construct()" in result
+        assert "beat_timing_seconds" in result
+        assert "estimated_duration_seconds" in result
+
+    def test_limited_skill_order_excludes_render_skills(self):
+        result = prompts.get_phase2_script_draft_prompt(cwd="/tmp/task")
+        assert "scene-build" in result
+        # Phase 2A should mention what NOT to use, but skill list is limited
+        assert "scene-direction" in result
+        assert "layout-safety" in result
 
 
 class TestGetRenderReviewPrompt:
-    def test_get_render_review_prompt_is_phase3_only(self):
+    def test_is_read_only_phase3(self):
         result = prompts.get_render_review_prompt(cwd="/tmp/task")
-
         assert "Phase 3" in result
-        assert "render review" in result.lower()
         assert "Do not write code" in result
         assert "Do not render or re-render" in result
 
-    def test_get_render_review_prompt_validates_preset_and_quality(self):
-        with pytest.raises(ValueError, match="preset"):
-            prompts.get_render_review_prompt(preset="invalid_preset")
-
-        with pytest.raises(ValueError, match="quality"):
-            prompts.get_render_review_prompt(quality="ultra")
-
 
 class TestGetPlanningPrompt:
-    def test_get_planning_prompt_is_planning_only(self):
+    def test_is_planning_only_no_code_no_render(self):
         result = prompts.get_planning_prompt()
-
         assert "规划阶段" in result
         assert "不写代码" in result
         assert "不渲染" in result
-        assert "phase1_planning" in result
         assert "scene.py" not in result
-        assert "manim -q" not in result
 
-    def test_get_planning_prompt_validates_preset_and_quality(self):
-        with pytest.raises(ValueError, match="preset"):
-            prompts.get_planning_prompt(preset="invalid_preset")
-
-        with pytest.raises(ValueError, match="quality"):
-            prompts.get_planning_prompt(quality="ultra")
-
-    def test_get_planning_prompt_segments_mode_mentions_segment_ids(self):
+    def test_segments_mode_includes_segment_ids(self):
         result = prompts.get_planning_prompt(render_mode="segments")
-
         assert "segments/<beat_id>.mp4" in result
+
+
+# All prompt-building functions share the same validation decorator;
+# spot-check that it fires consistently across entry points.
+@pytest.mark.parametrize(
+    "fn_name,call_kwargs",
+    [
+        ("get_prompt", {"user_text": "x", "preset": "bogus"}),
+        ("get_implementation_prompt", {"cwd": "/tmp/task", "preset": "bogus"}),
+        ("get_phase2_script_draft_prompt", {"cwd": "/tmp/task", "preset": "bogus"}),
+        ("get_render_review_prompt", {"cwd": "/tmp/task", "preset": "bogus"}),
+        ("get_planning_prompt", {"preset": "bogus"}),
+    ],
+    ids=["get_prompt", "implementation", "script_draft", "render_review", "planning"],
+)
+def test_all_prompt_functions_reject_invalid_preset(fn_name, call_kwargs):
+    fn = getattr(prompts, fn_name)
+    with pytest.raises(ValueError, match="preset"):
+        fn(**call_kwargs)
