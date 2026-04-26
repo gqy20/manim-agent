@@ -76,9 +76,9 @@ function getToolSummaryKeys(payload: ToolStartPayload): string[] {
 }
 
 function formatCny(value: number): string {
-  if (value < 0.01) return `£¤${value.toFixed(4)}`;
-  if (value < 1) return `£¤${value.toFixed(3)}`;
-  return `£¤${value.toFixed(2)}`;
+  if (value < 0.01) return `CNY ${value.toFixed(4)}`;
+  if (value < 1) return `CNY ${value.toFixed(3)}`;
+  return `CNY ${value.toFixed(2)}`;
 }
 
 function StatsBar({ events }: { events: SSEEvent[] }) {
@@ -285,13 +285,13 @@ function ToolStartView({ payload, timestamp }: { payload: ToolStartPayload; time
         </span>
         {summaryKeys.length > 0 && (
           <>
-            <span className="shrink-0 text-white/18">¡¤</span>
+            <span className="shrink-0 text-white/18">Â·</span>
             <span className="min-w-0 truncate text-white/30">
               {summaryKeys.join(", ")}
             </span>
           </>
         )}
-        <span className="shrink-0 text-white/18">¡¤</span>
+        <span className="shrink-0 text-white/18">Â·</span>
         <span className="ml-auto shrink-0 font-mono text-[10px] text-blue-500/35">
           {payload.tool_use_id.slice(-8)}
         </span>
