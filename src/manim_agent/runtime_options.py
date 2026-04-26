@@ -14,7 +14,7 @@ from typing import Any, Literal
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher
 
 from . import prompts
-from .hooks import _on_post_tool_use, _on_pre_tool_use
+from .hooks import _on_post_tool_use, _on_post_tool_use_failure, _on_pre_tool_use
 from .repo_paths import resolve_plugin_dir, resolve_repo_root
 from .schemas import PhaseSchemaRegistry
 
@@ -114,6 +114,12 @@ def build_options(
         ],
         "PostToolUse": [
             HookMatcher(matcher="Write|Edit", hooks=[_on_post_tool_use]),
+        ],
+        "PostToolUseFailure": [
+            HookMatcher(
+                matcher="Bash|Read|Write|Edit|Glob|Grep",
+                hooks=[_on_post_tool_use_failure],
+            ),
         ],
     }
 

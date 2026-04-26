@@ -98,6 +98,10 @@ class _MessageDispatcher:
         self.tool_stats: dict[str, int] = {}
         self.collected_text: list[str] = []
         self.implementation_started: bool = False
+        # ── 工具配对表：tool_use_id → (name, start_time_ms) ──
+        self._pending_tools: dict[str, tuple[str, int]] = {}
+        # ── PostToolUseFailure 错误记录 ──
+        self._tool_failures: dict[str, tuple[str, str]] = {}  # id → (error_type, message)
         self.implementation_start_reason: str | None = None
         # ── 消息统计（调试用）──
         self._msg_count: int = 0
@@ -1184,6 +1188,12 @@ class _MessageDispatcher:
         if self.event_callback is not None:
             self.event_callback(event)
 
+    def _record_tool_failure(
+        self, tool_use_id: str, error_type: str, message: str
+    ) -> None:
+        """记录 PostToolUseFailure Hook 注入的错误信息，供 TOOL_RESULT 配对时使用。"""
+        self._tool_failures[tool_use_id] = (error_type, message)
+
     # ── 日志格式化方法 ──────────────────────────────────────────
 
     def _log_text(self, text: str) -> None:
@@ -1191,7 +1201,7 @@ class _MessageDispatcher:
         pass  # 文本已收集到 collected_text，不需要逐行打印
 
     def _log_tool_use(self, block: ToolUseBlock) -> None:
-        """打印工具调用信息 + 发射 TOOL_START 结构化事件。"""
+        """打印工具调用信息 + 发射 TOOL_START 结构化事件 + 记录配对。"""
         input_summary = self._summarize_input(block.input)
         logger.debug("_log_tool_use: id=%s, name=%s", block.id, block.name)
         logger.debug("_log_tool_use: summary=%s", input_summary)
@@ -1200,6 +1210,9 @@ class _MessageDispatcher:
             if command:
                 self._bash_commands.append(command)
         self._mark_implementation_start(block)
+        # 记录到配对表
+        import time as _t
+        self._pending_tools[block.id] = (block.name, int(_t.time() * 1000))
         # 发射结构化事件
         self._emit_event(
             PipelineEvent(
@@ -1294,16 +1307,27 @@ class _MessageDispatcher:
 
         if block.is_error:
             self._print(f"  {_EMOJI['cross']} Result Error (tool_use_id={block.tool_use_id})")
-        # 发射结构化事件
+        # ── 从配对表获取 name + 计算 duration ──
+        import time as _t
+        now_ms = int(_t.time() * 1000)
+        pending = self._pending_tools.pop(block.tool_use_id, None)
+        paired_name = pending[0] if pending else ""
+        start_ms = pending[1] if pending else now_ms
+        duration = max(0, now_ms - start_ms)
+        # ── 获取 PostToolUseFailure 注入的错误分类 ──
+        error_info = self._tool_failures.pop(block.tool_use_id, None)
+        error_type = error_info[0] if error_info else None
+        # 发射结构化事件（配对后 name 和 duration 已填充）
         self._emit_event(
             PipelineEvent(
                 event_type=EventType.TOOL_RESULT,
                 data=ToolResultPayload(
                     tool_use_id=block.tool_use_id,
-                    name="",  # 名称从 tool_start 配对获取
+                    name=paired_name,
                     is_error=block.is_error,
                     content=block.content if not block.is_error else None,
-                    duration_ms=None,
+                    duration_ms=duration,
+                    error_type=error_type,
                 ),
             )
         )

@@ -52,6 +52,8 @@ class TestEventType:
             "log", "status", "error",
             "tool_start", "tool_result",
             "thinking", "progress",
+            "trace_span",       # Trace/Span 进入/退出
+            "phase_boundary",   # Phase 边界（进入/退出）
         }
         actual = {e.value for e in EventType}
         assert expected == actual

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk.types import (
+    PostToolUseFailureHookSpecificOutput,
     PostToolUseHookSpecificOutput,
     PreToolUseHookSpecificOutput,
     SyncHookJSONOutput,
@@ -274,4 +275,46 @@ async def _on_post_tool_use(
         hookSpecificOutput=PostToolUseHookSpecificOutput(
             hookEventName="PostToolUse",
         )
+    )
+
+
+async def _on_post_tool_use_failure(
+    input_data,
+    tool_use_id: str | None,
+    context,
+) -> SyncHookJSONOutput:
+    """捕获工具执行失败信息，注入到 dispatcher 的错误分类记录中。
+
+    error_type 分类：
+      - "execution"：命令执行失败（非零退出码）
+      - "permission"：权限拒绝（路径越权等）
+      - "timeout"：执行超时
+      - "interrupt"：用户中断
+    """
+    tool_name = input_data.get("tool_name", "")
+    error_msg = input_data.get("error", "") or ""
+    tool_input = input_data.get("tool_input", {})
+    hook_state = get_hook_state()
+
+    logger.debug(
+        "PostToolUseFailure: tool_name=%r, tool_use_id=%r, error=%r",
+        tool_name, tool_use_id, error_msg[:200],
+    )
+
+    # 推断 error_type
+    error_type = "execution"
+    if not error_type and "timeout" in str(error_msg).lower():
+        error_type = "timeout"
+    if not error_type and "interrupt" in str(error_msg).lower():
+        error_type = "interrupt"
+
+    # 通过 hook_state 传递给 dispatcher
+    # （dispatcher 在同一 async context 中可通过 get_hook_state() 获取）
+    if tool_use_id and hasattr(hook_state, "_tool_failures"):
+        hook_state._tool_failures[tool_use_id] = (error_type, error_msg[:500])
+
+    return SyncHookJSONOutput(
+        hookSpecificOutput=PostToolUseFailureHookSpecificOutput(
+            hookEventName="PostToolUseFailure",
+        ),
     )

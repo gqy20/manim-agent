@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -27,6 +27,8 @@ class EventType(str, Enum):
     TOOL_RESULT = "tool_result"   # 工具调用完成
     THINKING = "thinking"         # 思考/推理块
     PROGRESS = "progress"         # 进度追踪（token/轮次/耗时）
+    TRACE_SPAN = "trace_span"     # Trace/Span 进入或退出
+    PHASE_BOUNDARY = "phase_boundary"  # Phase 边界（进入/退出）
 
 
 # ── 事件载荷模型 ──────────────────────────────────────────────
@@ -47,7 +49,7 @@ class ToolResultPayload(BaseModel):
     """工具调用结果。"""
 
     tool_use_id: str = Field(..., description="关联的 tool_start ID")
-    name: str = Field(..., description="工具名称")
+    name: str = Field("", description="工具名称（配对后自动填充，默认空字符串）")
     is_error: bool = Field(False, description="是否执行失败")
     content: Optional[str] = Field(
         None,
@@ -56,6 +58,10 @@ class ToolResultPayload(BaseModel):
     duration_ms: Optional[int] = Field(
         None,
         description="工具执行耗时（毫秒）",
+    )
+    error_type: Optional[str] = Field(
+        None,
+        description="错误分类：execution / permission / timeout / interrupt",
     )
 
 
@@ -106,6 +112,36 @@ class StatusPayload(BaseModel):
     )
 
 
+class TraceSpanPayload(BaseModel):
+    """Trace/Span 进入或退出事件载荷。"""
+
+    action: Literal["enter", "exit"] = Field(..., description="enter 或 exit")
+    trace_id: str = Field(..., description="全链路 trace ID")
+    span_id: str = Field(..., description="当前 span ID")
+    parent_span_id: Optional[str] = Field(None, description="父 span ID（root 为 None）")
+    span_name: str = Field(..., description="span 名称（如 phase1_planning）")
+    phase: Optional[str] = Field(None, description="关联的 pipeline phase id")
+    status: Optional[str] = Field(None, description="exit 时的状态（ok/error/cancelled）")
+    duration_ms: Optional[int] = Field(None, description="exit 时 span 持续时间（ms）")
+
+
+class PhaseBoundaryPayload(BaseModel):
+    """Phase 边界事件载荷。"""
+
+    action: Literal["enter", "exit"] = Field(..., description="enter 或 exit")
+    phase_id: str = Field(..., description="Phase 标识符（如 phase1, phase2）")
+    phase_name: str = Field(..., description="Phase 可读名称")
+    trace_id: Optional[str] = Field(None, description="关联的 trace ID")
+    duration_ms: Optional[int] = Field(None, description="exit 时 phase 耗时（ms）")
+    status: Optional[str] = Field(None, description="exit 时状态（ok/error/cancelled）")
+    beats_count: Optional[int] = Field(None, description="该 phase 处理的 beat 数量")
+    turn_count: Optional[int] = Field(None, description="该 phase 的交互轮次")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="额外的 phase 级元数据",
+    )
+
+
 # ── 统一事件模型 ──────────────────────────────────────────────
 
 
@@ -127,6 +163,8 @@ class PipelineEvent(BaseModel):
         | ThinkingPayload
         | ProgressPayload
         | StatusPayload
+        | TraceSpanPayload
+        | PhaseBoundaryPayload
         | str
     )
     timestamp: str = Field(
