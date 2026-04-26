@@ -205,7 +205,7 @@ async def concat_audios(
         mode="w", suffix=".txt", delete=False, encoding="utf-8"
     ) as list_file:
         for path in valid_paths:
-            safe = path.replace("'", "'\\''")
+            safe = path.replace("\\", "/").replace("'", "'\\''")
             list_file.write(f"file '{safe}'\n")
         list_path = list_file.name
 
@@ -286,8 +286,7 @@ async def concat_videos(
         mode="w", suffix=".txt", delete=False, encoding="utf-8"
     ) as list_file:
         for p in valid_paths:
-            # Escape single-quotes for safe 0 protocol handling
-            safe = p.replace("'", "'\\''")
+            safe = p.replace("\\", "/").replace("'", "'\\''")
             list_file.write(f"file '{safe}'\n")
         list_path = list_file.name
 
