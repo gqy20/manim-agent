@@ -78,7 +78,7 @@ export function VideoPlayer({ src }: VideoPlayerProps) {
             key={`${src}-${retryToken}`}
             src={src}
             controls
-            className="relative z-10 block max-h-[800px] w-full bg-black aspect-video object-contain"
+            className="relative z-10 block max-h-[700px] w-full bg-black aspect-video object-contain"
             preload="metadata"
             onLoadStart={() => {
               setState("loading");

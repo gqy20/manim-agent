@@ -476,7 +476,7 @@ export function PageTransition({ children }: { children: React.ReactNode }) {
           onAnimationComplete={(definition) => {
             if (definition === "exit") handleExitComplete();
           }}
-          className="h-full"
+          className="min-h-full"
           style={{ willChange: "opacity, transform, filter" }}
         >
           {children}

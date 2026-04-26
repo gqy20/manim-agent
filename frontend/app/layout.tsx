@@ -32,7 +32,7 @@ export default function RootLayout({
       lang="zh-CN"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
-      <body className="bg-mesh flex min-h-full flex-col overflow-hidden [padding-bottom:var(--safe-bottom)]">
+      <body className="bg-mesh flex h-full flex-col overflow-hidden [padding-bottom:var(--safe-bottom)]">
         <div className="pointer-events-none fixed inset-0 z-[1] h-full w-full opacity-[0.03] mix-blend-overlay">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
             <filter id="noise">
@@ -73,7 +73,7 @@ export default function RootLayout({
 
         <ErrorBoundary>
           <PageTransition>
-            <div className="flex h-full flex-1 flex-col pt-[calc(var(--app-header-height)+var(--safe-top))]">
+            <div className="flex min-h-0 h-full flex-1 flex-col overflow-y-auto pt-[calc(var(--app-header-height)+var(--safe-top))]">
               {children}
             </div>
           </PageTransition>
