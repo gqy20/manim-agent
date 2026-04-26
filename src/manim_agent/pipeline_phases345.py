@@ -208,8 +208,12 @@ async def run_phase3_render(
     event_callback: Callable[[PipelineEvent], None] | None,
     cli_stderr_lines: list[str],
     render_mode: str = "full",
+    no_render_review: bool = False,
 ) -> tuple[Any, str | None, list[str]]:
-    """Execute Phase 3: resolve render output and frame review.
+    """Execute Phase 3: resolve render output and optional frame review.
+
+    When *no_render_review* is True, skip the AI visual review pass and
+    set placeholder review fields so the pipeline can continue to Phase 3.5+.
 
     Returns (po, video_output, review_frames).
     """
@@ -341,88 +345,116 @@ async def run_phase3_render(
         )
 
     # Render review + duration check
-    dispatcher._print("  [REVIEW] Sampling render frames for quality review")
-    emit_status(
-        event_callback,
-        task_status="running",
-        phase="render",
-        message="Reviewing sampled frames before final success",
-    )
-    review_frames = await extract_review_frames(
-        video_output,
-        resolved_cwd,
-        implemented_beats=po.implemented_beats if po else None,
-    )
-    review_result: Phase3RenderReviewOutput | None = None
-    review_warning: str | None = None
-    try:
-        review_result = await run_render_review(
-            user_text=user_text,
-            plan_text=plan_text,
-            video_output=video_output,
-            frame_paths=review_frames,
-            target_duration_seconds=target_duration_seconds,
-            actual_duration_seconds=po.duration_seconds if po is not None else None,
-            cwd=resolved_cwd,
-            system_prompt=system_prompt,
-            quality=quality,
-            log_callback=log_callback,
-            implemented_beats=po.implemented_beats if po is not None else None,
-        )
-    except RuntimeError as exc:
-        if "structured verdict" not in str(exc):
-            raise
-        review_warning = (
-            "Render review did not produce a structured verdict. "
-            "Continuing because review formatting can be incomplete without blocking delivery."
-        )
-        dispatcher._print(f"  [WARN] {review_warning}")
-        logger.warning("run_pipeline: %s", review_warning)
+    review_frames: list[str] = []
 
-    if review_result is not None:
-        dispatcher._print(f"  [REVIEW] {review_result.summary}")
-        if review_result.blocking_issues:
-            for issue in review_result.blocking_issues:
-                dispatcher._print(f"  [REVIEW][BLOCK] {issue}")
-        if review_result.suggested_edits:
-            for edit in review_result.suggested_edits:
-                dispatcher._print(f"  [REVIEW][FIX] {edit}")
+    if no_render_review:
+        skipped_msg = "Render review skipped (no_render_review=True). Accepting Phase 2B output."
+        dispatcher._print(f"  [SKIP] {skipped_msg}")
+        emit_status(
+            event_callback,
+            task_status="running",
+            phase="render",
+            message=skipped_msg,
+        )
         if po is not None:
-            po.review_summary = review_result.summary
-            po.review_approved = review_result.approved
-            po.review_blocking_issues = list(review_result.blocking_issues)
-            po.review_suggested_edits = list(review_result.suggested_edits)
-            po.review_frame_paths = list(review_frames)
-            po.review_frame_analyses = [
-                fa.model_dump() for fa in (review_result.frame_analyses or [])
-            ]
-            po.review_vision_analysis_used = review_result.vision_analysis_used
-        dispatcher.partial_review_summary = review_result.summary
-        dispatcher.partial_review_approved = review_result.approved
-        dispatcher.partial_review_blocking_issues = list(review_result.blocking_issues)
-        dispatcher.partial_review_suggested_edits = list(review_result.suggested_edits)
-        dispatcher.partial_review_frame_paths = list(review_frames)
-        dispatcher.partial_review_frame_analyses = [
-            fa.model_dump() for fa in (review_result.frame_analyses or [])
-        ]
-        dispatcher.partial_review_vision_analysis_used = review_result.vision_analysis_used
-        if not review_result.approved:
-            raise RuntimeError(
-                "Rendered video failed the render-review gate. "
-                + "; ".join(review_result.blocking_issues or [review_result.summary])
-            )
-    else:
-        if po is not None:
-            po.review_summary = review_warning
-            po.review_approved = None
+            po.review_summary = skipped_msg
+            po.review_approved = True
             po.review_blocking_issues = []
             po.review_suggested_edits = []
-            po.review_frame_paths = list(review_frames)
-        dispatcher.partial_review_summary = review_warning
-        dispatcher.partial_review_approved = None
+            po.review_frame_paths = []
+            po.review_frame_analyses = []
+            po.review_vision_analysis_used = False
+        dispatcher.partial_review_summary = skipped_msg
+        dispatcher.partial_review_approved = True
         dispatcher.partial_review_blocking_issues = []
         dispatcher.partial_review_suggested_edits = []
-        dispatcher.partial_review_frame_paths = list(review_frames)
+        dispatcher.partial_review_frame_paths = []
+        dispatcher.partial_review_frame_analyses = []
+        dispatcher.partial_review_vision_analysis_used = False
+    else:
+        dispatcher._print("  [REVIEW] Sampling render frames for quality review")
+        emit_status(
+            event_callback,
+            task_status="running",
+            phase="render",
+            message="Reviewing sampled frames before final success",
+        )
+        review_frames = await extract_review_frames(
+            video_output,
+            resolved_cwd,
+            implemented_beats=po.implemented_beats if po else None,
+            review_subdir="phase3_review_frames",
+        )
+        review_result: Phase3RenderReviewOutput | None = None
+        review_warning: str | None = None
+        try:
+            review_result = await run_render_review(
+                user_text=user_text,
+                plan_text=plan_text,
+                video_output=video_output,
+                frame_paths=review_frames,
+                target_duration_seconds=target_duration_seconds,
+                actual_duration_seconds=po.duration_seconds if po is not None else None,
+                cwd=resolved_cwd,
+                system_prompt=system_prompt,
+                quality=quality,
+                log_callback=log_callback,
+                implemented_beats=po.implemented_beats if po is not None else None,
+            )
+        except RuntimeError as exc:
+            if "structured verdict" not in str(exc):
+                raise
+            review_warning = (
+                "Render review did not produce a structured verdict. "
+                "Continuing because review formatting can be incomplete without blocking delivery."
+            )
+            dispatcher._print(f"  [WARN] {review_warning}")
+            logger.warning("run_pipeline: %s", review_warning)
+
+        if review_result is not None:
+            dispatcher._print(f"  [REVIEW] {review_result.summary}")
+            if review_result.blocking_issues:
+                for issue in review_result.blocking_issues:
+                    dispatcher._print(f"  [REVIEW][BLOCK] {issue}")
+            if review_result.suggested_edits:
+                for edit in review_result.suggested_edits:
+                    dispatcher._print(f"  [REVIEW][FIX] {edit}")
+            if po is not None:
+                po.review_summary = review_result.summary
+                po.review_approved = review_result.approved
+                po.review_blocking_issues = list(review_result.blocking_issues)
+                po.review_suggested_edits = list(review_result.suggested_edits)
+                po.review_frame_paths = list(review_frames)
+                po.review_frame_analyses = [
+                    fa.model_dump() for fa in (review_result.frame_analyses or [])
+                ]
+                po.review_vision_analysis_used = review_result.vision_analysis_used
+            dispatcher.partial_review_summary = review_result.summary
+            dispatcher.partial_review_approved = review_result.approved
+            dispatcher.partial_review_blocking_issues = list(review_result.blocking_issues)
+            dispatcher.partial_review_suggested_edits = list(review_result.suggested_edits)
+            dispatcher.partial_review_frame_paths = list(review_frames)
+            dispatcher.partial_review_frame_analyses = [
+                fa.model_dump() for fa in (review_result.frame_analyses or [])
+            ]
+            dispatcher.partial_review_vision_analysis_used = review_result.vision_analysis_used
+            if not review_result.approved:
+                raise RuntimeError(
+                    "Rendered video failed the render-review gate. "
+                    + "; ".join(review_result.blocking_issues or [review_result.summary])
+                )
+        else:
+            if po is not None:
+                po.review_summary = review_warning
+                po.review_approved = None
+                po.review_blocking_issues = []
+                po.review_suggested_edits = []
+                po.review_frame_paths = list(review_frames)
+            dispatcher.partial_review_summary = review_warning
+            dispatcher.partial_review_approved = None
+            dispatcher.partial_review_blocking_issues = []
+            dispatcher.partial_review_suggested_edits = []
+            dispatcher.partial_review_frame_paths = list(review_frames)
 
     duration_issue = duration_target_issue(
         po.duration_seconds if po is not None else None,

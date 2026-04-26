@@ -59,8 +59,9 @@ class TestBuildTemplateNarration:
             beat_to_narration_map=[],
             user_topic="傅里叶变换",
         )
-        assert "傅里叶变换" in result
-        assert "介绍概念" in result
+        assert "傅里叶变换" in result.narration
+        assert "介绍概念" in result.narration
+        assert result.generation_method == "template"
 
     def test_multiple_beats(self):
         from manim_agent.pipeline_narration import _build_template_narration
@@ -70,9 +71,10 @@ class TestBuildTemplateNarration:
             beat_to_narration_map=[],
             user_topic="测试主题",
         )
-        assert "第一部分" in result
-        assert "第二部分" in result
-        assert "第三部分" in result
+        assert "第一部分" in result.narration
+        assert "第二部分" in result.narration
+        assert "第三部分" in result.narration
+        assert len(result.beat_coverage) == 3
 
     def test_uses_beat_to_narration_map_when_available(self):
         from manim_agent.pipeline_narration import _build_template_narration
@@ -82,9 +84,10 @@ class TestBuildTemplateNarration:
             beat_to_narration_map=["欢迎大家", "核心内容"],
             user_topic="测试",
         )
-        assert "欢迎大家" in result
-        assert "核心内容" in result
-        assert "Intro" not in result
+        assert "欢迎大家" in result.narration
+        assert "核心内容" in result.narration
+        assert "Intro" not in result.narration
+        assert result.beat_coverage == ["欢迎大家", "核心内容"]
 
     def test_opening_and_closing_phrases(self):
         from manim_agent.pipeline_narration import _build_template_narration
@@ -94,8 +97,8 @@ class TestBuildTemplateNarration:
             beat_to_narration_map=[],
             user_topic="主题",
         )
-        assert "大家好" in result
-        assert "谢谢大家" in result or "观看" in result
+        assert "大家好" in result.narration
+        assert "谢谢大家" in result.narration or "观看" in result.narration
 
     def test_empty_beats_fallback(self):
         from manim_agent.pipeline_narration import _build_template_narration
@@ -105,5 +108,5 @@ class TestBuildTemplateNarration:
             beat_to_narration_map=[],
             user_topic="测试",
         )
-        assert "测试" in result
-        assert isinstance(result, str)
+        assert "测试" in result.narration
+        assert result.char_count > 0

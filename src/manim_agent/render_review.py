@@ -81,14 +81,18 @@ async def extract_review_frames(
     video_path: str,
     output_dir: str,
     implemented_beats: list[str] | None = None,
+    review_subdir: str = "review_frames",
 ) -> list[str]:
     """Extract a few PNG frames for visual review.
 
     When *implemented_beats* is provided, timestamps are aligned to beat
     boundaries for more representative sampling.
+
+    Use *review_subdir* to isolate frames from different review passes
+    (e.g. Phase 2B self-review vs Phase 3 formal review).
     """
     video = Path(video_path)
-    review_dir = Path(output_dir) / "review_frames"
+    review_dir = Path(output_dir) / review_subdir
     review_dir.mkdir(parents=True, exist_ok=True)
 
     duration_seconds = await _get_duration(str(video))

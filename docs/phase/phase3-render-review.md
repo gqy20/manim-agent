@@ -2,32 +2,55 @@
 
 ## 目标
 
-Phase 3 接收 Phase 2 已验收并冻结的渲染产物，确认真实文件存在，抽取 review frames，并通过 `render-review` structured output 判断视频是否可以进入后续 narration/TTS/mux 阶段。
+Phase 3 接收 Phase 2B 已验收并冻结的渲染产物，确认真实文件存在，抽取 review frames，并通过独立 Claude Agent 调用判断视频是否可以进入后续 narration/TTS/mux 阶段。
 
 该阶段不写代码、不重新渲染、不修复 Phase 2 契约、不生成最终用户总结。
 
+## 阶段结构
+
+Phase 3 分为两部分：
+
+### Part A — Resolve（门控验证，快速）
+
+检查前置条件是否满足：
+
+- `PipelineOutput` 存在
+- `implemented_beats` 非空
+- `build_summary` 非空
+- `full` 模式下 `video_output` 文件真实存在
+- `segments` 模式下 `segment_video_paths` 存在且 `segment_render_complete=true`
+- 可通过 `ffprobe` 探测视频时写入 `duration_seconds`
+
+任一条件不满足则直接失败，不进入 Review。
+
+### Part B — Review（独立 Agent 调用，较慢）
+
+通过 `query()` 启动一个**独立的** Claude Agent 进程（绕过主 dispatcher），让它：
+
+1. 读取抽帧图片（只读工具：Read/Glob/Grep）
+2. 对每帧进行视觉评估
+3. 返回 `Phase3RenderReviewOutput` 结构化 verdict
+
 ## 输入
 
-来自 Phase 2 和 pipeline：
+来自 Phase 2B 和 pipeline：
 
-- `PipelineOutput`: Phase 2 投影后的 pipeline 工作模型。
-- `video_output`: `full` 模式下应指向 `backend/output/{task_id}/phase2_video.mp4`。
-- `segment_video_paths`: `segments` 模式下的真实 beat-level MP4 文件。
-- `build_spec` 派生的 beat/narration bookkeeping。
-- `implemented_beats`
-- `build_summary`
-- `target_duration_seconds`
-- `resolved_cwd`
-- `render_mode`
-- Phase 3 system prompt: 来自 `prompts.get_render_review_prompt()`。
-
-Phase 3 可以读取 `plan_text` 作为辅助上下文，但不把它作为结构化契约来源。
+| 参数 | 说明 |
+|------|------|
+| `PipelineOutput` | Phase 2B 投影后的 pipeline 工作模型 |
+| `video_output` | `full` 模式下的 MP4 路径 |
+| `segment_video_paths` | `segments` 模式下的 beat-level MP4 列表 |
+| `implemented_beats` | 已实现的 beat 列表 |
+| `build_summary` | 构建摘要 |
+| `target_duration_seconds` | 目标时长 |
+| `resolved_cwd` | 任务工作目录 |
+| `render_mode` | `"full"` 或 `"segments"` |
 
 ## System Prompt
 
-Phase 3 使用专用 `prompts.get_render_review_prompt()`，不再复用 Phase 2 implementation prompt。
+Phase 3 使用专用 `RENDER_REVIEW_SYSTEM_PROMPT`（`prompts.get_render_review_prompt()`），包含完整的 `# Output` 段，明确告知 Agent 每个 schema 字段的含义和约束。
 
-该 system prompt 的边界：
+该 prompt 的边界：
 
 - 只做 render review。
 - 不写代码。
@@ -37,27 +60,27 @@ Phase 3 使用专用 `prompts.get_render_review_prompt()`，不再复用 Phase 2
 - 不做 TTS、mux、上传或最终总结。
 - 只返回 `Phase3RenderReviewOutput` structured output。
 
-`render-review` skill 只描述 review 工作流和质量判断标准，不定义输出字段。Phase 3 输出字段只由 `Phase3RenderReviewOutput` 定义。
+`render-review` skill 只描述 review 工作流和质量判断标准。输出字段完全由 `Phase3RenderReviewOutput` Pydantic model 定义。
 
 ## 工具权限
 
-render review pass 使用只读工具：
+Review pass 使用只读工具：
 
 - `Read`
 - `Glob`
 - `Grep`
 
-review pass 允许读取抽帧图片和附近 artifact，但不允许写文件、编辑代码或重新渲染。
+允许读取抽帧图片和附近 artifact，但不允许写文件、编辑代码或重新渲染。
 
 ## 输出
 
-Phase 3 主函数返回：
+### Phase 3 主函数返回值
 
-- `po`: 已确认的 `PipelineOutput`。
-- `video_output`: 用于 review 和后续 narration/TTS 的视觉视频路径。
+- `po`: 已确认的 `PipelineOutput`（附加 review 结果字段）。
+- `video_output`: 用于后续 narration/TTS 的视觉视频路径。
 - `review_frames`: 抽帧图片路径列表。
 
-render review Agent 只允许通过 SDK structured output 返回 `Phase3RenderReviewOutput`：
+### Structured Verdict (`Phase3RenderReviewOutput`)
 
 ```json
 {
@@ -67,7 +90,7 @@ render review Agent 只允许通过 SDK structured output 返回 `Phase3RenderRe
   "suggested_edits": [],
   "frame_analyses": [
     {
-      "frame_path": "review_frames/frame_001.png",
+      "frame_path": "phase3_review_frames/frame_001.png",
       "timestamp_label": "opening",
       "visual_assessment": "The opening frame is readable.",
       "issues_found": []
@@ -76,6 +99,40 @@ render review Agent 只允许通过 SDK structured output 返回 `Phase3RenderRe
   "vision_analysis_used": true
 }
 ```
+
+## 抽帧隔离
+
+Phase 3 抽帧使用**独立子目录**，避免覆盖 Phase 2B 的 review frames：
+
+| 阶段 | 抽帧目录 |
+|------|----------|
+| Phase 2B (implementation self-review) | `{output_dir}/review_frames/` |
+| Phase 3 (independent render review) | `{output_dir}/phase3_review_frames/` |
+
+通过 `extract_review_frames(video_path, output_dir, implemented_beats, review_subdir="phase3_review_frames")` 实现。
+
+## `no_render_review` 开关
+
+CLI 参数 `--no-render-review` 可跳过整个 Phase 3 Review 部分：
+
+```
+python -m manim_agent --no-render-review "你的需求"
+```
+
+跳过时的行为：
+
+- Part A (Resolve) 正常执行（仍验证 video_output 存在等前置条件）
+- Part B (Review) 被跳过
+- 自动设置：
+  - `po.review_approved = True`
+  - `po.review_summary = "Render review skipped (no_render_review=True). Accepting Phase 2B output."`
+  - `po.review_blocking_issues = []`
+  - `po.review_suggested_edits = []`
+  - `po.review_frame_paths = []`
+  - `po.review_frame_analyses = []`
+  - `po.review_vision_analysis_used = False`
+
+这使 `--no-render-review` 成为加速调试的有效手段，同时保持下游 Phase 3.5/4/5 的数据契约不变。
 
 ## 验收规则
 
@@ -93,7 +150,7 @@ render review Agent 只允许通过 SDK structured output 返回 `Phase3RenderRe
 
 Phase 3 不再运行 no-tools repair pass。
 
-如果 Phase 2 给出的 `PipelineOutput` 或 artifact 不完整，Phase 3 直接失败。这样可以保持阶段边界清晰：Phase 2 负责实现契约和真实视频，Phase 3 只负责验证和 review。
+如果 Phase 2B 给出的 `PipelineOutput` 或 artifact 不完整，Phase 3 直接失败。保持阶段边界清晰：Phase 2B 负责实现契约和真实视频，Phase 3 只负责验证和 review。
 
 ## 传给下一阶段
 
@@ -115,3 +172,4 @@ Phase 3 通过后，`PipelineOutput` 会包含：
 - `render-review` 依赖模型真实读取抽帧；需要继续通过日志和结构化 `frame_analyses` 核对。
 - 抽帧质量会影响 review 判断，如果抽帧覆盖不足，可能漏掉中间视觉问题。
 - segment 模式会生成 review track，后续还需要明确该 track 与最终 segment mux 的关系。
+- Review 是独立 Agent 调用（`query()` 绕过 dispatcher），耗时较长，可通过 `--no-render-review` 跳过。

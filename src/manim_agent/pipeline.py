@@ -75,6 +75,7 @@ async def run_pipeline(
     model: str = "speech-2.8-hd",
     quality: str = "high",
     no_tts: bool = False,
+    no_render_review: bool = False,
     bgm_enabled: bool = False,
     bgm_prompt: str | None = None,
     bgm_volume: float = 0.12,
@@ -110,6 +111,11 @@ async def run_pipeline(
         cwd=resolved_cwd,
     )
     render_review_system_prompt = prompts.get_render_review_prompt(
+        preset=preset,
+        quality=quality,
+        cwd=resolved_cwd,
+    )
+    narration_system_prompt = prompts.get_narration_prompt(
         preset=preset,
         quality=quality,
         cwd=resolved_cwd,
@@ -455,6 +461,7 @@ async def run_pipeline(
             event_callback=event_callback,
             cli_stderr_lines=_cli_stderr_lines,
             render_mode=render_mode,
+            no_render_review=no_render_review,
         )
 
         # ══════════════════════════════════════════════
@@ -478,21 +485,27 @@ async def run_pipeline(
             phase="narration",
             message="Generating spoken narration for TTS",
         )
-        narration_text = await generate_narration(
+        narration_output = await generate_narration(
             user_text=user_text,
             target_duration_seconds=target_duration_seconds,
             plan_text=plan_text,
             po=po,
             video_output=video_output,
             cwd=resolved_cwd,
-            system_prompt=implementation_system_prompt,
+            system_prompt=narration_system_prompt,
             quality=quality,
             prompt_file=prompt_file,
             log_callback=_counting_log_callback,
             dispatcher=dispatcher,
         )
+        narration_text = narration_output.narration
         if po is not None:
             po.narration = narration_text
+        dispatcher._print(
+            f"  [NARRATION] Method={narration_output.generation_method}, "
+            f"coverage={len(narration_output.beat_coverage)} beats, "
+            f"{narration_output.char_count} chars"
+        )
 
         # Merge narration-phase stats
         narration_result_summary = dispatcher.result_summary

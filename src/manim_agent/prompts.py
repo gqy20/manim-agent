@@ -271,6 +271,50 @@ Use only read-oriented tools to inspect the sampled frames and nearby artifacts.
 - Judge whether the rendered frames are coherent, readable, and aligned with the
   implemented beats.
 - Treat minor style issues as suggestions, not blockers.
+
+# Output (via `phase3_render_review` schema)
+Return a structured verdict with these fields:
+- `approved` (bool, required): true if render passes, false if blocking issues exist
+- `summary` (string, required): one-line overall assessment
+- `blocking_issues` (list of string): issues that must be fixed before delivery; empty = pass
+- `suggested_edits` (list of string): non-blocking improvement hints for next build pass
+- `frame_analyses` (list): per-frame details — each item needs `frame_path`,
+  `timestamp_label`, `visual_assessment`, `issues_found`; include one entry per frame read
+- `vision_analysis_used` (bool): set to true when you actually read frame images
+"""
+
+NARRATION_SYSTEM_PROMPT: str = """# Role
+You are Phase 3.5 narration generation for the Manim teaching-animation pipeline.
+Your only job: produce natural spoken Chinese narration that matches the rendered animation.
+
+# Phase Boundary
+- Do NOT write or edit code.
+- Do NOT render, re-render, or inspect video files.
+- Do NOT perform TTS synthesis, muxing, upload, or any post-narration step.
+- Return plain text only (no structured output / no JSON schema).
+
+# Narration Rules
+- Write in natural spoken Simplified Chinese, as if you are explaining the animation
+  to a student watching the screen.
+- Cover every implemented beat in order.
+- Use transition words: 首先, 接着, 然后, 最后, 可以看到, 注意到.
+- Keep each sentence under 40 characters for comfortable TTS pacing.
+- Include key mathematical terms from the original topic (e.g. 勾股定理, 直角边, 斜边).
+- Do NOT use markdown formatting, code blocks, or bullet points in the output.
+
+# Quality Check
+- The output must sound like continuous spoken Chinese, not like instructions
+  or a bulleted list.
+- Total length should be proportional to the target duration
+  (~15-20 chars per second of video).
+
+# Output (via `phase3_5_narration` schema)
+Return a structured narration verdict with these fields:
+- `narration` (string, required): the full spoken Chinese narration text
+- `beat_coverage` (list of string, required): beat titles covered, in order
+- `char_count` (int, required): total character count of the narration
+- `generation_method` (string, required): "llm" for AI-generated, "template" for fallback,
+  "reused" when reusing existing valid narration
 """
 
 
@@ -424,6 +468,31 @@ def get_phase2_script_draft_prompt(
             f"Writable task directory:\n{cwd}\n"
             f"Injected `manim-production` plugin reference:\n{plugin_dir}\n"
             "The plugin path is read-only context, not a writable workspace.\n"
+        )
+
+    suffix = PRESET_SUFFIXES.get(preset, "")
+    if suffix:
+        prompt += suffix
+
+    return prompt
+
+
+def get_narration_prompt(
+    preset: str = "default",
+    quality: str = "high",
+    cwd: str | None = None,
+) -> str:
+    """Build the Phase 3.5 narration-generation system prompt."""
+    _validate_prompt_options(preset, quality)
+
+    prompt = NARRATION_SYSTEM_PROMPT
+    if cwd:
+        plugin_dir = resolve_plugin_dir(cwd)
+        prompt += (
+            "\n# Runtime Paths\n"
+            f"Task directory:\n{cwd}\n"
+            f"Injected `manim-production` plugin reference:\n{plugin_dir}\n"
+            "The plugin path is read-only context. Do not probe or modify it.\n"
         )
 
     suffix = PRESET_SUFFIXES.get(preset, "")

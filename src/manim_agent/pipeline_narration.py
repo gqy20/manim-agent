@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
 
-from claude_agent_sdk import query
+from claude_agent_sdk import ResultMessage, query
 
 from .dispatcher import _MessageDispatcher
-from .schemas import PipelineOutput
+from .schemas import Phase3_5NarrationOutput, PhaseSchemaRegistry
 from .pipeline_config import build_options
 from .prompt_builder import build_narration_generation_prompt
 
@@ -45,7 +46,7 @@ def _looks_like_spoken_narration(text: str) -> bool:
         if re.search(pattern, stripped):
             return False
 
-    title_only_pattern = r"^[\u4e00-\u9fffA-Za-z0-9\s\+\-\=\^\(\)\{\}\[\]]{2,15}$"
+    title_only_pattern = r"^[一-鿿A-Za-z0-9\s\+\-\=\^\(\)\{\}\[\]]{2,15}$"
     if (
         re.match(title_only_pattern, stripped)
         and len(stripped) < 20
@@ -88,7 +89,7 @@ def _build_template_narration(
     implemented_beats: list[str],
     beat_to_narration_map: list[str],
     user_topic: str,
-) -> str:
+) -> Phase3_5NarrationOutput:
     """Generate template-based narration from beat structure when LLM fails.
 
     Produces actual spoken-style Chinese text instead of raw user request text.
@@ -96,7 +97,7 @@ def _build_template_narration(
     """
     parts: list[str] = []
 
-    topic = user_topic.strip().split("\uff0c")[0].split(",")[0][:30]
+    topic = user_topic.strip().split("，")[0].split(",")[0][:30]
     if not topic or len(topic) < 2:
         topic = "这个内容"
     parts.append(f"大家好，今天我们来学习{topic}。")
@@ -119,7 +120,13 @@ def _build_template_narration(
 
     parts.append("以上就是今天的内容，谢谢大家的观看。")
 
-    return "".join(parts)
+    text = "".join(parts)
+    return Phase3_5NarrationOutput(
+        narration=text,
+        beat_coverage=list(used_beats) if used_beats else (list(implemented_beats) if implemented_beats else ["默认内容"]),
+        char_count=len(text),
+        generation_method="template",
+    )
 
 
 async def generate_narration(
@@ -127,27 +134,32 @@ async def generate_narration(
     user_text: str,
     target_duration_seconds: int,
     plan_text: str,
-    po: PipelineOutput,
+    po: Any,
     video_output: str,
     cwd: str,
     system_prompt: str,
     quality: str,
-    prompt_file: str | None,
-    log_callback: Callable[[str], None] | None,
+    prompt_file: str | None = None,
+    log_callback: Callable[[str], None] | None = None,
     dispatcher: _MessageDispatcher,
-) -> str:
-    """Run an independent no-tools LLM call to generate spoken Chinese narration.
+) -> Phase3_5NarrationOutput:
+    """Run an independent LLM call to generate spoken Chinese narration.
 
-    Returns the generated narration text. Falls back to template-based narration
+    Returns structured narration output. Falls back to template-based narration
     if the LLM call fails or returns garbage.
     """
     resolved_cwd = str(Path(cwd).resolve())
 
-    existing = po.narration
+    existing = getattr(po, "narration", None)
     if existing and existing.strip() and _looks_like_spoken_narration(existing):
         dispatcher._print("  [NARRATION] Existing narration looks valid, skipping generation.")
         logger.info("generate_narration: existing narration passed validation, reusing")
-        return existing.strip()
+        return Phase3_5NarrationOutput(
+            narration=existing.strip(),
+            beat_coverage=list(po.implemented_beats) if hasattr(po, "implemented_beats") else [],
+            char_count=len(existing.strip()),
+            generation_method="reused",
+        )
 
     if existing and existing.strip():
         dispatcher._print(
@@ -161,10 +173,10 @@ async def generate_narration(
         user_text=user_text,
         target_duration_seconds=target_duration_seconds,
         plan_text=plan_text,
-        implemented_beats=list(po.implemented_beats),
-        beat_to_narration_map=list(po.beat_to_narration_map),
-        build_summary=po.build_summary,
-        video_duration_seconds=po.duration_seconds,
+        implemented_beats=list(po.implemented_beats) if hasattr(po, "implemented_beats") else [],
+        beat_to_narration_map=list(po.beat_to_narration_map) if hasattr(po, "beat_to_narration_map") else [],
+        build_summary=po.build_summary if hasattr(po, "build_summary") else "",
+        video_duration_seconds=po.duration_seconds if hasattr(po, "duration_seconds") else None,
     )
 
     narration_opts = build_options(
@@ -176,36 +188,58 @@ async def generate_narration(
         log_callback=log_callback,
         allowed_tools=[],
         use_default_output_format=False,
+        output_format=PhaseSchemaRegistry.output_format_schema("phase3_5_narration"),
     )
-
-    prev_text_len = len(dispatcher.collected_text)
 
     generated_text: str | None = None
     try:
+        result_message: ResultMessage | None = None
         async for message in query(prompt=narration_prompt, options=narration_opts):
             dispatcher.dispatch(message)
+            if isinstance(message, ResultMessage):
+                result_message = message
+
+        if result_message is not None and result_message.structured_output is not None:
+            raw = result_message.structured_output
+            if isinstance(raw, str):
+                raw = json.loads(raw)
+            try:
+                validated = Phase3_5NarrationOutput.model_validate(raw)
+                dispatcher._print(
+                    f"  [NARRATION] Structured narration accepted ({len(validated.narration)} chars)"
+                )
+                return validated
+            except Exception as exc:
+                logger.warning("generate_narration: structured output validation failed: %s", exc)
+                # Fall through to collected_text extraction below
     except Exception as exc:
         warning = f"Narration LLM generation failed: {exc}"
         dispatcher._print(f"  [WARN] {warning}")
         logger.warning("generate_narration: %s", warning)
 
-    new_texts = dispatcher.collected_text[prev_text_len:]
+    # Fallback: extract from collected_text (backward-compatible path for non-SDK environments)
+    new_texts = dispatcher.collected_text
     if new_texts:
         generated_text = "\n".join(new_texts).strip()
 
     if generated_text and _looks_like_spoken_narration(generated_text):
-        final = generated_text
         dispatcher._print(
-            f"  [NARRATION] Generated narration ({len(final)} chars): {final[:80]}..."
+            f"  [NARRATION] Generated narration ({len(generated_text)} chars): {generated_text[:80]}..."
         )
-        return final
+        return Phase3_5NarrationOutput(
+            narration=generated_text,
+            beat_coverage=list(po.implemented_beats) if hasattr(po, "implemented_beats") else [],
+            char_count=len(generated_text),
+            generation_method="llm",
+        )
 
+    # Template fallback
     dispatcher._print("  [NARRATION] LLM output failed validation, using template fallback.")
-    topic_hint = user_text.strip().split("\uff0c")[0].split(",")[0][:30]
-    template_text = _build_template_narration(
-        implemented_beats=list(po.implemented_beats),
-        beat_to_narration_map=list(po.beat_to_narration_map),
+    topic_hint = user_text.strip().split("，")[0].split(",")[0][:30]
+    template_output = _build_template_narration(
+        implemented_beats=list(po.implemented_beats) if hasattr(po, "implemented_beats") else [],
+        beat_to_narration_map=list(po.beat_to_narration_map) if hasattr(po, "beat_to_narration_map") else [],
         user_topic=topic_hint,
     )
-    dispatcher._print(f"  [NARRATION] Template narration ({len(template_text)} chars)")
-    return template_text
+    dispatcher._print(f"  [NARRATION] Template narration ({len(template_output.narration)} chars)")
+    return template_output
