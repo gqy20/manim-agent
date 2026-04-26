@@ -514,6 +514,24 @@ async def run_pipeline(
             trace_id=pipeline_trace_id,
             status="ok" if po else "error",
         )
+        if po is not None:
+            _emit_status(
+                event_callback,
+                task_status="running",
+                phase="render",
+                message="Phase 3 render review complete.",
+                pipeline_output={
+                    "video_output": getattr(po, "video_output", None),
+                    "duration_seconds": getattr(po, "duration_seconds", None),
+                    "implemented_beats": list(getattr(po, "implemented_beats", []) or []),
+                    "build_summary": getattr(po, "build_summary", None) or "",
+                    "deviations_from_plan": list(getattr(po, "deviations_from_plan", []) or []),
+                    "review_approved": getattr(po, "review_approved", None),
+                    "review_summary": getattr(po, "review_summary", None),
+                    "plan_text": plan_text or "",
+                    "target_duration_seconds": target_duration_seconds,
+                },
+            )
         _emit_phase_enter(
             event_callback,
             phase_id="phase3_5",
@@ -547,6 +565,21 @@ async def run_pipeline(
             f"  [NARRATION] Method={narration_output.generation_method}, "
             f"coverage={len(narration_output.beat_coverage)} beats, "
             f"{narration_output.char_count} chars"
+        )
+        _emit_status(
+            event_callback,
+            task_status="running",
+            phase="narration",
+            message="Phase 3.5 narration generation complete.",
+            pipeline_output={
+                "narration": narration_text or "",
+                "beat_to_narration_map": list(getattr(narration_output, "beat_to_narration_map", []) or []),
+                "narration_coverage_complete": getattr(narration_output, "narration_coverage_complete", None),
+                "estimated_narration_duration_seconds": getattr(narration_output, "estimated_narration_duration_seconds", None) or 0,
+                "plan_text": plan_text or "",
+                "target_duration_seconds": target_duration_seconds,
+                "implemented_beats": list(getattr(po, "implemented_beats", []) or []) if po else [],
+            },
         )
 
         # Merge narration-phase stats
@@ -612,6 +645,21 @@ async def run_pipeline(
             preset=preset,
             event_callback=event_callback,
         )
+        if po is not None:
+            _emit_status(
+                event_callback,
+                task_status="running",
+                phase="tts",
+                message="Phase 4 TTS synthesis complete.",
+                pipeline_output={
+                    "audio_path": getattr(po, "audio_path", None),
+                    "tts_mode": getattr(po, "tts_mode", None),
+                    "tts_duration_ms": getattr(po, "tts_duration_ms", None),
+                    "tts_word_count": getattr(po, "tts_word_count", None),
+                    "narration": getattr(po, "narration", None) or "",
+                    "target_duration_seconds": target_duration_seconds,
+                },
+            )
 
         final_video = await run_phase5_mux(
             dispatcher=dispatcher,
@@ -631,6 +679,23 @@ async def run_pipeline(
             event_callback, phase_id="phase5", phase_name="Mux",
             trace_id=pipeline_trace_id, status="ok",
         )
+        if po is not None:
+            _emit_status(
+                event_callback,
+                task_status="running",
+                phase="mux",
+                message="Phase 5 mux complete. Final video ready.",
+                pipeline_output={
+                    "final_video_output": getattr(po, "final_video_output", None),
+                    "video_output": getattr(po, "video_output", None),
+                    "duration_seconds": getattr(po, "duration_seconds", None),
+                    "subtitle_path": getattr(po, "subtitle_path", None),
+                    "bgm_path": getattr(po, "bgm_path", None),
+                    "bgm_prompt": getattr(po, "bgm_prompt", None),
+                    "audio_path": getattr(po, "audio_path", None),
+                    "target_duration_seconds": target_duration_seconds,
+                },
+            )
 
         dispatcher._print(f"\n{_EMOJI['check']} Video generation complete: {final_video}")
         return final_video

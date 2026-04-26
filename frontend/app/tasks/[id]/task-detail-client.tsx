@@ -9,6 +9,7 @@ import { ArrowLeft, Check, Copy, FileCode2, Film, Loader2, Play, Terminal, Trash
 
 import { LogViewer } from "@/components/log-viewer";
 import { PlanCard } from "@/components/plan-card";
+import { PipelinePhaseCards } from "@/components/pipeline-phase-cards";
 import { VideoPlayer } from "@/components/video-player";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -122,10 +123,7 @@ function VideoPipelinePlaceholder({
   createdAt: string;
   completedAt: string | null;
   errorMessage?: string | null;
-  pipelineOutput?: Pick<
-    PipelineOutputData,
-    "plan_text" | "mode" | "learning_goal" | "audience" | "beats" | "target_duration_seconds"
-  > | null;
+  pipelineOutput?: PipelineOutputData | null;
 }) {
   const phase = useMemo(
     () => detectVideoPlaceholderPhase(events, taskStatus),
@@ -172,9 +170,9 @@ function VideoPipelinePlaceholder({
     };
 
     return (
-      <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center overflow-hidden rounded-xl border border-red-500/15 bg-black/40 shadow-2xl ring-1 ring-red-500/10 backdrop-blur-xl transition-all duration-300">
+      <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center overflow-hidden rounded-xl border border-red-500/15 bg-black/40 shadow-2xl ring-1 ring-red-500/10 backdrop-blur-xl transition-all duration-300 xl:aspect-auto xl:min-h-0 xl:flex-1">
         <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 via-transparent to-transparent" />
-        <div className="relative z-10 flex flex-col gap-3 p-4 w-full overflow-auto custom-scrollbar">
+        <div className="relative z-10 flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden p-4">
           <div className="flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-500/20 bg-gradient-to-br from-red-500/10 to-red-950/30 shadow-[0_0_15px_rgba(239,68,68,0.1)]">
@@ -196,7 +194,7 @@ function VideoPipelinePlaceholder({
             )}
           </div>
           {errorMessage && (
-            <pre className="whitespace-pre-wrap break-words rounded-lg border border-red-500/10 bg-red-500/[0.03] p-3 font-mono text-[11px] leading-relaxed text-red-300/70 max-h-[calc(100%-4rem)] overflow-auto custom-scrollbar">
+            <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-red-500/10 bg-red-500/[0.03] p-3 font-mono text-[11px] leading-relaxed text-red-300/70 custom-scrollbar">
               {errorMessage}
             </pre>
           )}
@@ -207,7 +205,7 @@ function VideoPipelinePlaceholder({
 
   if (!isRunning) {
     return (
-      <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300">
+      <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-black/40 shadow-2xl ring-1 ring-white/5 backdrop-blur-xl transition-all duration-300 xl:aspect-auto xl:min-h-0 xl:flex-1">
         <div className="absolute inset-0 bg-blue-500/5 blur-[100px] transition-colors duration-1000 group-hover:bg-cyan-500/10" />
         <svg className="absolute inset-0 h-full w-full opacity-[0.03]" xmlns="http://www.w3.org/2000/svg">
           <defs>
@@ -241,8 +239,13 @@ function VideoPipelinePlaceholder({
     return <PlanCard pipelineOutput={pipelineOutput} />;
   }
 
+  const phaseCards = <PipelinePhaseCards pipelineOutput={pipelineOutput ?? null} />;
+  if (phaseCards) {
+    return phaseCards;
+  }
+
   return (
-    <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-cyan-500/10 bg-black/40 shadow-2xl ring-1 ring-cyan-500/10 backdrop-blur-xl transition-all duration-300">
+    <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-cyan-500/10 bg-black/40 shadow-2xl ring-1 ring-cyan-500/10 backdrop-blur-xl transition-all duration-300 xl:aspect-auto xl:min-h-0 xl:flex-1">
       <div className={`absolute inset-0 bg-gradient-to-br ${currentPhase.accent}`} />
       <div className="video-grid-sweep absolute inset-0" />
       <svg className="absolute inset-0 h-full w-full opacity-[0.05]" xmlns="http://www.w3.org/2000/svg">
@@ -411,10 +414,7 @@ export default function TaskDetailClient() {
   const [stableVideoSrc, setStableVideoSrc] = useState<string | null>(null);
   const [terminating, setTerminating] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [desktopDetailHeight, setDesktopDetailHeight] = useState<number | null>(null);
   const containerRef = useRef<HTMLElement>(null);
-  const detailLeftRef = useRef<HTMLElement>(null);
-  const detailRightRef = useRef<HTMLElement>(null);
   const refreshInFlightRef = useRef(false);
 
   const [activeTab, setActiveTab] = useState<"logs" | "script">("logs");
@@ -590,30 +590,6 @@ export default function TaskDetailClient() {
     }
   }, [task, loading]);
 
-  useEffect(() => {
-    const rightCard = detailRightRef.current;
-    if (!rightCard || typeof window === "undefined") return;
-
-    const syncHeight = () => {
-      if (window.innerWidth < 1280) {
-        setDesktopDetailHeight(null);
-        return;
-      }
-      setDesktopDetailHeight(rightCard.getBoundingClientRect().height);
-    };
-
-    syncHeight();
-
-    const resizeObserver = new ResizeObserver(() => syncHeight());
-    resizeObserver.observe(rightCard);
-    window.addEventListener("resize", syncHeight);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", syncHeight);
-    };
-  }, [activeTab, logs.length, stableVideoSrc, task?.status]);
-
   if (loading) {
     return (
       <main className="container mx-auto max-w-6xl flex-1 px-6 py-8">
@@ -659,7 +635,7 @@ export default function TaskDetailClient() {
   return (
     <main
       ref={containerRef}
-      className="container mx-auto flex w-full max-w-[1800px] flex-1 flex-col space-y-3 px-4 pb-4 sm:px-6 md:px-10 md:pb-6"
+      className="container mx-auto flex w-full max-w-[1800px] flex-1 flex-col space-y-3 px-4 pb-4 sm:px-6 md:px-10 md:pb-6 xl:h-[var(--app-content-height)] xl:overflow-hidden"
     >
       <div className="gsap-header flex flex-col gap-3 pt-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -724,11 +700,9 @@ export default function TaskDetailClient() {
           <strong className="font-semibold">Error:</strong> {eventsError}
         </div>
       )}
-      <div className="relative mt-2 grid min-h-0 gap-4 xl:grid-cols-[300px_minmax(0,1fr)] xl:items-start">
+      <div className="relative mt-2 grid min-h-0 gap-4 xl:flex-1 xl:grid-cols-[300px_minmax(0,1fr)] xl:items-stretch">
         <section
-          ref={detailLeftRef}
           className="glass-card order-2 z-10 flex min-h-0 flex-col overflow-hidden rounded-xl p-3 xl:order-1"
-          style={desktopDetailHeight ? { height: `${desktopDetailHeight}px` } : undefined}
         >
           <div className="flex shrink-0 flex-col gap-3 border-b border-white/5 pb-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex w-full overflow-x-auto rounded-lg bg-black/40 p-1 sm:w-auto">
@@ -780,7 +754,6 @@ export default function TaskDetailClient() {
         </section>
 
         <section
-          ref={detailRightRef}
           className="glass-card order-1 flex min-h-0 w-full flex-col overflow-hidden rounded-xl p-3 xl:order-2"
         >
           <div className="flex shrink-0 items-center justify-between border-b border-white/5 pb-2">
