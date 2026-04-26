@@ -1,6 +1,6 @@
 ---
 name: scene-build
-description: Build a Manim scene from an existing scene plan. Use when a beat-by-beat plan already exists and the next step is to implement, render, and refine the animation code. Trigger for requests like "build from this plan", "implement this storyboard", "turn this scene plan into Manim", or after running /scene-plan.
+description: Build a Manim scene from an existing scene plan. Use when a beat-by-beat plan already exists and the next step is to draft, implement, render, or refine animation code. Trigger for requests like "build from this plan", "implement this storyboard", "turn this scene plan into Manim", or after running /scene-plan.
 version: 1.0.1
 argument-hint: " [build-handoff]"
 allowed-tools: [Read, Write, Edit, Bash, Glob, Grep]
@@ -17,12 +17,22 @@ Implement Manim code from a scene plan.
 
 ## Build workflow
 
+If the caller says this is a script draft pass, Phase 2A, or "do not render",
+stop after writing a structurally complete `scene.py`. Do not run Manim, do not
+inspect media files, and do not perform render review in that mode.
+
+In Phase 2A, do not submit structured output until the draft passes timing self-check:
+each beat method must contain explicit `run_time` and `wait` calls totaling at least
+80% of that beat's target duration, and the whole script must total at least 60% of
+the requested target duration. If the estimate is below either gate, keep editing
+`scene.py`; do not report the shortfall as a deviation or defer it to Phase 2B.
+
 1. Read the provided scene plan.
 2. Preserve the beat order unless render/debug issues require a small change.
 3. Write one main `scene.py` file unless the user explicitly asks for more.
 4. Keep one main `Scene` class unless there is a strong reason to split.
 5. Use `layout-safety` on dense beats as an advisory audit before the final render pass.
-6. Render, inspect, and simplify if the result feels crowded.
+6. In a render implementation pass, render, inspect, and simplify if the result feels crowded.
 
 ## Beat-to-code mapping
 
@@ -67,8 +77,8 @@ correct in source code.
   `Text("a")` plus a smaller `Text("2")` positioned at the upper right.
 - Use the same safe label helper consistently for titles, object labels, final
   formulas, and narration-adjacent captions.
-- After rendering, visually inspect sampled frames for tofu boxes (`□`) before
-  returning structured output.
+- In a render implementation pass, visually inspect sampled frames for tofu boxes
+  (`□`) before returning structured output.
 
 Example fallback helper:
 
@@ -224,12 +234,15 @@ For patterns not yet in the component library:
 
 ## Use references only when needed
 
-- For code style and render hygiene, read `../manim-production/references/code-style.md`.
-- For math layout and emphasis, read `../manim-production/references/math-visualization-guidelines.md`.
-- For spatial composition, screen zones, element sizing, color palette, and per-mode layout templates, read `../manim-production/references/spatial-composition.md`.
-- For animation selection, rate functions, timing, composition patterns, and motion craft, read `../manim-production/references/animation-craft.md`.
-- For render quality presets, caching behavior, file size budgeting, performance bottlenecks, and renderer selection, read `../manim-production/references/render-quality.md`.
-- For the 3Blue1Brown visual style profile (exact color hex codes, LaTeX template config, animation speed/easing preferences), read `../manim-production/references/style-3b1b.md`.
+All reference files are under `<plugin_dir>/references/`. Paths below are
+relative to the plugin root directory.
+
+- For code style and render hygiene, read `references/code-style.md`.
+- For math layout and emphasis, read `references/math-visualization-guidelines.md`.
+- For spatial composition, screen zones, element sizing, color palette, and per-mode layout templates, read `references/spatial-composition.md`.
+- For animation selection, rate functions, timing, composition patterns, and motion craft, read `references/animation-craft.md`.
+- For render quality presets, caching behavior, file size budgeting, performance bottlenecks, and renderer selection, read `references/render-quality.md`.
+- For the 3Blue1Brown visual style profile (exact color hex codes, LaTeX template config, animation speed/easing preferences), read `references/style-3b1b.md`.
 - For common implementation mistakes and error-fix patterns, read `references/build-anti-patterns.md`.
 
 ## Implementation handoff

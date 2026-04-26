@@ -177,7 +177,7 @@ export default makeScene2D("intro", function* (view) {
 ```
 
 For detailed API reference and complete template examples per style,
-see `references/revideo-integration.md`.
+see `<plugin_dir>/references/revideo-integration.md`.
 
 ### Resolution matching
 
@@ -267,7 +267,7 @@ To ensure 3–5 second output:
 - Avoid long animations (`run_time > 2.0`) in intro/outro scenes.
 - Verify output duration with `ffprobe` after rendering.
 
-For detailed fallback templates per style, see `references/manim-fallback.md`.
+For detailed fallback templates per style, see `<plugin_dir>/references/manim-fallback.md`.
 
 ## Structured output contract
 
@@ -311,7 +311,7 @@ After generating intro/outro segments, verify:
 
 - [ ] Intro duration is between 3–5 seconds (check with ffprobe).
 - [ ] Outro duration is between 3–5 seconds.
-- [ ] Colors match the palette defined in `references/style-3b1b.md`.
+- [ ] Colors match the palette defined in `<plugin_dir>/references/style-3b1b.md`.
 - [ ] Resolution is 1920x1080 @ 30fps (matches main scene).
 - [ ] Text is readable at target resolution (no tiny fonts).
 - [ ] CTA text (if present) matches the target audience language.
@@ -321,8 +321,11 @@ After generating intro/outro segments, verify:
 
 ## References
 
+All reference files are under `<plugin_dir>/references/`. Paths below are
+relative to the plugin root directory.
+
 - For Revideo integration patterns, CLI usage, and API reference, read `references/revideo-integration.md`.
 - For intro template catalog with visual specs and code sketches, read `references/intro-templates.md`.
 - For outro template catalog with visual specs and code sketches, read `references/outro-templates.md`.
 - For pure-Manim fallback approach with complete scene templates, read `references/manim-fallback.md`.
-- For the 3Blue1Brown visual style profile (colors, pacing), read `../manim-production/references/style-3b1b.md`.
+- For the 3Blue1Brown visual style profile (colors, pacing), read `references/style-3b1b.md`.

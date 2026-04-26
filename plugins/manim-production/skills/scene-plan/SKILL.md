@@ -50,10 +50,13 @@ Return a plain Markdown plan with these sections in order:
 
 ## Use references only when needed
 
+All reference files are under `<plugin_dir>/references/`. Paths below are
+relative to the plugin root directory.
+
 - For beat templates, read `references/beat-patterns.md`.
 - For plan shape, read `references/scene-plan-template.md`.
 - For failure patterns, read `references/planning-anti-patterns.md`.
-- For spatial planning in each beat's Visuals field (screen zones, element positions, sizing), read `../manim-production/references/spatial-composition.md`.
+- For spatial planning in each beat's Visuals field (screen zones, element positions, sizing), read `references/spatial-composition.md`.
 
 ## Build handoff
 

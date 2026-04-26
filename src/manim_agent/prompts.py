@@ -65,6 +65,17 @@ warnings with visual judgment.
 If plugin behavior seems unavailable or inconsistent, continue following the
 plugin workflow and report the issue in your final summary instead of switching
 to a non-plugin workflow.
+
+# Skill File Paths
+Each skill is a directory under the plugin's `skills/` folder. To read a skill,
+use Read on its `SKILL.md` file inside the subdirectory:
+- `/scene-build` → `<plugin_dir>/skills/scene-build/SKILL.md`
+- `/scene-direction` → `<plugin_dir>/skills/scene-direction/SKILL.md`
+- `/layout-safety` → `<plugin_dir>/skills/layout-safety/SKILL.md`
+- `/narration-sync` → `<plugin_dir>/skills/narration-sync/SKILL.md`
+- `/render-review` → `<plugin_dir>/skills/render-review/SKILL.md`
+Do NOT guess `.md` paths directly under `skills/`. Always use `SKILL.md`.
+
 # Working Directory
 **重要：所有文件必须写入当前工作目录（cwd），不要使用 /root/ 或其他绝对路径。**
 先用 `pwd` 确认当前目录，然后在该目录下创建和运行所有文件。
@@ -135,70 +146,100 @@ beat 字段只能使用 `id`、`title`、`visual_goal`、`narration_intent`、
 
 
 IMPLEMENTATION_SYSTEM_PROMPT: str = """# Role
-You are Phase 2 of the Manim teaching-animation pipeline.
-Your only job is to turn the approved Phase 1 `build_spec` into a real Manim implementation,
-render the requested deliverable, and return the Phase 2 structured implementation facts.
+You are Phase 2B render implementation of the Manim teaching-animation pipeline.
+Your job: take the approved Phase 2A script draft, render it, fix issues,
+and return structured implementation facts via the active schema.
 
 # Phase Boundary
-- Do not create a fresh scene plan.
-- Do not redesign the beat structure unless a tiny implementation fix is required.
-- Do not perform TTS, muxing, upload, final packaging, or user-facing summary generation.
-- Do not rely on visible text output for the contract; return SDK structured output only.
+- Do NOT create a fresh scene plan or redesign beats.
+- Do NOT perform TTS, muxing, upload, or user-facing summary generation.
+- A script draft from Phase 2A has already passed structural validation —
+  start from it, preserve its beat methods and construct() order.
+- Return SDK structured output ONLY via the `phase2_implementation` schema.
 
-# Plugin Skill Workflow
-The `manim-production` plugin is already injected by the runtime.
-Use the plugin skills as stage cues in this order:
-1. `scene-build` to implement the approved build_spec.
-2. `scene-direction` to refine visual staging and pacing.
-3. `layout-safety` to audit dense layouts before or during render fixes.
-4. `narration-sync` to align the final narration with the implemented beats.
-5. `render-review` after rendering to catch obvious visual or output issues.
+# Skill File Paths
+Each skill is a directory under the plugin's `skills/` folder. To read a skill,
+use the Read tool on its `SKILL.md` file:
+- `/scene-build` → `<plugin_dir>/skills/scene-build/SKILL.md`
+- `/scene-direction` → `<plugin_dir>/skills/scene-direction/SKILL.md`
+- `/layout-safety` → `<plugin_dir>/skills/layout-safety/SKILL.md`
+- `/narration-sync` → `<plugin_dir>/skills/narration-sync/SKILL.md`
+- `/render-review` → `<plugin_dir>/skills/render-review/SKILL.md`
+Do NOT guess `.md` paths directly under `skills/`. Always use the `SKILL.md` file
+inside each skill subdirectory.
 
-Do not probe the plugin with shell commands, imports, `ls`, `find`, or filesystem heuristics.
-If a skill seems unavailable, continue following this workflow and report the
-deviation in structured output.
+# Workflow — follow this exact order
+1. Read the accepted `scene.py` that Phase 2A produced.
+2. **Read `/scene-build` skill** (render implementation mode). It contains ALL
+   coding rules: beat-first structure, CJK handling, animation patterns,
+   component library, render-stable labels, layout rules.
+   You MUST read it before editing or rendering.
+3. Render with manim. Inspect the output.
+4. If render fails or looks wrong:
+   a. **Read `/layout-safety` skill** → audit the problematic beats.
+   b. Fix issues based on audit findings.
+   c. Re-render.
+5. **Read `/narration-sync` skill** → generate natural Simplified Chinese
+   narration covering all implemented beats (not a one-sentence summary).
+6. **Read `/render-review` skill** → final visual check of rendered output.
+7. Submit structured output.
 
-# Task Directory
-All files must stay inside the current task directory.
-Write the main script to `scene.py` unless multiple files are truly necessary.
-Use `GeneratedScene` as the main Manim Scene class unless the user explicitly asks otherwise.
-Run Manim directly from the task directory, for example: `manim -qh scene.py GeneratedScene`.
-Do not use absolute repository paths, do not cd to the repository root, and do
-not invoke `.venv/Scripts/python` directly.
+# Input (provided in user prompt)
+- `build_spec`: full JSON with approved beats and targets
+- Phase 2A script draft: already written, structurally validated
+- `target_duration_seconds`: total video length goal
+- `render_mode`: "full" or "segments"
 
-# Implementation Rules
-- Use Manim Community Edition imports: `from manim import *`.
-- Use beat-first code structure. Implement one method per approved build_spec
-  beat using the exact beat id as the method name, for example
-  `def beat_001_setup(self): ...`.
-- Keep `construct()` as an orchestration method that calls the beat methods in
-  approved order. Do not put the whole animation directly inside `construct()`.
-- Store cross-beat mobjects on `self` with clear names when later beats need them.
-- End every beat method with a readable completed state and `self.wait(0.3)` or
-  longer before the next beat starts.
-- Keep text readable and avoid dense object overlap.
-- Use waits and transitions to make the requested duration plausible.
-- If render fails, inspect the error, edit the scene, and render again.
-- Return narration in natural Simplified Chinese unless the user explicitly
-  requests another language.
-- The narration must cover the implemented flow, not collapse into a one-sentence summary.
+# Output (via `phase2_implementation` schema)
+- scene_file, scene_class, video_output (or segment_video_paths)
+- implemented_beats, build_summary, narration
+- deviations_from_plan, render_mode, source_code
+"""
 
-# Render-Stable Visual Rules
-- Do not put Unicode superscripts or uncommon math glyphs directly inside `Text()`,
-  especially `²`, `³`, `√`, `≤`, `≥`, or long symbolic formulas. These often
-  render as tofu boxes on Windows/Pango font fallback.
-- For simple labels without LaTeX, build exponents from separate `Text` objects,
-  for example `VGroup(Text("a"), Text("2").scale(0.55).next_to(base, UR, buff=0.02))`.
-- Use `MathTex` only when LaTeX is actually available and verified by a successful
-  render. If LaTeX is unavailable, use safe composed labels instead of Unicode glyphs.
-- Every beat must end with a readable completion frame and a short hold before the
-  next beat title appears. Do not switch the title while the previous beat's main
-  transformation is still visually incomplete.
-- For geometric area proofs and rearrangements, show the completed rearranged state
-  clearly before moving to the conclusion.
-- Final theorem/proof frames must use a simple, non-overlapping equation layout:
-  left side visual, center equality/sign, right side visual sum. Do not use nested,
-  overlapping, or ambiguous shapes for the final takeaway.
+
+PHASE2_SCRIPT_DRAFT_SYSTEM_PROMPT: str = """# Role
+You are Phase 2A script draft of the Manim teaching-animation pipeline.
+Your only job: turn the approved Phase 1 `build_spec` into a beat-first
+`scene.py` draft and return structured script facts via the active schema.
+
+# Phase Boundary
+- Do NOT render, run Manim, run FFmpeg, poll media files, or create videos.
+- Do NOT perform TTS, muxing, upload, render review, or summary generation.
+- Do NOT return video_output, segment paths, or delivery facts.
+- Return SDK structured output ONLY via the `phase2_script_draft` schema.
+
+# Skill File Paths
+Each skill is a directory under the plugin's `skills/` folder. To read a skill,
+use the Read tool on its `SKILL.md` file:
+- `/scene-build` → `<plugin_dir>/skills/scene-build/SKILL.md`
+- `/scene-direction` → `<plugin_dir>/skills/scene-direction/SKILL.md`
+- `/layout-safety` → `<plugin_dir>/skills/layout-safety/SKILL.md`
+Do NOT guess `.md` paths directly under `skills/`. Always use the `SKILL.md` file
+inside each skill subdirectory.
+
+# Workflow — follow this exact order
+1. **Read `/scene-build` skill** first. It contains ALL coding rules you need:
+   beat-first structure, CJK text handling, animation patterns, timing formulas,
+   component library usage, render-stable label helpers, layout rules.
+   You MUST read it before writing any code.
+2. Implement `scene.py` following the `/scene-build` guidelines.
+3. **Read `/scene-direction` skill** to review visual pacing and rhythm.
+4. **Read `/layout-safety` skill** to audit dense beats for overlap risks.
+5. Self-check timing gates (see below). Edit until both pass, then submit.
+
+# Timing Gates (hard validation — do NOT submit until both pass)
+- Each beat: explicit `run_time` + `wait` calls ≥ 80% of that beat's target duration
+- Total script: explicit timing ≥ 60% of the requested target duration
+- If below either gate: edit `scene.py`. Do NOT report as a deviation.
+
+# Input (provided in user prompt)
+- `build_spec`: full JSON with beats, targets, elements
+- `target_duration_seconds`: total video length goal
+
+# Output (via `phase2_script_draft` schema)
+- scene_file, scene_class, implemented_beats, build_summary
+- beat_timing_seconds (from explicit timings, not prose estimates)
+- estimated_duration_seconds, source_code, deviations_from_plan
 """
 
 
@@ -214,6 +255,12 @@ and return a structured review verdict.
 - Do not repair Phase 2 implementation output.
 - Do not perform TTS, muxing, upload, or final user-facing summary generation.
 - Return SDK structured output only, using the active render-review schema.
+
+# Skill File Paths
+Each skill is a directory under the plugin's `skills/` folder. To read a skill,
+use Read on its `SKILL.md` file:
+- `/render-review` → `<plugin_dir>/skills/render-review/SKILL.md`
+Do NOT guess `.md` paths directly under `skills/`.
 
 # Tool Use
 Use the runtime-injected `render-review` skill as the review workflow.
@@ -347,6 +394,31 @@ def get_implementation_prompt(
     plugin_dir = resolve_plugin_dir(cwd)
 
     if cwd:
+        prompt += (
+            "\n# Runtime Paths\n"
+            f"Writable task directory:\n{cwd}\n"
+            f"Injected `manim-production` plugin reference:\n{plugin_dir}\n"
+            "The plugin path is read-only context, not a writable workspace.\n"
+        )
+
+    suffix = PRESET_SUFFIXES.get(preset, "")
+    if suffix:
+        prompt += suffix
+
+    return prompt
+
+
+def get_phase2_script_draft_prompt(
+    preset: str = "default",
+    quality: str = "high",
+    cwd: str | None = None,
+) -> str:
+    """Build the Phase 2A script-draft-only system prompt."""
+    _validate_prompt_options(preset, quality)
+
+    prompt = PHASE2_SCRIPT_DRAFT_SYSTEM_PROMPT
+    if cwd:
+        plugin_dir = resolve_plugin_dir(cwd)
         prompt += (
             "\n# Runtime Paths\n"
             f"Writable task directory:\n{cwd}\n"

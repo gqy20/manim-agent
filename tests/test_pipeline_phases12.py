@@ -145,10 +145,10 @@ educational
             render_mode="segments",
         )
 
-        assert "If you cannot produce the real beat-level MP4 files" in result
-        assert "Do not mark `segment_render_complete` true as a placeholder" in result
-        assert "Do not leave `implemented_beats` empty" in result
-        assert "report those paths in structured_output" in result
+        assert "segments/beat_001.mp4" in result
+        assert "segment_video_paths" in result
+        assert "segment_render_complete=true" in result
+        assert "Render mode: segments" in result
 
     def test_includes_structured_build_spec_when_provided(self):
         from manim_agent.pipeline_phases12 import build_implementation_prompt
@@ -179,6 +179,26 @@ educational
 
         assert "Approved Phase 1 build_spec (JSON)" in result
         assert '"id": "beat_001_intro"' in result
+
+
+class TestBuildPhase2ScriptDraftPrompt:
+    def test_script_draft_prompt_forbids_rendering_and_requires_beat_first(self):
+        from manim_agent.pipeline_phases12 import build_phase2_script_draft_prompt
+
+        result = build_phase2_script_draft_prompt(
+            "Explain a circle transformation",
+            60,
+            {"beats": [{"id": "beat_001_intro"}]},
+            "/tmp/task",
+        )
+
+        assert "Phase 2A" in result
+        assert "script draft" in result.lower()
+        assert "no rendering" in result.lower()
+        assert "/scene-build" in result
+        assert "/scene-direction" in result
+        assert "/layout-safety" in result
+        assert "build_spec" in result
         assert "## Beat List" not in result
 
 

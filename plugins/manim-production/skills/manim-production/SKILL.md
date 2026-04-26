@@ -99,6 +99,9 @@ Or import individually: `from components.text_helpers import cjk_text`
 
 ## References
 
+All reference files are under `<plugin_dir>/references/`. Paths below are
+relative to the plugin root directory.
+
 - For scene flow, read `references/scene-patterns.md`.
 - For narration quality, read `references/narration-guidelines.md`.
 - For spatial composition (screen zones, sizing, color, per-mode layouts), read `references/spatial-composition.md`.
@@ -106,4 +109,4 @@ Or import individually: `from components.text_helpers import cjk_text`
 - For render quality (presets, caching, performance, file size), read `references/render-quality.md`.
 - For the 3Blue1Brown visual style profile (colors, typography, animation pacing, compositional patterns), read `references/style-3b1b.md`.
 - For layout or failure patterns, read only the specific reference you need.
-- For intro/outro templates and video assembly, read `../intro-outro/SKILL.md`.
+- For intro/outro templates and video assembly, read `/intro-outro` skill.

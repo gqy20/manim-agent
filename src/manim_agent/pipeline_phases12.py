@@ -14,7 +14,12 @@ from .dispatcher import _MessageDispatcher
 from .pipeline_config import emit_status
 from .pipeline_events import PipelineEvent
 from .prompt_builder import format_target_duration
-from .schemas import Phase1PlanningOutput, Phase2ImplementationOutput, PipelineOutput
+from .schemas import (
+    Phase1PlanningOutput,
+    Phase2ImplementationOutput,
+    Phase2ScriptDraftOutput,
+    PipelineOutput,
+)
 
 
 def build_scene_plan_prompt(
@@ -152,6 +157,21 @@ def persist_phase2_implementation_output(
     return str(output_path)
 
 
+def persist_phase2_script_draft_output(
+    draft_output: Phase2ScriptDraftOutput,
+    *,
+    resolved_cwd: str,
+) -> str:
+    """Persist the accepted Phase 2A script draft contract."""
+    output_path = Path(resolved_cwd).resolve() / "phase2_script_draft.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        json.dumps(draft_output.model_dump(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return str(output_path)
+
+
 def freeze_phase2_artifacts(
     phase2_output: Phase2ImplementationOutput,
     *,
@@ -223,64 +243,40 @@ def build_implementation_prompt(
     build_spec: dict[str, Any] | None = None,
     cwd: str | None = None,
     render_mode: str = "full",
+    script_draft_accepted: bool = False,
 ) -> str:
     """Build the implementation prompt after a planning pass has been accepted."""
     normalized = user_text.strip()
     target_duration = format_target_duration(target_duration_seconds)
     render_mode = render_mode.strip().lower() or "full"
     render_guidance = (
-        "- Render mode: full.\n"
-        "- The primary visual deliverable is one full-length `video_output` MP4.\n"
-        "- You may create helper clips during debugging, but the final structured "
-        "output must center on the single main render.\n"
-        "- In structured_output, include `video_output` with the rendered MP4 path.\n"
+        "- Render mode: full — deliver one `video_output` MP4.\n"
     )
     if render_mode == "segments":
         render_guidance = (
-            "- Render mode: segments.\n"
-            "- The primary visual deliverables are beat-level MP4 files such as "
-            "`segments/beat_001.mp4`, `segments/beat_002.mp4`, in beat order.\n"
-            "- In structured_output, include `segment_video_paths` with the ordered "
-            "segment paths that were actually rendered.\n"
-            "- In structured_output, include `render_mode` as `segments` and "
-            "`segment_render_complete` as true only when every planned beat segment exists.\n"
-            "- Do not treat a single full-length `video_output` as the primary "
-            "deliverable in this mode; if you also produce one, treat it as a "
-            "convenience artifact.\n"
-            "- If you cannot produce the real beat-level MP4 files, stop and fail "
-            "instead of silently returning a degraded full-render result.\n"
-            "- Do not mark `segment_render_complete` true as a placeholder.\n"
+            "- Render mode: segments — deliver beat-level MP4s like "
+            "`segments/beat_001.mp4`, `segments/beat_002.mp4` in beat order.\n"
+            "- Report ordered paths in `segment_video_paths`. Set "
+            "`segment_render_complete=true` only when all segments exist.\n"
         )
     guidance = (
-        "\n\nImplementation pass:\n"
+        "\n\nPhase 2B — render implementation pass:\n"
         f"- Target final video duration: about {target_duration}.\n"
-        "- The Phase 1 `build_spec` is authoritative. Implement from it instead of "
-        "creating a new plan.\n"
-        "- Preserve the planned beat order unless debugging requires a very small fix.\n"
-        "- Do not begin with a fresh planning pass; begin implementation from the approved plan.\n"
+        "- The Phase 1 `build_spec` is authoritative. Implement from it.\n"
         f"{render_guidance}"
-        "- In structured_output, include `implemented_beats` as the ordered "
-        "beat titles that were actually built.\n"
-        "- In structured_output, include `build_summary` as a short summary "
-        "of what the build phase implemented.\n"
-        "- In structured_output, include `deviations_from_plan` as an array, even if it is empty.\n"
-        "- Focus your structured_output effort on the implementation facts that only "
-        "you know: what beats were actually built, what deviated, and the final "
-        "narration text.\n"
-        "- The pipeline will derive beat-level narration bookkeeping, coverage flags, "
-        "and estimated narration duration from the approved build spec.\n"
-        "- In `segments` mode, prioritize writing the real beat files to canonical "
-        "paths like `segments/<beat_id>.mp4` and report those paths in structured_output.\n"
-        "- Do not leave `implemented_beats` empty.\n"
-        "- Do not omit `build_summary`.\n"
-        "- Keep every file inside the task directory only.\n"
-        "- Write the main script to scene.py unless multiple files are truly necessary.\n"
-        "- Use GeneratedScene as the main Manim Scene class unless "
-        "the user explicitly asks otherwise.\n"
-        "- Run Manim directly from the task directory with `manim scene.py GeneratedScene`.\n"
-        "- Do not use absolute repository paths, do not cd to the repo root, "
-        "and do not invoke `.venv/Scripts/python` directly.\n"
+        "- Coding rules, beat structure, CJK handling, animation patterns, and "
+        "component usage are ALL in the `/scene-build` skill — read it first.\n"
+        "- The `/scene-direction` skill covers pacing and rhythm decisions.\n"
+        "- The `/layout-safety` skill covers overlap auditing for dense beats.\n"
+        "- The `/narration-sync` skill covers generating aligned narration text.\n"
+        "- The `/render-review` skill covers post-render visual quality checks.\n"
     )
+    if script_draft_accepted:
+        guidance += (
+            "- A local script-draft gate has already accepted the beat-first structure in "
+            "`scene.py`. Continue from that script, preserve the exact beat methods and "
+            "`construct()` order, then render and repair only implementation/render issues.\n"
+        )
     if build_spec is not None:
         guidance += (
             "\nApproved Phase 1 build_spec (JSON):\n"
@@ -290,6 +286,36 @@ def build_implementation_prompt(
         guidance += (
             "\nApproved build plan/context:\n"
             f"{plan_text}\n"
+        )
+    return f"{normalized}{guidance}" if normalized else guidance.strip()
+
+
+def build_phase2_script_draft_prompt(
+    user_text: str,
+    target_duration_seconds: int,
+    build_spec: dict[str, Any] | None,
+    cwd: str | None = None,
+    render_mode: str = "full",
+) -> str:
+    """Build the Phase 2A prompt that writes a beat-first script before rendering."""
+    normalized = user_text.strip()
+    target_duration = format_target_duration(target_duration_seconds)
+    render_mode = render_mode.strip().lower() or "full"
+    guidance = (
+        "\n\nPhase 2A — script draft pass (no rendering):\n"
+        f"- Target final video duration: about {target_duration}.\n"
+        f"- Downstream render mode: {render_mode}.\n"
+        "- Coding rules, beat structure, CJK handling, animation patterns, and "
+        "component usage are ALL in the `/scene-build` skill — read it first.\n"
+        "- The `/scene-direction` skill covers pacing and rhythm decisions.\n"
+        "- The `/layout-safety` skill covers overlap auditing for dense beats.\n"
+    )
+    if cwd:
+        guidance += f"- Task directory: {cwd}\n"
+    if build_spec is not None:
+        guidance += (
+            "\nApproved Phase 1 build_spec (JSON):\n"
+            f"{json.dumps(build_spec, ensure_ascii=False, indent=2)}\n"
         )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
@@ -381,6 +407,51 @@ async def run_phase1_planning(
     return planning_result_summary or {}
 
 
+async def run_phase2_script_draft(
+    script_draft_prompt: str,
+    script_draft_options_instance: Any,
+    dispatcher: _MessageDispatcher,
+    resolved_cwd: str,
+) -> dict[str, Any]:
+    """Execute Phase 2A: write a beat-first script before rendering."""
+    async for message in query(prompt=script_draft_prompt, options=script_draft_options_instance):
+        dispatcher.dispatch(message)
+        if dispatcher.implementation_started and not getattr(
+            dispatcher, "partial_build_spec", None
+        ):
+            raise RuntimeError(
+                "Claude began implementation before emitting the required Phase 1 build_spec"
+            )
+
+    draft_output = dispatcher.get_phase2_script_draft_output()
+    if draft_output is None:
+        raw_type = (
+            type(dispatcher.raw_structured_output).__name__
+            if dispatcher.raw_structured_output is not None
+            else None
+        )
+        dispatcher._print("")
+        dispatcher._print("  [ERR] Structured Phase 2A script draft output missing or invalid.")
+        dispatcher._print(
+            "  [ERR] raw_structured_output_present="
+            f"{dispatcher.raw_structured_output is not None} "
+            f"type={raw_type}"
+        )
+        raise RuntimeError(
+            "Phase 2A script draft did not return the required structured script output."
+        )
+
+    draft_path = persist_phase2_script_draft_output(
+        draft_output,
+        resolved_cwd=resolved_cwd,
+    )
+    dispatcher.phase2_script_draft_output = draft_output
+    dispatcher.phase2_script_draft_path = draft_path
+    dispatcher._print("  [BUILD] Structured script draft output accepted.")
+    dispatcher._print(f"  [BUILD] Phase 2A script draft persisted: {draft_path}")
+    return dispatcher.result_summary or {}
+
+
 async def run_phase2_implementation(
     implementation_prompt: str,
     build_options_instance: Any,
@@ -425,6 +496,15 @@ async def run_phase2_implementation(
         raise RuntimeError(
             "Phase 2 implementation did not return the required structured implementation output."
         )
+
+    draft_output = getattr(dispatcher, "phase2_script_draft_output", None)
+    if isinstance(draft_output, Phase2ScriptDraftOutput):
+        if not phase2_output.scene_file:
+            phase2_output.scene_file = draft_output.scene_file
+        if not phase2_output.scene_class:
+            phase2_output.scene_class = draft_output.scene_class
+        if not phase2_output.source_code:
+            phase2_output.source_code = draft_output.source_code
 
     phase2_output = freeze_phase2_artifacts(
         phase2_output,
