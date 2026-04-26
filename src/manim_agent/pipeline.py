@@ -21,9 +21,17 @@ from .hooks import activate_hook_state, create_hook_state, reset_hook_state
 from .phase2_script_analyzer import analyze_phase2_script, persist_phase2_script_analysis
 from .pipeline_config import (
     build_options as _build_options,
-    emit_status as _emit_status,
+)
+from .pipeline_config import (
     emit_phase_enter as _emit_phase_enter,
+)
+from .pipeline_config import (
     emit_phase_exit as _emit_phase_exit,
+)
+from .pipeline_config import (
+    emit_status as _emit_status,
+)
+from .pipeline_config import (
     stderr_handler as _stderr_handler,
 )
 from .pipeline_gates import (
@@ -34,9 +42,11 @@ from .pipeline_gates import (
 from .pipeline_narration import generate_narration
 from .pipeline_phases12 import (
     build_implementation_prompt,
+    build_phase2_script_draft_prompt,
     build_scene_plan_prompt,
     run_phase1_planning,
     run_phase2_implementation,
+    run_phase2_script_draft,
 )
 from .pipeline_phases345 import (
     run_phase3_render,
@@ -44,8 +54,8 @@ from .pipeline_phases345 import (
     run_phase5_mux,
     run_render_review,
 )
+from .pipeline_trace import TraceSpan, create_trace_id
 from .schemas import PhaseSchemaRegistry
-from .pipeline_trace import TraceSpan, create_trace_id, span_context
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +104,11 @@ async def run_pipeline(
         quality=quality,
         cwd=resolved_cwd,
     )
+    script_draft_system_prompt = prompts.get_phase2_script_draft_prompt(
+        preset=preset,
+        quality=quality,
+        cwd=resolved_cwd,
+    )
     render_review_system_prompt = prompts.get_render_review_prompt(
         preset=preset,
         quality=quality,
@@ -123,6 +138,18 @@ async def run_pipeline(
         log_callback=log_callback,
         output_format=PhaseSchemaRegistry.output_format_schema("phase2_implementation"),
         use_default_output_format=False,
+    )
+    script_draft_opts = _build_options(
+        cwd=resolved_cwd,
+        system_prompt=script_draft_system_prompt,
+        max_turns=max_turns,
+        prompt_file=prompt_file,
+        quality=quality,
+        log_callback=log_callback,
+        output_format=PhaseSchemaRegistry.output_format_schema("phase2_script_draft"),
+        use_default_output_format=False,
+        allowed_tools=["Read", "Write", "Edit", "Glob", "Grep"],
+        disallowed_tools=["Bash"],
     )
 
     hook_state = create_hook_state(event_callback=event_callback)
@@ -176,6 +203,7 @@ async def run_pipeline(
             _orig_log_callback(line)
 
     planning_options.stderr = lambda line: _counting_log_callback(line)
+    script_draft_opts.stderr = lambda line: _counting_log_callback(line)
     build_opts.stderr = lambda line: _counting_log_callback(line)
 
     try:
@@ -189,7 +217,12 @@ async def run_pipeline(
         # ══════════════════════════════════════════════
         # Phase 1/5: Scene Planning Pass
         # ══════════════════════════════════════════════
-        _emit_phase_enter(event_callback, phase_id="phase1", phase_name="Scene Planning", trace_id=pipeline_trace_id)
+        _emit_phase_enter(
+            event_callback,
+            phase_id="phase1",
+            phase_name="Scene Planning",
+            trace_id=pipeline_trace_id,
+        )
         planning_result_summary: dict[str, Any] | None = None
         hook_state.allowed_tools = (
             set(planning_options.allowed_tools)
@@ -223,20 +256,97 @@ async def run_pipeline(
             trace_id=pipeline_trace_id,
             beats_count=len(build_spec.beats) if hasattr(build_spec, 'beats') else None,
         )
-        dispatcher.expected_output = "phase2_implementation"
+        dispatcher.expected_output = "phase2_script_draft"
         dispatcher.partial_render_mode = render_mode
         dispatcher.partial_segment_render_complete = False
-        dispatcher._print(f"  {_EMOJI['gear']} Phase 2/5: implementation pass")
-        _emit_phase_enter(event_callback, phase_id="phase2", phase_name="Implementation", trace_id=pipeline_trace_id)
-        if build_opts.allowed_tools:
-            dispatcher._print(f"  [SYS] Allowed tools: {', '.join(build_opts.allowed_tools)}")
+        dispatcher._print(f"  {_EMOJI['gear']} Phase 2A/5: beat-first script draft")
+        _emit_status(
+            event_callback,
+            task_status="running",
+            phase="scene",
+            message="Phase 2A script draft started. Writing beat-first scene.py before rendering.",
+        )
+        _emit_phase_enter(
+            event_callback,
+            phase_id="phase2a",
+            phase_name="Script Draft",
+            trace_id=pipeline_trace_id,
+        )
+        if script_draft_opts.allowed_tools:
+            dispatcher._print(
+                f"  [SYS] Allowed tools: {', '.join(script_draft_opts.allowed_tools)}"
+            )
         hook_state.allowed_tools = (
-            set(build_opts.allowed_tools) if build_opts.allowed_tools is not None else None
+            set(script_draft_opts.allowed_tools)
+            if script_draft_opts.allowed_tools is not None
+            else None
         )
 
         # ══════════════════════════════════════════════
         # Phase 2/5: Implementation Pass
         # ══════════════════════════════════════════════
+        script_draft_prompt = build_phase2_script_draft_prompt(
+            user_text,
+            target_duration_seconds,
+            build_spec,
+            resolved_cwd,
+            render_mode=render_mode,
+        )
+        script_draft_result_summary = await run_phase2_script_draft(
+            script_draft_prompt=script_draft_prompt,
+            script_draft_options_instance=script_draft_opts,
+            dispatcher=dispatcher,
+            resolved_cwd=resolved_cwd,
+        )
+        draft_output = dispatcher.get_phase2_script_draft_output()
+        draft_analysis = analyze_phase2_script(
+            scene_file=getattr(draft_output, "scene_file", None),
+            scene_class=getattr(draft_output, "scene_class", None),
+            build_spec=build_spec,
+            target_duration_seconds=target_duration_seconds,
+            output_dir=resolved_cwd,
+        )
+        draft_analysis_path = persist_phase2_script_analysis(
+            draft_analysis,
+            output_dir=resolved_cwd,
+            filename="phase2_script_draft_analysis.json",
+        )
+        dispatcher.phase2_script_draft_analysis_path = draft_analysis_path
+        dispatcher._print(f"  [BUILD] Phase 2A script analysis persisted: {draft_analysis_path}")
+        if not draft_analysis.accepted:
+            for issue in draft_analysis.issues:
+                dispatcher._print(f"  [BUILD][ERR] {issue}")
+            raise RuntimeError(
+                "Phase 2A script draft analysis failed. Blocking issue: "
+                + "; ".join(draft_analysis.issues)
+            )
+        _emit_phase_exit(
+            event_callback,
+            phase_id="phase2a",
+            phase_name="Script Draft",
+            trace_id=pipeline_trace_id,
+            beats_count=len(draft_analysis.expected_beat_ids),
+            metadata={"analysis_path": draft_analysis_path},
+        )
+
+        dispatcher.expected_output = "phase2_implementation"
+        dispatcher._print(f"  {_EMOJI['gear']} Phase 2B/5: render implementation pass")
+        _emit_status(
+            event_callback,
+            task_status="running",
+            phase="scene",
+            message="Phase 2A script draft accepted. Beginning render implementation pass.",
+        )
+        hook_state.allowed_tools = (
+            set(build_opts.allowed_tools) if build_opts.allowed_tools is not None else None
+        )
+        _emit_phase_enter(
+            event_callback,
+            phase_id="phase2b",
+            phase_name="Render Implementation",
+            trace_id=pipeline_trace_id,
+        )
+
         implementation_prompt = build_implementation_prompt(
             user_text,
             target_duration_seconds,
@@ -244,6 +354,7 @@ async def run_pipeline(
             build_spec,
             resolved_cwd,
             render_mode=render_mode,
+            script_draft_accepted=True,
         )
         implementation_result_summary = await run_phase2_implementation(
             implementation_prompt=implementation_prompt,
@@ -293,12 +404,19 @@ async def run_pipeline(
         dispatcher.pipeline_output = phase2_po
         dispatcher.expected_output = "pipeline_output"
         _emit_phase_exit(
-            event_callback, phase_id="phase2", phase_name="Implementation",
+            event_callback, phase_id="phase2b", phase_name="Render Implementation",
             trace_id=pipeline_trace_id,
-            turn_count=dispatcher.result_summary.get("turns") if dispatcher.result_summary else None,
+            turn_count=(
+                dispatcher.result_summary.get("turns") if dispatcher.result_summary else None
+            ),
             beats_count=len(phase2_po.implemented_beats) if phase2_po else None,
         )
-        _emit_phase_enter(event_callback, phase_id="phase3", phase_name="Render+Review", trace_id=pipeline_trace_id)
+        _emit_phase_enter(
+            event_callback,
+            phase_id="phase3",
+            phase_name="Render+Review",
+            trace_id=pipeline_trace_id,
+        )
         _emit_status(
             event_callback,
             task_status="running",
@@ -309,6 +427,7 @@ async def run_pipeline(
 
         result_summary = merge_result_summaries(
             planning_result_summary,
+            script_draft_result_summary,
             implementation_result_summary,
         )
         if result_summary is not None:
@@ -346,7 +465,12 @@ async def run_pipeline(
             trace_id=pipeline_trace_id,
             status="ok" if po else "error",
         )
-        _emit_phase_enter(event_callback, phase_id="phase3_5", phase_name="Narration", trace_id=pipeline_trace_id)
+        _emit_phase_enter(
+            event_callback,
+            phase_id="phase3_5",
+            phase_name="Narration",
+            trace_id=pipeline_trace_id,
+        )
         dispatcher._print(f"  {_EMOJI['gear']} Phase 3.5/5: narration generation")
         _emit_status(
             event_callback,
@@ -385,7 +509,12 @@ async def run_pipeline(
             event_callback, phase_id="phase3_5", phase_name="Narration",
             trace_id=pipeline_trace_id,
         )
-        _emit_phase_enter(event_callback, phase_id="phase4", phase_name="TTS+Mux", trace_id=pipeline_trace_id)
+        _emit_phase_enter(
+            event_callback,
+            phase_id="phase4",
+            phase_name="TTS+Mux",
+            trace_id=pipeline_trace_id,
+        )
         if no_tts:
             if po is not None:
                 po.final_video_output = video_output

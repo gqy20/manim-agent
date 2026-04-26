@@ -25,6 +25,7 @@ from typing import Any
 
 from .phase1_planning import BuildSpec, BuildSpecBeat, Phase1PlanningOutput
 from .phase2_implementation import Phase2ImplementationOutput
+from .phase2_script_draft import Phase2ScriptDraftOutput
 from .phase3_render_review import FrameAnalysis, Phase3RenderReviewOutput
 from .phase4_tts import Phase4TTSOutput
 from .phase5_mux import Phase5MuxOutput
@@ -42,6 +43,7 @@ class PhaseSchemaRegistry:
         str,
         type[
             Phase1PlanningOutput
+            | Phase2ScriptDraftOutput
             | Phase2ImplementationOutput
             | Phase3RenderReviewOutput
             | Phase4TTSOutput
@@ -50,6 +52,7 @@ class PhaseSchemaRegistry:
         ],
     ] = {
         "phase1_planning": Phase1PlanningOutput,
+        "phase2_script_draft": Phase2ScriptDraftOutput,
         "phase2_implementation": Phase2ImplementationOutput,
         "phase3_render_review": Phase3RenderReviewOutput,
         "phase4_tts": Phase4TTSOutput,
@@ -59,6 +62,8 @@ class PhaseSchemaRegistry:
 
     _PHASE_NAMES: dict[str, str] = {
         "phase1": "phase1_planning",
+        "phase2a": "phase2_script_draft",
+        "script_draft": "phase2_script_draft",
         "phase2": "phase2_implementation",
         "phase3": "phase3_render_review",
         "phase4": "phase4_tts",
@@ -184,6 +189,7 @@ __all__ = [
     "BuildSpecBeat",
     "FrameAnalysis",
     "Phase1PlanningOutput",
+    "Phase2ScriptDraftOutput",
     "Phase2ImplementationOutput",
     "Phase3RenderReviewOutput",
     "Phase4TTSOutput",

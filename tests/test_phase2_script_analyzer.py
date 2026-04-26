@@ -50,6 +50,10 @@ class GeneratedScene(Scene):
     assert analysis.accepted
     assert analysis.construct_calls[:2] == ["beat_001_setup", "beat_002_rearrange"]
     assert analysis.estimated_duration_seconds == 12
+    assert analysis.beat_duration_seconds == {
+        "beat_001_setup": 6,
+        "beat_002_rearrange": 6,
+    }
 
 
 def test_analyzer_rejects_missing_beat_methods(tmp_path: Path):
@@ -112,6 +116,10 @@ class GeneratedScene(Scene):
     assert any("Unstable math glyph" in issue for issue in analysis.issues)
     assert any("Estimated script duration" in issue for issue in analysis.issues)
     assert any("hard-coded offset" in issue for issue in analysis.issues)
+    assert analysis.beat_duration_seconds == {
+        "beat_001_setup": 1.3,
+        "beat_002_rearrange": 1.3,
+    }
 
 
 def test_analysis_model_dump_is_json_serializable(tmp_path: Path):

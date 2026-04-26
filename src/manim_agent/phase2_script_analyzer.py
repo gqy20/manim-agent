@@ -29,6 +29,7 @@ class Phase2ScriptAnalysis:
     method_names: list[str]
     construct_calls: list[str]
     estimated_duration_seconds: float
+    beat_duration_seconds: dict[str, float] = field(default_factory=dict)
     issues: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -64,6 +65,7 @@ def analyze_phase2_script(
             method_names=[],
             construct_calls=[],
             estimated_duration_seconds=0.0,
+            beat_duration_seconds={},
             issues=["scene_file does not point to a real script."],
         )
 
@@ -78,6 +80,7 @@ def analyze_phase2_script(
             method_names=[],
             construct_calls=[],
             estimated_duration_seconds=0.0,
+            beat_duration_seconds={},
             issues=[f"scene.py is not valid Python: {exc.msg}."],
         )
 
@@ -122,7 +125,15 @@ def analyze_phase2_script(
         if method is not None and not _method_has_completion_hold(method):
             issues.append(f"Beat method `{beat_id}` lacks a completion hold wait >= 0.3s.")
 
-    estimated_duration = _estimate_duration_seconds(scene_node) if scene_node is not None else 0.0
+    beat_durations = _estimate_beat_duration_seconds(
+        method_nodes=method_nodes,
+        expected_beat_ids=expected_beat_ids,
+    )
+    estimated_duration = (
+        round(sum(beat_durations.values()), 3)
+        if beat_durations
+        else (_estimate_duration_seconds(scene_node) if scene_node is not None else 0.0)
+    )
     if target_duration_seconds and target_duration_seconds > 0:
         minimum = target_duration_seconds * 0.6
         if estimated_duration < minimum:
@@ -147,6 +158,7 @@ def analyze_phase2_script(
         method_names=method_names,
         construct_calls=construct_calls,
         estimated_duration_seconds=estimated_duration,
+        beat_duration_seconds=beat_durations,
         issues=issues,
         warnings=warnings,
     )
@@ -156,9 +168,10 @@ def persist_phase2_script_analysis(
     analysis: Phase2ScriptAnalysis,
     *,
     output_dir: str,
+    filename: str = "phase2_script_analysis.json",
 ) -> str:
     """Persist Phase 2 script analysis for debugging and task history."""
-    path = Path(output_dir).resolve() / "phase2_script_analysis.json"
+    path = Path(output_dir).resolve() / filename
     path.write_text(
         json.dumps(analysis.model_dump(), ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -267,6 +280,35 @@ def _method_has_completion_hold(node: ast.FunctionDef) -> bool:
 def _estimate_duration_seconds(node: ast.ClassDef | None) -> float:
     if node is None:
         return 0.0
+    total = 0.0
+    for item in ast.walk(node):
+        if not isinstance(item, ast.Call):
+            continue
+        if _is_self_method_call(item, "wait"):
+            total += _call_wait_duration(item)
+        elif _is_self_method_call(item, "play"):
+            total += _call_play_duration(item)
+    return round(total, 3)
+
+
+def _estimate_beat_duration_seconds(
+    *,
+    method_nodes: dict[str, ast.FunctionDef],
+    expected_beat_ids: list[str],
+) -> dict[str, float]:
+    beat_ids = expected_beat_ids or [
+        name for name in method_nodes if name.startswith("beat_")
+    ]
+    durations: dict[str, float] = {}
+    for beat_id in beat_ids:
+        method = method_nodes.get(beat_id)
+        if method is None:
+            continue
+        durations[beat_id] = _estimate_method_duration_seconds(method)
+    return durations
+
+
+def _estimate_method_duration_seconds(node: ast.FunctionDef) -> float:
     total = 0.0
     for item in ast.walk(node):
         if not isinstance(item, ast.Call):
