@@ -1,6 +1,6 @@
 "use client";
 
-import type { ElementType, ReactNode } from "react";
+import { Fragment, type ElementType, type ReactNode } from "react";
 import {
   AlertTriangle,
   BookOpen,
@@ -25,6 +25,8 @@ interface PipelinePhaseCardsProps {
   pipelineOutput: PipelineOutputData | null;
   variant?: "panel" | "embedded";
 }
+
+type PhaseSurface = "panel" | "embedded";
 
 function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null) return "--";
@@ -58,13 +60,32 @@ function PhaseShell({
   meta,
   tone,
   children,
+  surface = "embedded",
 }: {
   icon: ElementType;
   title: string;
   meta?: ReactNode;
   tone: string;
   children: ReactNode;
+  surface?: PhaseSurface;
 }) {
+  if (surface === "panel") {
+    return (
+      <section className="border-t border-white/[0.055] py-3 first:border-t-0 first:pt-0 last:pb-0">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Icon className="h-3.5 w-3.5 shrink-0 text-cyan-400/42" />
+            <h3 className="truncate text-[10px] font-mono uppercase tracking-widest text-white/50">
+              {title}
+            </h3>
+          </div>
+          {meta && <div className="shrink-0 text-[9px] font-mono text-white/28">{meta}</div>}
+        </div>
+        <div className="space-y-2">{children}</div>
+      </section>
+    );
+  }
+
   return (
     <section className="rounded-lg border border-white/[0.06] bg-white/[0.025] overflow-hidden">
       <div className={`h-px bg-gradient-to-r ${tone}`} />
@@ -82,7 +103,24 @@ function PhaseShell({
   );
 }
 
-function Metric({ label, value }: { label: string; value: ReactNode }) {
+function Metric({
+  label,
+  value,
+  surface = "embedded",
+}: {
+  label: string;
+  value: ReactNode;
+  surface?: PhaseSurface;
+}) {
+  if (surface === "panel") {
+    return (
+      <div className="min-w-0">
+        <div className="text-[9px] font-mono uppercase tracking-widest text-white/24">{label}</div>
+        <div className="mt-0.5 truncate text-[11px] text-white/58">{value}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-0 rounded-md border border-white/[0.04] bg-black/20 px-2.5 py-2">
       <div className="text-[9px] font-mono uppercase tracking-widest text-white/24">{label}</div>
@@ -91,7 +129,24 @@ function Metric({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function TextBlock({ icon: Icon, children }: { icon?: ElementType; children: ReactNode }) {
+function TextBlock({
+  icon: Icon,
+  children,
+  surface = "embedded",
+}: {
+  icon?: ElementType;
+  children: ReactNode;
+  surface?: PhaseSurface;
+}) {
+  if (surface === "panel") {
+    return (
+      <div className="flex min-w-0 gap-2">
+        {Icon && <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-white/24" />}
+        <div className="min-w-0 text-[11px] leading-relaxed text-white/50">{children}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-w-0 gap-2 rounded-md border border-white/[0.04] bg-black/18 px-2.5 py-2">
       {Icon && <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-white/28" />}
@@ -100,25 +155,33 @@ function TextBlock({ icon: Icon, children }: { icon?: ElementType; children: Rea
   );
 }
 
-function PillList({ items, tone = "bg-white/[0.04] text-white/45" }: { items: string[]; tone?: string }) {
+function PillList({
+  items,
+  tone = "bg-white/[0.04] text-white/45",
+  limit = 8,
+}: {
+  items: string[];
+  tone?: string;
+  limit?: number;
+}) {
   if (items.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1.5">
-      {items.slice(0, 8).map((item, index) => (
+      {items.slice(0, limit).map((item, index) => (
         <span key={`${item}-${index}`} className={`rounded-md px-2 py-1 text-[10px] ${tone}`}>
           {item}
         </span>
       ))}
-      {items.length > 8 && (
+      {items.length > limit && (
         <span className="rounded-md bg-white/[0.03] px-2 py-1 text-[10px] text-white/25">
-          +{items.length - 8}
+          +{items.length - limit}
         </span>
       )}
     </div>
   );
 }
 
-function PlanningSection({ d }: { d: PipelineOutputData }) {
+function PlanningSection({ d, surface = "embedded" }: { d: PipelineOutputData; surface?: PhaseSurface }) {
   const spec = d.phase1_planning?.build_spec;
   const beats = spec?.beats ?? d.beats ?? [];
   const beatTotal = beats.reduce((sum, beat) => sum + (beat.target_duration_seconds ?? 0), 0);
@@ -131,33 +194,34 @@ function PlanningSection({ d }: { d: PipelineOutputData }) {
       title="Planning"
       tone="from-cyan-400/35 via-cyan-400/12 to-transparent"
       meta={beats.length ? `${beats.length} beats` : undefined}
+      surface={surface}
     >
       <div className="grid gap-2 sm:grid-cols-3">
-        {spec?.mode && <Metric label="Mode" value={spec.mode} />}
+        {spec?.mode && <Metric label="Mode" value={spec.mode} surface={surface} />}
         {spec?.target_duration_seconds != null && (
-          <Metric label="Target" value={formatDuration(spec.target_duration_seconds)} />
+          <Metric label="Target" value={formatDuration(spec.target_duration_seconds)} surface={surface} />
         )}
-        {beatTotal > 0 && <Metric label="Beat Sum" value={formatDuration(beatTotal)} />}
+        {beatTotal > 0 && <Metric label="Beat Sum" value={formatDuration(beatTotal)} surface={surface} />}
       </div>
 
       {spec?.learning_goal && (
-        <TextBlock icon={Target}>{spec.learning_goal}</TextBlock>
+        <TextBlock icon={Target} surface={surface}>{spec.learning_goal}</TextBlock>
       )}
       {spec?.audience && (
-        <TextBlock icon={Users}>{spec.audience}</TextBlock>
+        <TextBlock icon={Users} surface={surface}>{spec.audience}</TextBlock>
       )}
-      {d.plan_text && (
-        <TextBlock icon={Route}>
+      {surface === "embedded" && d.plan_text && (
+        <TextBlock icon={Route} surface={surface}>
           <p className="line-clamp-3">{d.plan_text}</p>
         </TextBlock>
       )}
 
       {beats.length > 0 && (
         <div className="space-y-1.5">
-          {beats.slice(0, 6).map((beat, index) => {
+          {beats.slice(0, surface === "panel" ? 5 : 6).map((beat, index) => {
             const required = "required_elements" in beat ? beat.required_elements ?? [] : [];
             return (
-              <div key={beat.id ?? index} className="rounded-md border border-white/[0.04] bg-black/16 px-2.5 py-2">
+              <div key={beat.id ?? index} className={surface === "panel" ? "px-0 py-1.5" : "rounded-md border border-white/[0.04] bg-black/16 px-2.5 py-2"}>
                 <div className="flex items-start gap-2">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-cyan-500/10 text-[9px] font-mono text-cyan-300/75">
                     {index + 1}
@@ -173,19 +237,24 @@ function PlanningSection({ d }: { d: PipelineOutputData }) {
                     </div>
                     {beat.visual_goal && <p className="mt-1 line-clamp-2 text-[10px] text-white/42">{beat.visual_goal}</p>}
                     {beat.narration_intent && <p className="mt-1 line-clamp-2 text-[10px] text-amber-200/42">{beat.narration_intent}</p>}
-                    <PillList items={required} />
+                    <PillList items={required} limit={surface === "panel" ? 3 : 8} />
                   </div>
                 </div>
               </div>
             );
           })}
+          {surface === "panel" && beats.length > 5 && (
+            <div className="pl-7 text-[10px] font-mono text-white/25">
+              +{beats.length - 5} beats in Report
+            </div>
+          )}
         </div>
       )}
     </PhaseShell>
   );
 }
 
-function ImplementationSection({ d }: { d: PipelineOutputData }) {
+function ImplementationSection({ d, surface = "embedded" }: { d: PipelineOutputData; surface?: PhaseSurface }) {
   const phase = d.phase2_implementation;
   const implemented = phase?.implemented_beats ?? d.implemented_beats ?? [];
   const deviations = phase?.deviations_from_plan ?? d.deviations_from_plan ?? [];
@@ -205,20 +274,21 @@ function ImplementationSection({ d }: { d: PipelineOutputData }) {
       title="Implementation"
       tone="from-violet-400/35 via-violet-400/10 to-transparent"
       meta={renderMode ?? undefined}
+      surface={surface}
     >
       <div className="grid gap-2 sm:grid-cols-3">
-        {sceneClass && <Metric label="Scene" value={<code className="text-violet-200/75">{sceneClass}</code>} />}
-        {sceneFile && <Metric label="File" value={sceneFile} />}
-        {segmentPaths.length > 0 && <Metric label="Segments" value={segmentPaths.length} />}
+        {sceneClass && <Metric label="Scene" value={<code className="text-violet-200/75">{sceneClass}</code>} surface={surface} />}
+        {sceneFile && <Metric label="File" value={sceneFile} surface={surface} />}
+        {segmentPaths.length > 0 && <Metric label="Segments" value={segmentPaths.length} surface={surface} />}
       </div>
 
-      {summary && <TextBlock icon={Sparkles}>{summary}</TextBlock>}
+      {summary && <TextBlock icon={Sparkles} surface={surface}>{summary}</TextBlock>}
       <PillList items={implemented} tone="bg-violet-500/[0.08] text-violet-100/58" />
 
       {deviations.length > 0 && (
         <div className="space-y-1">
           {deviations.map((item, index) => (
-            <TextBlock key={`${item}-${index}`} icon={AlertTriangle}>
+            <TextBlock key={`${item}-${index}`} icon={AlertTriangle} surface={surface}>
               <span className="text-amber-200/58">{item}</span>
             </TextBlock>
           ))}
@@ -228,7 +298,7 @@ function ImplementationSection({ d }: { d: PipelineOutputData }) {
   );
 }
 
-function ReviewSection({ d }: { d: PipelineOutputData }) {
+function ReviewSection({ d, surface = "embedded" }: { d: PipelineOutputData; surface?: PhaseSurface }) {
   const review = d.phase3_render_review;
   const approved = review?.approved ?? d.review_approved;
   const summary = review?.summary ?? d.review_summary;
@@ -246,8 +316,9 @@ function ReviewSection({ d }: { d: PipelineOutputData }) {
       title="Render Review"
       tone={approved === false ? "from-red-400/35 via-red-400/10 to-transparent" : "from-emerald-400/35 via-emerald-400/10 to-transparent"}
       meta={approved == null ? "unchecked" : approved ? "approved" : "blocked"}
+      surface={surface}
     >
-      {summary && <TextBlock icon={Film}>{summary}</TextBlock>}
+      {summary && <TextBlock icon={Film} surface={surface}>{summary}</TextBlock>}
       <PillList items={blocking} tone="bg-red-500/[0.08] text-red-100/58" />
       <PillList items={edits} tone="bg-amber-500/[0.08] text-amber-100/58" />
       {frames.length > 0 && (
@@ -270,7 +341,7 @@ function ReviewSection({ d }: { d: PipelineOutputData }) {
   );
 }
 
-function NarrationSection({ d }: { d: PipelineOutputData }) {
+function NarrationSection({ d, surface = "embedded" }: { d: PipelineOutputData; surface?: PhaseSurface }) {
   const map = d.beat_to_narration_map ?? [];
   if (!d.narration && map.length === 0 && d.narration_coverage_complete == null) return null;
 
@@ -280,9 +351,10 @@ function NarrationSection({ d }: { d: PipelineOutputData }) {
       title="Narration"
       tone="from-orange-400/35 via-orange-400/10 to-transparent"
       meta={d.narration_coverage_complete == null ? undefined : d.narration_coverage_complete ? "covered" : "partial"}
+      surface={surface}
     >
       {d.narration && (
-        <TextBlock icon={Mic}>
+        <TextBlock icon={Mic} surface={surface}>
           <p className="line-clamp-5 whitespace-pre-wrap">{d.narration}</p>
         </TextBlock>
       )}
@@ -299,13 +371,13 @@ function NarrationSection({ d }: { d: PipelineOutputData }) {
         </div>
       )}
       {d.estimated_narration_duration_seconds != null && (
-        <Metric label="Estimated Duration" value={formatDuration(d.estimated_narration_duration_seconds)} />
+        <Metric label="Estimated Duration" value={formatDuration(d.estimated_narration_duration_seconds)} surface={surface} />
       )}
     </PhaseShell>
   );
 }
 
-function AudioSection({ d }: { d: PipelineOutputData }) {
+function AudioSection({ d, surface = "embedded" }: { d: PipelineOutputData; surface?: PhaseSurface }) {
   const phase = d.phase4_tts;
   const audioPath = phase?.audio_path ?? d.audio_path;
   const ttsMode = phase?.tts_mode ?? d.tts_mode;
@@ -323,18 +395,19 @@ function AudioSection({ d }: { d: PipelineOutputData }) {
       title="Audio"
       tone="from-sky-400/35 via-sky-400/10 to-transparent"
       meta={audioSegments.length ? `${audioSegments.length} segments` : undefined}
+      surface={surface}
     >
       <div className="grid gap-2 sm:grid-cols-3">
-        {ttsMode && <Metric label="TTS Mode" value={ttsMode} />}
-        {ttsDuration != null && <Metric label="Voice Length" value={formatMs(ttsDuration)} />}
-        {usage != null && <Metric label="Usage" value={`${usage} chars`} />}
+        {ttsMode && <Metric label="TTS Mode" value={ttsMode} surface={surface} />}
+        {ttsDuration != null && <Metric label="Voice Length" value={formatMs(ttsDuration)} surface={surface} />}
+        {usage != null && <Metric label="Usage" value={`${usage} chars`} surface={surface} />}
       </div>
-      {audioPath && <TextBlock icon={Volume2}><code className="text-sky-100/65">{audioPath}</code></TextBlock>}
+      {audioPath && <TextBlock icon={Volume2} surface={surface}><code className="text-sky-100/65">{audioPath}</code></TextBlock>}
       {d.timeline_total_duration_seconds != null && (
-        <Metric label="Timeline" value={formatDuration(d.timeline_total_duration_seconds)} />
+        <Metric label="Timeline" value={formatDuration(d.timeline_total_duration_seconds)} surface={surface} />
       )}
       {d.bgm_path && (
-        <TextBlock icon={Music2}>
+        <TextBlock icon={Music2} surface={surface}>
           <span className="line-clamp-2">{d.bgm_prompt || d.bgm_path}</span>
         </TextBlock>
       )}
@@ -348,7 +421,7 @@ function AudioSection({ d }: { d: PipelineOutputData }) {
   );
 }
 
-function MuxSection({ d }: { d: PipelineOutputData }) {
+function MuxSection({ d, surface = "embedded" }: { d: PipelineOutputData; surface?: PhaseSurface }) {
   const phase = d.phase5_mux;
   const finalVideo = phase?.final_video_output ?? d.final_video_output;
   const duration = phase?.duration_seconds ?? d.duration_seconds;
@@ -366,15 +439,16 @@ function MuxSection({ d }: { d: PipelineOutputData }) {
       title="Final Mux"
       tone="from-cyan-400/35 via-cyan-400/10 to-transparent"
       meta={mixMode ?? undefined}
+      surface={surface}
     >
       <div className="grid gap-2 sm:grid-cols-3">
-        {duration != null && <Metric label="Final Duration" value={formatDuration(duration)} />}
-        {d.bgm_volume != null && <Metric label="BGM Volume" value={d.bgm_volume.toFixed(2)} />}
-        {d.intro_outro_backend && <Metric label="Intro/Outro" value={d.intro_outro_backend} />}
+        {duration != null && <Metric label="Final Duration" value={formatDuration(duration)} surface={surface} />}
+        {d.bgm_volume != null && <Metric label="BGM Volume" value={d.bgm_volume.toFixed(2)} surface={surface} />}
+        {d.intro_outro_backend && <Metric label="Intro/Outro" value={d.intro_outro_backend} surface={surface} />}
       </div>
-      {finalVideo && <TextBlock icon={Clapperboard}><code className="text-cyan-100/65">{finalVideo}</code></TextBlock>}
-      {subtitle && <TextBlock icon={ListChecks}><code>{subtitle}</code></TextBlock>}
-      {bgmPath && <TextBlock icon={Music2}><code>{bgmPath}</code></TextBlock>}
+      {finalVideo && <TextBlock icon={Clapperboard} surface={surface}><code className="text-cyan-100/65">{finalVideo}</code></TextBlock>}
+      {subtitle && <TextBlock icon={ListChecks} surface={surface}><code>{subtitle}</code></TextBlock>}
+      {bgmPath && <TextBlock icon={Music2} surface={surface}><code>{bgmPath}</code></TextBlock>}
       <PillList items={[d.intro_video_path, d.outro_video_path].filter(hasText)} />
     </PhaseShell>
   );
@@ -384,35 +458,38 @@ export function PipelinePhaseCards({ pipelineOutput, variant = "panel" }: Pipeli
   if (!pipelineOutput) return null;
 
   const sections = [
-    <PlanningSection key="planning" d={pipelineOutput} />,
-    <ImplementationSection key="implementation" d={pipelineOutput} />,
-    <ReviewSection key="review" d={pipelineOutput} />,
-    <NarrationSection key="narration" d={pipelineOutput} />,
-    <AudioSection key="audio" d={pipelineOutput} />,
-    <MuxSection key="mux" d={pipelineOutput} />,
+    PlanningSection({ d: pipelineOutput, surface: variant }),
+    ImplementationSection({ d: pipelineOutput, surface: variant }),
+    ReviewSection({ d: pipelineOutput, surface: variant }),
+    NarrationSection({ d: pipelineOutput, surface: variant }),
+    AudioSection({ d: pipelineOutput, surface: variant }),
+    MuxSection({ d: pipelineOutput, surface: variant }),
   ].filter(Boolean);
 
   if (sections.length === 0) return null;
 
+  const renderedSections = sections.map((section, index) => (
+    <Fragment key={index}>{section}</Fragment>
+  ));
+
   if (variant === "embedded") {
     return (
       <div className="space-y-3">
-        {sections}
+        {renderedSections}
       </div>
     );
   }
 
   return (
-    <div className="gsap-plan-card relative flex aspect-video w-full flex-col overflow-hidden rounded-xl border border-cyan-500/10 bg-black/50 shadow-2xl ring-1 ring-cyan-500/8 backdrop-blur-xl xl:aspect-auto xl:min-h-0 xl:flex-1">
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/30 to-transparent" />
-      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.05] px-4 py-2.5">
-        <div className="flex items-center gap-2 text-cyan-400/65">
+    <div className="gsap-plan-card flex aspect-video w-full flex-col overflow-hidden rounded-lg bg-black/18 xl:aspect-auto xl:min-h-0 xl:flex-1">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/[0.045] px-1 pb-2">
+        <div className="flex items-center gap-2 text-cyan-400/58">
           <ListVideo className="h-4 w-4" />
-          <h2 className="text-[11px] font-mono uppercase tracking-widest">Structured Output</h2>
+          <h2 className="text-[11px] font-mono uppercase tracking-widest">Pipeline Progress</h2>
         </div>
-        <span className="text-[9px] font-mono text-white/28">{sections.length} phases</span>
+        <span className="text-[9px] font-mono text-white/25">{sections.length} phases</span>
       </div>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto custom-scrollbar p-3">{sections}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar px-1 py-3">{renderedSections}</div>
     </div>
   );
 }

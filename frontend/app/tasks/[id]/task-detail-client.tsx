@@ -816,10 +816,13 @@ export default function TaskDetailClient() {
   useGSAP(() => {
     if (!task || loading || !containerRef.current) return;
 
-    gsap.killTweensOf(".gsap-video-placeholder");
+    const videoPlaceholder = containerRef.current.querySelector(".gsap-video-placeholder");
+    if (!videoPlaceholder) return;
+
+    gsap.killTweensOf(videoPlaceholder);
 
     if (task.status === "running" || task.status === "pending") {
-      gsap.to(".gsap-video-placeholder", {
+      gsap.to(videoPlaceholder, {
         borderColor: "rgba(6, 182, 212, 0.3)",
         boxShadow: "0 0 30px rgba(6, 182, 212, 0.15)",
         duration: 2,
