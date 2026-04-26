@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import Link from "next/link";
-import { ArrowLeft, Check, Copy, FileCode2, Film, Loader2, Play, Terminal, Trash2, X, XCircle } from "lucide-react";
+import { ArrowLeft, Check, Copy, Expand, FileCode2, Film, Loader2, Play, Terminal, Trash2, X, XCircle } from "lucide-react";
 
 import { LogViewer } from "@/components/log-viewer";
 import { PipelinePhaseCards } from "@/components/pipeline-phase-cards";
@@ -367,10 +367,12 @@ function ManimScriptPanel({
   sceneFile,
   sceneClass,
   sourceCode,
+  onExpand,
 }: {
   sceneFile: string | null;
   sceneClass: string | null;
   sourceCode: string | null;
+  onExpand: () => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -387,43 +389,192 @@ function ManimScriptPanel({
 
   const hasScript = !!sourceCode;
   const hasMeta = !!sceneFile || !!sceneClass;
+  const lines = useMemo(() => (sourceCode ? sourceCode.split(/\r?\n/) : []), [sourceCode]);
+  const previewLines = lines.slice(0, 140);
+  const fileName = sceneFile?.split(/[\\/]/).pop() ?? "scene.py";
 
   if (!hasScript && !hasMeta) {
     return null;
   }
 
   return (
-    <div className="rounded-xl border border-white/5 bg-white/[0.02] overflow-hidden flex flex-col h-full max-h-[500px]">
-      <div className="flex items-center justify-between p-3 border-b border-white/5 bg-black/20 shrink-0">
-        <div className="flex items-center gap-2 text-cyan-500/70">
-          <FileCode2 className="h-3.5 w-3.5" />
-          <h3 className="text-[10px] font-mono uppercase tracking-widest text-cyan-400">manim script</h3>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-white/5 bg-white/[0.02]">
+      <div className="shrink-0 border-b border-white/5 bg-black/20 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2 text-cyan-500/70">
+            <FileCode2 className="h-3.5 w-3.5 shrink-0" />
+            <div className="min-w-0">
+              <h3 className="truncate text-[10px] font-mono uppercase tracking-widest text-cyan-400">manim script</h3>
+              <div className="mt-1 flex min-w-0 items-center gap-2 text-[9px] font-mono text-white/28">
+                {sceneFile && <span className="truncate">{fileName}</span>}
+                {sceneClass && <span className="truncate text-white/36">{sceneClass}</span>}
+                {hasScript && <span className="shrink-0">{lines.length} lines</span>}
+              </div>
+            </div>
+          </div>
+          {hasScript && (
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCopy}
+                className="h-7 border-white/10 bg-white/[0.02] px-2.5 text-[10px] text-white/65 hover:bg-white/[0.05] hover:text-white"
+              >
+                {copied ? <Check className="mr-1.5 h-3 w-3" /> : <Copy className="mr-1.5 h-3 w-3" />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                onClick={onExpand}
+                className="border-white/10 bg-white/[0.02] text-white/60 hover:bg-cyan-500/[0.08] hover:text-cyan-300"
+                aria-label="Open full source"
+              >
+                <Expand className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
         </div>
-        {hasScript && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleCopy}
-            className="border-white/10 bg-white/[0.02] text-white/75 hover:bg-white/[0.05] hover:text-white h-7 px-3 text-xs"
-          >
-            {copied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
-            {copied ? "Copied" : "Copy"}
-          </Button>
-        )}
       </div>
 
-      <div className="flex-1 overflow-auto bg-black/30 shadow-inner">
+      <div className="min-h-0 flex-1 overflow-auto bg-black/30 shadow-inner custom-scrollbar">
         {hasScript ? (
-          <pre className="p-4 font-mono text-[12px] leading-6 text-white/80">
-            <code>{sourceCode}</code>
-          </pre>
+          <div className="w-max min-w-full py-3 font-mono text-[11px] leading-[18px] text-left">
+            {previewLines.map((line, index) => (
+              <div key={index} className="grid grid-cols-[3rem_minmax(0,1fr)] hover:bg-white/[0.025]">
+                <span className="sticky left-0 z-10 select-none border-r border-white/[0.04] bg-black/70 pr-2 text-right text-white/18">
+                  {index + 1}
+                </span>
+                <code className="whitespace-pre px-3 text-white/72">{line || " "}</code>
+              </div>
+            ))}
+            {lines.length > previewLines.length && (
+              <button
+                type="button"
+                onClick={onExpand}
+                className="ml-12 mt-3 rounded-md border border-cyan-500/15 bg-cyan-500/[0.05] px-3 py-1.5 text-[10px] font-mono uppercase tracking-widest text-cyan-300/70 hover:bg-cyan-500/[0.1]"
+              >
+                Open full source ({lines.length - previewLines.length} more lines)
+              </button>
+            )}
+          </div>
         ) : (
           <div className="flex items-center justify-center h-full p-4">
             <span className="text-[11px] font-mono text-white/30 tracking-widest uppercase">No source code available</span>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function SourceCodeDrawer({
+  sceneFile,
+  sceneClass,
+  sourceCode,
+  open,
+  onClose,
+}: {
+  sceneFile: string | null;
+  sceneClass: string | null;
+  sourceCode: string | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const lines = useMemo(() => (sourceCode ? sourceCode.split(/\r?\n/) : []), [sourceCode]);
+  const fileName = sceneFile?.split(/[\\/]/).pop() ?? "scene.py";
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose, open]);
+
+  const handleCopy = async () => {
+    if (!sourceCode) return;
+    try {
+      await navigator.clipboard.writeText(sourceCode);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[85] flex items-stretch justify-end bg-black/55 backdrop-blur-sm">
+      <button
+        type="button"
+        aria-label="Close source code"
+        className="absolute inset-0 cursor-default"
+        onClick={onClose}
+      />
+      <aside className="relative z-10 flex h-full w-full max-w-5xl flex-col border-l border-white/10 bg-background/96 shadow-2xl">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/8 px-5 py-4">
+          <div className="min-w-0">
+            <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-cyan-400/70">
+              Source Code
+            </div>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 font-mono text-sm text-white/70">
+              <span className="truncate">{fileName}</span>
+              {sceneClass && <span className="text-white/35">{sceneClass}</span>}
+              <span className="text-white/28">{lines.length} lines</span>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {sourceCode && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCopy}
+                className="h-7 border-white/10 bg-white/[0.03] px-2.5 text-[10px] text-white/60 hover:bg-white/[0.08] hover:text-white"
+              >
+                {copied ? <Check className="mr-1.5 h-3 w-3" /> : <Copy className="mr-1.5 h-3 w-3" />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              onClick={onClose}
+              className="border-white/10 bg-white/[0.03] text-white/60 hover:bg-white/[0.08] hover:text-white"
+              aria-label="Close source code"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto bg-black/40 custom-scrollbar">
+          {sourceCode ? (
+            <div className="w-max min-w-full py-4 font-mono text-[12px] leading-5 text-left">
+              {lines.map((line, index) => (
+                <div key={index} className="grid grid-cols-[4rem_minmax(0,1fr)] hover:bg-white/[0.025]">
+                  <span className="sticky left-0 z-10 select-none border-r border-white/[0.04] bg-black/80 pr-3 text-right text-white/20">
+                    {index + 1}
+                  </span>
+                  <code className="whitespace-pre px-4 text-white/78">{line || " "}</code>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center p-6">
+              <span className="text-[11px] font-mono uppercase tracking-widest text-white/30">
+                No source code available
+              </span>
+            </div>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }
@@ -501,6 +652,7 @@ export default function TaskDetailClient() {
   const [terminating, setTerminating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState(false);
   const containerRef = useRef<HTMLElement>(null);
   const refreshInFlightRef = useRef(false);
 
@@ -835,6 +987,7 @@ export default function TaskDetailClient() {
                   sceneFile={task.pipeline_output?.scene_file ?? null}
                   sceneClass={task.pipeline_output?.scene_class ?? null}
                   sourceCode={task.pipeline_output?.source_code ?? null}
+                  onExpand={() => setSourceOpen(true)}
                 />
               </div>
             )}
@@ -884,6 +1037,13 @@ export default function TaskDetailClient() {
         taskId={task.id}
         open={reportOpen}
         onClose={() => setReportOpen(false)}
+      />
+      <SourceCodeDrawer
+        sceneFile={task.pipeline_output?.scene_file ?? null}
+        sceneClass={task.pipeline_output?.scene_class ?? null}
+        sourceCode={task.pipeline_output?.source_code ?? null}
+        open={sourceOpen}
+        onClose={() => setSourceOpen(false)}
       />
     </main>
   );
