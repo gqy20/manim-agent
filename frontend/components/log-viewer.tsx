@@ -248,46 +248,64 @@ function LogLine({ text, timestamp }: { text: string; timestamp: string }) {
 }
 
 function ToolStartView({ payload, timestamp }: { payload: ToolStartPayload; timestamp: string }) {
+  const [expanded, setExpanded] = useState(false);
   const entries = Object.entries(payload.input_summary).slice(0, 4);
 
   return (
-    <div className="my-1 flex min-w-0 flex-col gap-1.5 rounded-md border border-blue-500/15 bg-blue-500/[0.04] px-3 py-2">
+    <div className="my-0.5 flex min-w-0 flex-col border-l-2 border-blue-500/18 py-1 pl-3">
       <span className={`${TIMESTAMP_COL_CLASS} select-none`}>{formatEventTime(timestamp)}</span>
-      <div className="flex items-start gap-2">
-        <span className="mt-[3px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-500/10 text-blue-300/80">
+      <button
+        type="button"
+        onClick={() => setExpanded((current) => !current)}
+        className="mt-[2px] flex min-w-0 items-center gap-2 text-left text-[11px] text-blue-200/70 hover:text-blue-200"
+      >
+        <span
+          className="inline-block text-[10px] text-blue-300/70 transition-transform"
+          style={{ transform: expanded ? "rotate(90deg)" : "none" }}
+        >
+          ▶
+        </span>
+        <span className="shrink-0 rounded-sm bg-blue-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-blue-400">
+          CALL
+        </span>
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-blue-500/8 text-blue-300/75">
           <ToolIcon name={payload.name} />
         </span>
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
-            <span className="shrink-0 rounded-sm bg-blue-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold tracking-wider text-blue-400">
-              CALL
-            </span>
-            <span className="min-w-0 truncate text-[11px] font-semibold text-blue-200" title={payload.name}>
-              {payload.name}
-            </span>
-            <span className="shrink-0 text-[10px] font-mono text-blue-500/40">
-              {payload.tool_use_id.slice(-8)}
-            </span>
-          </div>
-          {entries.length > 0 && (
-            <div className="mt-2 space-y-1.5 text-[10px] font-mono">
+        <span className="min-w-0 truncate font-semibold" title={payload.name}>
+          {payload.name}
+        </span>
+        {entries.length > 0 && (
+          <span className="min-w-0 truncate text-white/30">
+            {entries.map(([key]) => key).join(", ")}
+          </span>
+        )}
+        <span className="ml-auto shrink-0 font-mono text-[10px] text-blue-500/35">
+          {payload.tool_use_id.slice(-8)}
+        </span>
+      </button>
+      <AnimatePresence>
+        {expanded && entries.length > 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="mt-2 overflow-hidden"
+          >
+            <div className="space-y-1.5 rounded-md border border-blue-400/10 bg-blue-500/[0.025] p-2 text-[10px] font-mono">
               {entries.map(([key, value]) => (
-                <div
-                  key={key}
-                  className="min-w-0 overflow-hidden rounded-md border border-blue-400/10 bg-black/25"
-                >
-                  <div className="border-b border-blue-400/10 px-2 py-1 text-[9px] uppercase tracking-[0.16em] text-blue-300/45">
+                <div key={key} className="min-w-0">
+                  <div className="mb-1 text-[9px] uppercase tracking-[0.16em] text-blue-300/45">
                     {key}
                   </div>
-                  <pre className="max-h-20 overflow-hidden whitespace-pre-wrap break-words px-2 py-1.5 leading-relaxed text-blue-100/65">
+                  <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-black/22 px-2 py-1.5 leading-relaxed text-blue-100/58 custom-scrollbar">
                     {formatToolValue(value)}
                   </pre>
                 </div>
               ))}
             </div>
-          )}
-        </div>
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

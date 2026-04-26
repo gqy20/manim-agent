@@ -966,14 +966,14 @@ export default function TaskDetailClient() {
                 }`}
               >
                 <FileCode2 className="h-3.5 w-3.5" />
-                Source Code
+                Code
               </button>
             </div>
             {activeTab === "logs" && (
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:pr-2">
+              <div className="flex items-center sm:justify-end sm:pr-1">
                 {logs.length > 0 && (
-                  <span className="rounded bg-cyan-950/30 px-2 py-[2px] font-mono text-[9px] text-cyan-400/50">
-                    {logs.length} EVTS
+                  <span className="whitespace-nowrap rounded border border-cyan-500/10 bg-cyan-500/[0.04] px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-cyan-400/45">
+                    {logs.length} events
                   </span>
                 )}
               </div>
