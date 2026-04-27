@@ -39,7 +39,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--status",
         action="append",
-        choices=["pending", "running", "completed", "failed"],
+        choices=["pending", "running", "completed", "failed", "stopped"],
         help="Match one or more task statuses.",
     )
     parser.add_argument(

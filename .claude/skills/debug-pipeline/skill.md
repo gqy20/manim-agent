@@ -17,21 +17,25 @@ description: >
 ## 项目 Debug 体系概览
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Debug Page: http://localhost:3147/tasks/{id}/debug                   │
-│  前端: frontend/app/tasks/[id]/debug/task-debug-client.tsx            │
-├──────────────┬──────────────────────────┬────────────────────────────┤
-│  阶段列表     │  Prompt Artifact         │  Issue Tracker (问题池)     │
-│  (左侧栏)     │  详情 (中间栏)           │  (右侧栏)                  │
-│              │                          │                            │
-│  phase1       │  [system] [user]        │  自动写入 + 手动创建       │
-│  phase2a      │  [inputs] [options]     │  12种分类 × 4级严重度      │
-│  phase2b      │  [output]               │  关联 phase_id + artifact  │
-│  phase3       │  ├ readable view        │  metadata JSONB 存上下文   │
-│  phase3_5     │  └ json view            │  open → fixed 状态流转     │
-│  phase4       │                          │                            │
-│  phase5       │                          │                            │
-└──────────────┴──────────────────────────┴────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Debug Page: http://localhost:3147/tasks/{id}/debug                           │
+│  前端: frontend/app/tasks/[id]/debug/task-debug-client.tsx                    │
+├──────────────┬──────────────────────────┬────────────────────────────────────┤
+│  阶段列表     │  Prompt Artifact         │  Issue Tracker (问题池)             │
+│  (左侧栏)     │  详情 (中间栏)           │  (右侧栏)                            │
+│              │                          │                                      │
+│  phase1       │  [system] [user]        │  自动写入 + 手动创建                 │
+│  phase2a      │  [inputs] [options]     │  12种分类 × 4级严重度                │
+│  phase2b      │  [output]               │  关联 phase_id + artifact            │
+│  phase3       │  ├ readable view        │  metadata JSONB 存上下文             │
+│  phase3_5     │  └ json view            │  open → fixed 状态流转               │
+│  phase4       │                          │                                      │
+│  phase5       │                          │                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  全局问题页: http://localhost:3147/debug/issues                               │
+│  前端: frontend/app/debug/issues/page.tsx                                     │
+│  功能: 跨任务查看所有 issues，支持按状态/级别/分类/任务ID/关键词筛选           │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Debug Issue Tracker 机制
@@ -97,8 +101,23 @@ curl -s -X POST http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues \
     "metadata": { ... }
   }'
 
-# 列出 Issues
+# 列出单任务 Issues
 curl -s http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues
+
+# ═══ 全局 Issues 列表（跨任务）═══
+# GET /api/tasks/debug/issues — 支持筛选参数:
+#   limit (1-500, 默认100) | status (open/fixed/ignored)
+#   severity (low/medium/high/blocker) | issue_type (12种之一)
+#   task_id (按任务过滤) | search (搜索 title/description, ILIKE 模糊匹配)
+#
+# 示例：查看所有 open 的 blocker 级问题
+curl -s "http://127.0.0.1:8471/api/tasks/debug/issues?status=open&severity=blocker&limit=50"
+#
+# 示例：按关键词搜索 TTS 相关问题
+curl -s "http://127.0.0.1:8471/api/tasks/debug/issues?search=TTS&limit=100"
+#
+# 示例：查看某个任务的所有 issues
+curl -s "http://127.0.0.1:8471/api/tasks/debug/issues?task_id=<task_id>&limit=200"
 
 # 更新 Issue（如标记为 fixed）
 curl -s -X PATCH http://127.0.0.1:8471/api/tasks/debug/issues/<issue_id> \
@@ -108,6 +127,12 @@ curl -s -X PATCH http://127.0.0.1:8471/api/tasks/debug/issues/<issue_id> \
 # 删除 Issue
 curl -s -X DELETE http://127.0.0.1:8471/api/tasks/debug/issues/<issue_id>
 ```
+
+**全局 Issues 页面前端入口**: `http://localhost:3147/debug/issues`
+- 前端实现: [page.tsx](frontend/app/debug/issues/page.tsx)
+- 统计面板: total / open / blocker 计数
+- 筛选条件: 关键词搜索 + task_id + 状态 + 严重度 + 分类
+- 每条 issue 卡片可跳转到对应任务的 Debug 页面
 
 ### Skill 自动写入规则
 
@@ -419,7 +444,7 @@ curl -s http://127.0.0.1:8471/api/tasks/<task_id>/debug/prompts/phase1 | python 
 curl -s http://127.0.0.1:8471/api/tasks/<task_id>/debug/prompts/phase2a | python -m json.tool
 curl -s http://127.0.0.1:8471/api/tasks/<task_id>/debug/prompts/phase2b | python -m json.tool
 
-# ═══ ═══ ISSUES 汇总（本次调试自动创建的 + 可能已有的）═══ ═══
+# ═══ 单任务 ISSUES（本次调试自动创建的 + 可能已有的）═══
 curl -s http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues | python -c "
 import sys, json
 data = json.load(sys.stdin)
@@ -429,6 +454,36 @@ for i in issues:
     sev = i.get('severity','?')
     t = i.get('issue_type','?')
     print(f'  [{sev:>8}] [{t:>6}] {i[\"title\"]}  (phase={i.get(\"phase_id\",\"-\")})')
+"
+
+# ═══ 全局 ISSUES（跨任务视角，用于发现重复问题模式）═══
+# 查看当前任务在全局中的位置
+curl -s "http://127.0.0.1:8471/api/tasks/debug/issues?task_id=<task_id>&limit=200" | python -c "
+import sys, json
+data = json.load(sys.stdin)
+issues = data.get('issues', [])
+print(f'Global view for this task: {len(issues)} issues')
+"
+
+# 查看所有 open 的 blocker/high 问题（跨任务）
+curl -s "http://127.0.0.1:8471/api/tasks/debug/issues?status=open&severity=blocker&limit=50" | python -c "
+import sys, json
+data = json.load(sys.stdin)
+issues = data.get('issues', [])
+print(f'Open blockers across all tasks: {len(issues)}')
+for i in issues[:10]:
+    print(f'  [{i[\"severity\"]}] {i[\"title\"]} (task={i[\"task_id\"]}, phase={i.get(\"phase_id\",\"-\")})')
+if len(issues) > 10: print(f'  ... and {len(issues)-10} more')
+"
+
+# 按关键词搜索同类问题（例如搜索 TTS 相关）
+curl -s "http://127.0.0.1:8471/api/tasks/debug/issues?search=TTS&limit=100" | python -c "
+import sys, json
+data = json.load(sys.stdin)
+issues = data.get('issues', [])
+print(f'Issues matching \"TTS\": {len(issues)}')
+for i in issues[:10]:
+    print(f'  [{i[\"severity\"]}] {i[\"title\"]} (task={i[\"task_id\"]})')
 "
 
 # ═══ 本地文件 ═══
@@ -476,7 +531,8 @@ ls -la backend/output/<task_id>/debug/
 ║  DEBUG LINKS                                                 ║
 ║    Page:   http://localhost:3147/tasks/<task_id>               ║
 ║    Debug:  http://localhost:3147/tasks/<task_id>/debug         ║
-║    Issues: 在 Debug 页面右侧「问题池」面板查看所有 issues          ║
+║    Issues (单任务): Debug 页面右侧「问题池」面板                   ║
+║    Issues (全局):  http://localhost:3147/debug/issues           ║
 ╚════════════════════════════════════════════════════════════════╝
 ```
 
@@ -503,5 +559,5 @@ ls -la backend/output/<task_id>/debug/
 4. **Issue 写入失败不阻断调试**: 即使 issue API 报错，仍继续完成后续阶段的核对和报告
 5. **Prompt Artifacts 覆盖范围**: 仅 phase1 ~ phase2b 有写入；phase3+ 依赖 pipeline_output
 6. **source 字段区分来源**: skill 自动写入的 issue 用 `source="auto-debug"`，用户手动在 Debug 页面创建的用 `source="manual"`
-7. **报告中始终附带两个链接 + issue 提示**
+7. **全局 Issues API (`GET /debug/issues`)**: 支持跨任务筛选（status/severity/issue_type/task_id/search），用于发现重复问题模式和系统性风险。前端入口 `/debug/issues`
 8. **Issue 标题和描述统一使用中文**: 方便在 Debug 页面的问题池中快速浏览和分类

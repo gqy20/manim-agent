@@ -12,6 +12,7 @@ tmp/
 artifacts/
 3b1b_videos/
 # Claude Code (local permissions & sessions not versioned)
+.claude/settings.json
 .claude/settings.local.json
 .claude/sessions/
 
