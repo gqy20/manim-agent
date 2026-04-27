@@ -21,11 +21,11 @@ tmp
 3b1b-videos-source
 3b1b_videos
 
-out.mp4
-phase*.json
-phase*.py
-phase*.mp4
-scene.py
+/out.mp4
+/phase*.json
+/phase*.py
+/phase*.mp4
+/scene.py
 
 .playwright-cli
 .playwright-mcp
