@@ -47,33 +47,42 @@ export default function RootLayout({
           </svg>
         </div>
 
-        <header className="fixed left-0 right-0 top-0 z-50 bg-background/60 pt-[var(--safe-top)] backdrop-blur-2xl supports-[backdrop-filter]:bg-background/30">
+        <header className="fixed left-0 right-0 top-0 z-50 bg-background/55 pt-[var(--safe-top)] backdrop-blur-2xl supports-[backdrop-filter]:bg-background/28">
           <nav className="flex h-14 w-full items-center justify-between px-4 md:px-6">
-            <div className="flex items-center gap-6">
-              <Link href="/" className="group flex items-center gap-2.5">
-                <Logo
-                  size={24}
-                  className="text-primary transition-transform duration-300 group-hover:rotate-12"
-                />
-                <div className="flex flex-col leading-none">
-                  <span className="text-sm font-semibold tracking-tight transition-colors group-hover:text-foreground">
-                    Manim Agent
-                  </span>
-                </div>
+            <div className="flex items-center gap-7">
+              <Link href="/create" className="group flex items-center gap-2.5">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-primary/18 bg-primary/[0.045] text-primary transition-transform duration-300 group-hover:rotate-12">
+                  <Logo size={22} />
+                </span>
+                <span className="text-sm font-semibold tracking-tight transition-colors group-hover:text-foreground">
+                  Manim Agent
+                </span>
               </Link>
-              <Link
-                href="/history"
-                className="hidden text-sm text-foreground/36 transition hover:text-foreground/65 sm:block"
-              >
-                历史任务
-              </Link>
+              <div className="hidden items-center gap-5 sm:flex">
+                <Link
+                  href="/create"
+                  className="text-sm text-foreground/72 transition hover:text-foreground"
+                >
+                  创建
+                </Link>
+                <Link
+                  href="/history"
+                  className="text-sm text-foreground/38 transition hover:text-foreground/68"
+                >
+                  历史
+                </Link>
+              </div>
             </div>
+            <span className="flex items-center gap-2 rounded-lg border border-white/8 bg-white/[0.025] px-2.5 py-1.5 text-xs text-foreground/42">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_12px_oklch(0.72_0.11_250/0.8)]" />
+              Ready
+            </span>
           </nav>
         </header>
 
         <ErrorBoundary>
           <PageTransition>
-            <div className="flex min-h-0 h-full flex-1 flex-col overflow-y-auto pt-[calc(var(--app-header-height)+var(--safe-top))]">
+            <div className="flex h-full min-h-0 flex-1 flex-col overflow-y-auto pt-[calc(var(--app-header-height)+var(--safe-top))]">
               {children}
             </div>
           </PageTransition>

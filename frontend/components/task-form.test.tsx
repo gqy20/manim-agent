@@ -25,31 +25,14 @@ vi.mock("@/lib/logger", () => ({
   },
 }));
 
-vi.mock("@gsap/react", () => ({
-  useGSAP: vi.fn(),
+vi.mock("gsap", () => ({
+  __esModule: true,
+  default: {
+    to: vi.fn().mockImplementation((_target, config?: { onComplete?: () => void }) => {
+      config?.onComplete?.();
+    }),
+  },
 }));
-
-vi.mock("gsap", () => {
-  const timeline = (config?: { onComplete?: () => void }) => {
-    const api = {
-      to: vi.fn().mockImplementation(() => {
-        config?.onComplete?.();
-        return api;
-      }),
-      play: vi.fn().mockImplementation(() => {
-        config?.onComplete?.();
-      }),
-    };
-    return api;
-  };
-  return {
-    default: {
-      timeline,
-      to: vi.fn(),
-      fromTo: vi.fn(),
-    },
-  };
-});
 
 describe("TaskForm", () => {
   beforeEach(() => {
@@ -58,15 +41,15 @@ describe("TaskForm", () => {
     clarifyContentMock.mockReset();
   });
 
-  it("skips clarification and creates the task directly", async () => {
-    createTaskMock.mockResolvedValue({ id: "task-skip" });
+  it("creates the task directly from the generation action", async () => {
+    createTaskMock.mockResolvedValue({ id: "task-create" });
     const user = userEvent.setup();
 
     render(<TaskForm />);
 
-    const prompt = screen.getByRole("textbox");
+    const prompt = screen.getByRole("textbox", { name: /讲解主题/i });
     await user.type(prompt, "用动画解释勾股定理");
-    await user.click(screen.getByRole("button", { name: /跳过理解，直接生成/i }));
+    await user.click(screen.getByRole("button", { name: /生成动画/i }));
 
     await waitFor(() => expect(createTaskMock).toHaveBeenCalledTimes(1));
     expect(clarifyContentMock).not.toHaveBeenCalled();
@@ -75,10 +58,10 @@ describe("TaskForm", () => {
         user_text: "用动画解释勾股定理",
       }),
     );
-    expect(pushMock).toHaveBeenCalledWith("/tasks/task-skip");
+    expect(pushMock).toHaveBeenCalledWith("/tasks/task-create");
   });
 
-  it("clarifies then immediately creates the task with recommended text", async () => {
+  it("clarifies the prompt and keeps generation as the next action", async () => {
     clarifyContentMock.mockResolvedValue({
       original_user_text: "高斯定理",
       clarification: {
@@ -94,22 +77,17 @@ describe("TaskForm", () => {
         recommended_request_cn: "请用教学动画讲解散度定理。",
       },
     });
-    createTaskMock.mockResolvedValue({ id: "task-auto-run" });
     const user = userEvent.setup();
 
     render(<TaskForm />);
 
-    const prompt = screen.getByRole("textbox");
+    const prompt = screen.getByRole("textbox", { name: /讲解主题/i });
     await user.type(prompt, "高斯定理");
-    await user.click(screen.getByRole("button", { name: /理解并直接生成/i }));
+    await user.click(screen.getByRole("button", { name: /理解内容/i }));
 
     await waitFor(() => expect(clarifyContentMock).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(createTaskMock).toHaveBeenCalledTimes(1));
-    expect(createTaskMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_text: "请用教学动画讲解散度定理。",
-      }),
-    );
-    expect(pushMock).toHaveBeenCalledWith("/tasks/task-auto-run");
+    expect(createTaskMock).not.toHaveBeenCalled();
+    expect(await screen.findByText("已理解内容")).toBeInTheDocument();
+    expect(prompt).toHaveValue("请用教学动画讲解散度定理。");
   });
 });
