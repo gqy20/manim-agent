@@ -100,6 +100,41 @@ def write_prompt_artifact(
     return str(artifact_path)
 
 
+def update_prompt_artifact(
+    *,
+    output_dir: str,
+    phase_id: str,
+    output_snapshot: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> str | None:
+    """Merge completion data into an existing phase prompt/debug snapshot."""
+    if not prompt_debug_enabled():
+        return None
+
+    root = Path(output_dir).resolve()
+    debug_dir = root / "debug"
+    safe_phase_id = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in phase_id)
+    artifact_path = debug_dir / f"{safe_phase_id}.prompt.json"
+    if not artifact_path.exists():
+        return None
+
+    try:
+        payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    if output_snapshot is not None:
+        payload["output_snapshot"] = _json_safe(output_snapshot)
+    if error is not None:
+        payload["error"] = error
+
+    artifact_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _update_prompt_index(debug_dir, payload, artifact_path)
+    return str(artifact_path)
+
+
 def _update_prompt_index(debug_dir: Path, payload: dict[str, Any], artifact_path: Path) -> None:
     index_path = debug_dir / "prompt_index.json"
     index: dict[str, Any] = {"task_id": payload["task_id"], "phases": []}

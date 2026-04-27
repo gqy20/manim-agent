@@ -22,7 +22,7 @@ from .pipeline_gates import (
     narration_is_too_short_for_video,
 )
 from .prompt_builder import format_target_duration
-from .prompt_debug import write_prompt_artifact
+from .prompt_debug import update_prompt_artifact, write_prompt_artifact
 from .render_review import extract_review_frames
 from .schemas import Phase3RenderReviewOutput, PhaseSchemaRegistry
 from .segment_renderer import (
@@ -210,6 +210,14 @@ async def run_render_review(
         raw = json.loads(raw)
     result_summary = _result_message_summary(result_message)
     output = Phase3RenderReviewOutput.model_validate(raw)
+    update_prompt_artifact(
+        output_dir=cwd,
+        phase_id="phase3",
+        output_snapshot={
+            "review_output": output.model_dump(),
+            "result_summary": result_summary,
+        },
+    )
     if return_summary:
         return output, result_summary
     return output
@@ -720,6 +728,20 @@ async def run_phase4_tts(
     )
     if audio_result.bgm_path:
         dispatcher._print(f"  [BGM] Done: path={audio_result.bgm_path}")
+    update_prompt_artifact(
+        output_dir=str(Path(output_path).parent),
+        phase_id="phase4",
+        output_snapshot={
+            "beats": [beat.model_dump() for beat in audio_result.beats],
+            "timeline_path": audio_result.timeline_path,
+            "timeline_total_duration_seconds": audio_result.timeline.total_duration_seconds,
+            "audio_concat_path": audio_result.concatenated_audio_path,
+            "subtitle_path": audio_result.concatenated_subtitle_path,
+            "bgm_path": audio_result.bgm_path,
+            "bgm_duration_ms": audio_result.bgm_duration_ms,
+            "audio_mix_mode": getattr(po, "audio_mix_mode", None) if po is not None else None,
+        },
+    )
     return audio_result
 
 
@@ -823,6 +845,17 @@ async def run_phase5_mux(
             dispatcher._print(f"[MUX] Concatenated video: {final_video}")
 
     dispatcher._print(f"\n{_EMOJI['check']} Video generation complete: {final_video}")
+    update_prompt_artifact(
+        output_dir=str(Path(output_path).parent),
+        phase_id="phase5",
+        output_snapshot={
+            "final_video_output": final_video,
+            "used_segment_visuals": used_segment_visuals,
+            "segment_video_paths": list(getattr(po, "segment_video_paths", []) or [])
+            if po is not None
+            else [],
+        },
+    )
     return final_video
 
 

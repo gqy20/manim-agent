@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from manim_agent.prompt_debug import write_prompt_artifact
+from manim_agent.prompt_debug import update_prompt_artifact, write_prompt_artifact
 
 
 def test_write_prompt_artifact_defaults_to_enabled(monkeypatch, tmp_path):
@@ -60,3 +60,26 @@ def test_write_prompt_artifact_updates_index(monkeypatch, tmp_path):
     assert artifact["referenced_artifacts"] == {"plan": "plan.md"}
     assert index["task_id"] == tmp_path.name
     assert index["phases"][0]["phase_id"] == "phase/1"
+
+
+def test_update_prompt_artifact_merges_output_snapshot(monkeypatch, tmp_path):
+    monkeypatch.setenv("ENABLE_PROMPT_DEBUG", "1")
+    write_prompt_artifact(
+        output_dir=str(tmp_path),
+        phase_id="phase1",
+        phase_name="Planning",
+        system_prompt="system prompt",
+        user_prompt="user prompt",
+    )
+
+    updated_path = update_prompt_artifact(
+        output_dir=str(tmp_path),
+        phase_id="phase1",
+        output_snapshot={"plan_text": "ok"},
+    )
+
+    assert updated_path is not None
+    artifact = json.loads((tmp_path / "debug" / "phase1.prompt.json").read_text())
+    assert artifact["system_prompt"] == "system prompt"
+    assert artifact["user_prompt"] == "user prompt"
+    assert artifact["output_snapshot"] == {"plan_text": "ok"}

@@ -55,7 +55,7 @@ from .pipeline_phases345 import (
     run_render_review,
 )
 from .pipeline_trace import TraceSpan, create_trace_id
-from .prompt_debug import write_prompt_artifact
+from .prompt_debug import update_prompt_artifact, write_prompt_artifact
 from .schemas import PhaseSchemaRegistry
 
 logger = logging.getLogger(__name__)
@@ -290,6 +290,15 @@ async def run_pipeline(
 
         plan_text = dispatcher.partial_plan_text
         build_spec = getattr(dispatcher, "partial_build_spec", None)
+        update_prompt_artifact(
+            output_dir=resolved_cwd,
+            phase_id="phase1",
+            output_snapshot={
+                "plan_text": plan_text,
+                "build_spec": _debug_dump(build_spec),
+                "result_summary": planning_result_summary,
+            },
+        )
         _emit_phase_exit(
             event_callback,
             phase_id="phase1",
@@ -393,6 +402,16 @@ async def run_pipeline(
         )
         dispatcher.phase2_script_draft_analysis_path = draft_analysis_path
         dispatcher._print(f"  [BUILD] Phase 2A script analysis persisted: {draft_analysis_path}")
+        update_prompt_artifact(
+            output_dir=resolved_cwd,
+            phase_id="phase2a",
+            output_snapshot={
+                "draft_output": _debug_dump(draft_output),
+                "draft_analysis": draft_analysis.model_dump(),
+                "analysis_path": draft_analysis_path,
+                "result_summary": script_draft_result_summary,
+            },
+        )
         if not draft_analysis.accepted:
             for issue in draft_analysis.issues:
                 dispatcher._print(f"  [BUILD][ERR] {issue}")
@@ -516,6 +535,16 @@ async def run_pipeline(
             output_dir=resolved_cwd,
         )
         dispatcher._print(f"  [BUILD] Phase 2 script analysis persisted: {phase2_analysis_path}")
+        update_prompt_artifact(
+            output_dir=resolved_cwd,
+            phase_id="phase2b",
+            output_snapshot={
+                "pipeline_output": _debug_dump(phase2_po),
+                "phase2_analysis": phase2_analysis.model_dump(),
+                "analysis_path": phase2_analysis_path,
+                "result_summary": implementation_result_summary,
+            },
+        )
         if not phase2_analysis.accepted:
             for issue in phase2_analysis.issues:
                 dispatcher._print(f"  [BUILD][ERR] {issue}")
@@ -644,6 +673,14 @@ async def run_pipeline(
         narration_text = narration_output.narration
         if po is not None:
             po.narration = narration_text
+        update_prompt_artifact(
+            output_dir=resolved_cwd,
+            phase_id="phase3_5",
+            output_snapshot={
+                "narration_output": _debug_dump(narration_output),
+                "narration_text": narration_text,
+            },
+        )
         dispatcher._print(
             f"  [NARRATION] Method={narration_output.generation_method}, "
             f"coverage={len(narration_output.beat_coverage)} beats, "
