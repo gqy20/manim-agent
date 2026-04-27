@@ -15,12 +15,14 @@ import {
   MessageSquarePlus,
   RefreshCw,
   Search,
+  Trash2,
   XCircle,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
   createDebugIssue,
+  deleteDebugIssue,
   getDebugPromptArtifact,
   getDebugPromptIndex,
   getTask,
@@ -30,6 +32,7 @@ import {
 import type { DebugIssue, DebugPromptArtifact, DebugPromptPhaseSummary, Task } from "@/types";
 
 type PromptTab = "system" | "user" | "inputs" | "options" | "output";
+type OutputView = "readable" | "json";
 
 const ISSUE_TYPES = [
   "prompt",
@@ -66,6 +69,28 @@ function isEmptyRecord(value: unknown) {
     value == null ||
     (typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0)
   );
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function firstRecord(...values: unknown[]) {
+  for (const value of values) {
+    const record = asRecord(value);
+    if (Object.keys(record).length > 0) return record;
+  }
+  return {};
 }
 
 function metricLabel(phase: DebugPromptPhaseSummary | null) {
@@ -135,6 +160,276 @@ function PromptBlock({
   );
 }
 
+function InfoPill({ label, value }: { label: string; value: unknown }) {
+  if (value == null || value === "") return null;
+  return (
+    <span className="font-mono text-[10px] text-white/38">
+      {label}: <span className="text-white/68">{String(value)}</span>
+    </span>
+  );
+}
+
+function TextList({ items }: { items: unknown[] }) {
+  if (items.length === 0) return null;
+  return (
+    <ul className="space-y-1.5">
+      {items.map((item, index) => (
+        <li key={index} className="flex gap-2 text-sm leading-relaxed text-white/62">
+          <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-cyan-300/55" />
+          <span>{String(item)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SummarySection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="border-t border-white/8 py-4 first:border-t-0 first:pt-0">
+      <h3 className="font-mono text-[10px] uppercase tracking-widest text-cyan-300/70">
+        {title}
+      </h3>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
+function Phase1Readable({ snapshot }: { snapshot: Record<string, unknown> }) {
+  const buildSpec = firstRecord(asRecord(snapshot.phase1_planning).build_spec, snapshot.build_spec);
+  const beats = asArray(buildSpec.beats);
+  return (
+    <div className="h-full overflow-auto rounded-lg border border-white/8 bg-black/20 px-5 py-4 custom-scrollbar">
+      <div className="flex flex-wrap gap-x-5 gap-y-2 border-b border-white/8 pb-3">
+        <InfoPill label="Mode" value={buildSpec.mode} />
+        <InfoPill label="Audience" value={buildSpec.audience} />
+        <InfoPill label="Target" value={`${buildSpec.target_duration_seconds ?? "?"}s`} />
+      </div>
+      <div className="mt-4">
+        <SummarySection title="Learning Goal">
+          <p className="text-sm leading-relaxed text-white/68">
+            {asString(buildSpec.learning_goal) || "No learning goal captured."}
+          </p>
+        </SummarySection>
+        <SummarySection title={`Beat Plan (${beats.length})`}>
+          <div className="divide-y divide-white/8">
+            {beats.map((rawBeat, index) => {
+              const beat = asRecord(rawBeat);
+              return (
+                <div key={`${beat.id ?? index}`} className="py-4 first:pt-0 last:pb-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono text-[10px] text-cyan-300/70">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <h4 className="text-sm font-semibold text-white/82">
+                      {asString(beat.title) || asString(beat.id) || "Untitled beat"}
+                    </h4>
+                    {beat.target_duration_seconds != null && (
+                      <span className="ml-auto font-mono text-[10px] text-white/35">
+                        {String(beat.target_duration_seconds)}s
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-3 text-sm leading-relaxed text-white/62">
+                    {asString(beat.visual_goal)}
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-white/44">
+                    {asString(beat.narration_intent)}
+                  </p>
+                  <div className="mt-2 text-xs leading-relaxed text-white/34">
+                    {asArray(beat.required_elements).join(" / ")}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </SummarySection>
+      </div>
+    </div>
+  );
+}
+
+function Phase2Readable({ snapshot }: { snapshot: Record<string, unknown> }) {
+  const output = firstRecord(snapshot.draft_output, snapshot.pipeline_output);
+  const analysis = firstRecord(snapshot.draft_analysis, snapshot.phase2_analysis);
+  return (
+    <div className="h-full overflow-auto rounded-lg border border-white/8 bg-black/20 px-5 py-4 custom-scrollbar">
+      <div className="flex flex-wrap gap-x-5 gap-y-2 border-b border-white/8 pb-3">
+        <InfoPill label="Scene File" value={output.scene_file} />
+        <InfoPill label="Scene Class" value={output.scene_class} />
+        <InfoPill label="Estimated" value={output.estimated_duration_seconds ? `${output.estimated_duration_seconds}s` : null} />
+      </div>
+      <div className="mt-4">
+        <SummarySection title="Build Summary">
+          <p className="text-sm leading-relaxed text-white/68">
+            {asString(output.build_summary) || "No build summary captured yet."}
+          </p>
+        </SummarySection>
+        <SummarySection title="Implemented Beats">
+          <TextList items={asArray(output.implemented_beats)} />
+        </SummarySection>
+        <SummarySection title="Analysis">
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            <InfoPill label="Accepted" value={analysis.accepted == null ? null : String(analysis.accepted)} />
+            <InfoPill label="Analysis Path" value={snapshot.analysis_path} />
+          </div>
+          <div className="mt-3">
+            <TextList items={asArray(analysis.issues)} />
+          </div>
+        </SummarySection>
+      </div>
+    </div>
+  );
+}
+
+function Phase3Readable({ snapshot }: { snapshot: Record<string, unknown> }) {
+  const review = firstRecord(snapshot.review_output);
+  return (
+    <div className="h-full overflow-auto rounded-lg border border-white/8 bg-black/20 px-5 py-4 custom-scrollbar">
+      <div className="flex flex-wrap gap-x-5 gap-y-2 border-b border-white/8 pb-3">
+        <InfoPill label="Approved" value={review.approved == null ? null : String(review.approved)} />
+        <InfoPill label="Frames" value={asArray(review.frame_analyses).length || null} />
+      </div>
+      <div className="mt-4">
+        <SummarySection title="Review Summary">
+          <p className="text-sm leading-relaxed text-white/68">
+            {asString(review.summary) || "No review summary captured yet."}
+          </p>
+        </SummarySection>
+        <SummarySection title="Blocking Issues">
+          <TextList items={asArray(review.blocking_issues)} />
+        </SummarySection>
+        <SummarySection title="Suggested Edits">
+          <TextList items={asArray(review.suggested_edits)} />
+        </SummarySection>
+      </div>
+    </div>
+  );
+}
+
+function NarrationReadable({ snapshot }: { snapshot: Record<string, unknown> }) {
+  const narration = firstRecord(snapshot.narration_output);
+  return (
+    <div className="h-full overflow-auto rounded-lg border border-white/8 bg-black/20 px-5 py-4 custom-scrollbar">
+      <div className="flex flex-wrap gap-x-5 gap-y-2 border-b border-white/8 pb-3">
+        <InfoPill label="Method" value={narration.generation_method} />
+        <InfoPill label="Chars" value={narration.char_count} />
+      </div>
+      <div className="mt-4">
+        <SummarySection title="Narration">
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/68">
+            {asString(snapshot.narration_text) || asString(narration.narration)}
+          </p>
+        </SummarySection>
+        <SummarySection title="Beat Coverage">
+          <TextList items={asArray(narration.beat_coverage)} />
+        </SummarySection>
+      </div>
+    </div>
+  );
+}
+
+function AudioReadable({ snapshot }: { snapshot: Record<string, unknown> }) {
+  return (
+    <div className="h-full overflow-auto rounded-lg border border-white/8 bg-black/20 px-5 py-4 custom-scrollbar">
+      <div className="flex flex-wrap gap-x-5 gap-y-2 border-b border-white/8 pb-3">
+        <InfoPill label="Segments" value={asArray(snapshot.beats).length || null} />
+        <InfoPill label="Timeline" value={snapshot.timeline_total_duration_seconds ? `${snapshot.timeline_total_duration_seconds}s` : null} />
+        <InfoPill label="Mix" value={snapshot.audio_mix_mode} />
+      </div>
+      <div className="mt-4">
+        <SummarySection title="Generated Assets">
+          <TextList
+            items={[
+              snapshot.audio_concat_path && `audio: ${snapshot.audio_concat_path}`,
+              snapshot.subtitle_path && `subtitle: ${snapshot.subtitle_path}`,
+              snapshot.bgm_path && `bgm: ${snapshot.bgm_path}`,
+            ].filter(Boolean)}
+          />
+        </SummarySection>
+      </div>
+    </div>
+  );
+}
+
+function MuxReadable({ snapshot }: { snapshot: Record<string, unknown> }) {
+  return (
+    <div className="h-full overflow-auto rounded-lg border border-white/8 bg-black/20 px-5 py-4 custom-scrollbar">
+      <div className="flex flex-wrap gap-x-5 gap-y-2 border-b border-white/8 pb-3">
+        <InfoPill label="Segment Visuals" value={snapshot.used_segment_visuals == null ? null : String(snapshot.used_segment_visuals)} />
+        <InfoPill label="Segments" value={asArray(snapshot.segment_video_paths).length || null} />
+      </div>
+      <div className="mt-4">
+        <SummarySection title="Final Video">
+          <p className="break-all font-mono text-xs leading-relaxed text-white/62">
+            {asString(snapshot.final_video_output) || "No final video captured yet."}
+          </p>
+        </SummarySection>
+      </div>
+    </div>
+  );
+}
+
+function GenericReadable({ snapshot }: { snapshot: Record<string, unknown> }) {
+  return (
+    <div className="h-full overflow-auto rounded-lg border border-white/8 bg-black/20 px-5 py-4 custom-scrollbar">
+      <div className="divide-y divide-white/8">
+        {Object.entries(snapshot).map(([key, value]) => (
+          <div key={key} className="py-3 first:pt-0 last:pb-0">
+            <div className="font-mono text-[9px] uppercase tracking-widest text-white/32">
+              {key}
+            </div>
+            <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-white/62 custom-scrollbar">
+              {typeof value === "string" ? value : formatJson(value)}
+            </pre>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReadableOutput({
+  artifact,
+  emptyMessage,
+}: {
+  artifact: DebugPromptArtifact | null;
+  emptyMessage: string;
+}) {
+  const snapshot = asRecord(artifact?.output_snapshot);
+  if (isEmptyRecord(snapshot)) {
+    return (
+      <div className="flex h-full min-h-[28rem] items-center justify-center rounded-lg border border-white/8 bg-black/25 p-6 text-center text-sm leading-relaxed text-white/45">
+        {emptyMessage}
+      </div>
+    );
+  }
+  if (artifact?.phase_id === "phase1") {
+    return <Phase1Readable snapshot={snapshot} />;
+  }
+  if (artifact?.phase_id === "phase2a" || artifact?.phase_id === "phase2b") {
+    return <Phase2Readable snapshot={snapshot} />;
+  }
+  if (artifact?.phase_id === "phase3") {
+    return <Phase3Readable snapshot={snapshot} />;
+  }
+  if (artifact?.phase_id === "phase3_5") {
+    return <NarrationReadable snapshot={snapshot} />;
+  }
+  if (artifact?.phase_id === "phase4") {
+    return <AudioReadable snapshot={snapshot} />;
+  }
+  if (artifact?.phase_id === "phase5") {
+    return <MuxReadable snapshot={snapshot} />;
+  }
+  return <GenericReadable snapshot={snapshot} />;
+}
+
 export default function TaskDebugClient() {
   const params = useParams();
   const taskId = params.id as string;
@@ -155,6 +450,9 @@ export default function TaskDebugClient() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedText, setSelectedText] = useState("");
   const [copied, setCopied] = useState(false);
+  const [outputView, setOutputView] = useState<OutputView>("readable");
+  const [openIssueId, setOpenIssueId] = useState<string | null>(null);
+  const [deletingIssueId, setDeletingIssueId] = useState<string | null>(null);
 
   const sortedPhases = useMemo(
     () =>
@@ -235,10 +533,27 @@ export default function TaskDebugClient() {
         },
       });
       setIssues((prev) => [created, ...prev]);
+      setOpenIssueId(created.id);
       setIssueTitle("");
       setDescription("");
     } finally {
       setSavingIssue(false);
+    }
+  }
+
+  async function handleDeleteIssue(issueId: string) {
+    const confirmed = window.confirm("Delete this issue?");
+    if (!confirmed) return;
+    setDeletingIssueId(issueId);
+    setError(null);
+    try {
+      await deleteDebugIssue(issueId);
+      setIssues((prev) => prev.filter((issue) => issue.id !== issueId));
+      setOpenIssueId((current) => (current === issueId ? null : current));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete debug issue.");
+    } finally {
+      setDeletingIssueId(null);
     }
   }
 
@@ -427,6 +742,24 @@ export default function TaskDebugClient() {
                   ))}
                 </div>
                 <div className="ml-auto flex min-w-[16rem] items-center gap-2">
+                  {tab === "output" && (
+                    <div className="flex h-8 rounded-md border border-white/8 bg-black/25 p-0.5">
+                      {(["readable", "json"] as OutputView[]).map((item) => (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => setOutputView(item)}
+                          className={`rounded px-2 font-mono text-[9px] uppercase tracking-widest ${
+                            outputView === item
+                              ? "bg-cyan-500/12 text-cyan-300"
+                              : "text-white/35 hover:text-white/65"
+                          }`}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="flex h-8 flex-1 items-center gap-2 rounded-md border border-white/8 bg-black/25 px-2">
                     <Search className="h-3.5 w-3.5 text-white/28" />
                     <input
@@ -448,12 +781,16 @@ export default function TaskDebugClient() {
                 </div>
               </div>
               <div className="min-h-0 flex-1 p-4">
-                <PromptBlock
-                  value={tabValue}
-                  searchQuery={searchQuery}
-                  emptyMessage={tab === "output" ? outputEmptyMessage : "No content captured."}
-                  onSelectText={setSelectedText}
-                />
+                {tab === "output" && outputView === "readable" ? (
+                  <ReadableOutput artifact={artifact} emptyMessage={outputEmptyMessage} />
+                ) : (
+                  <PromptBlock
+                    value={tabValue}
+                    searchQuery={searchQuery}
+                    emptyMessage={tab === "output" ? outputEmptyMessage : "No content captured."}
+                    onSelectText={setSelectedText}
+                  />
+                )}
               </div>
             </section>
 
@@ -526,30 +863,98 @@ export default function TaskDebugClient() {
                 </Button>
               </div>
               <div className="min-h-0 flex-1 overflow-auto p-3 custom-scrollbar">
-                {issues.map((issue) => (
-                  <div key={issue.id} className="mb-3 rounded-lg border border-white/8 bg-black/18 p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="text-sm font-medium text-white/82">{issue.title}</h3>
-                      <span className="rounded border border-white/8 px-1.5 py-0.5 font-mono text-[9px] uppercase text-white/42">
-                        {issue.severity}
-                      </span>
-                    </div>
-                    <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-white/48">
-                      {issue.description}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-1.5 font-mono text-[9px] uppercase tracking-wider text-white/34">
-                      <span>{issue.issue_type}</span>
-                      <span>/</span>
-                      <span>{issue.status}</span>
-                      {issue.phase_id && (
-                        <>
+                {issues.map((issue) => {
+                  const isOpen = openIssueId === issue.id;
+                  return (
+                    <div
+                      key={issue.id}
+                      className={`mb-3 rounded-lg border p-3 transition ${
+                        isOpen
+                          ? "border-cyan-400/20 bg-cyan-500/[0.045]"
+                          : "border-white/8 bg-black/18 hover:border-white/14 hover:bg-white/[0.035]"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setOpenIssueId(isOpen ? null : issue.id)}
+                        className="w-full text-left"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="text-sm font-medium text-white/82">{issue.title}</h3>
+                          <span className="rounded border border-white/8 px-1.5 py-0.5 font-mono text-[9px] uppercase text-white/42">
+                            {issue.severity}
+                          </span>
+                        </div>
+                        <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-white/48">
+                          {issue.description}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-1.5 font-mono text-[9px] uppercase tracking-wider text-white/34">
+                          <span>{issue.issue_type}</span>
                           <span>/</span>
-                          <span>{issue.phase_id}</span>
-                        </>
+                          <span>{issue.status}</span>
+                          {issue.phase_id && (
+                            <>
+                              <span>/</span>
+                              <span>{issue.phase_id}</span>
+                            </>
+                          )}
+                        </div>
+                      </button>
+                      {isOpen && (
+                        <div className="mt-4 space-y-3 border-t border-white/8 pt-3">
+                          <p className="whitespace-pre-wrap text-xs leading-relaxed text-white/62">
+                            {issue.description}
+                          </p>
+                          <div className="grid gap-x-3 gap-y-2 font-mono text-[10px] text-white/42 sm:grid-cols-2">
+                            <div>task: {issue.task_id}</div>
+                            <div>phase: {issue.phase_id ?? "none"}</div>
+                            <div>type: {issue.issue_type}</div>
+                            <div>status: {issue.status}</div>
+                            <div>source: {issue.source}</div>
+                            <div>created: {new Date(issue.created_at).toLocaleString()}</div>
+                            <div className="break-all sm:col-span-2">id: {issue.id}</div>
+                            <div className="break-all sm:col-span-2">
+                              prompt: {issue.prompt_artifact_path ?? "not linked"}
+                            </div>
+                            {issue.related_artifact_path && (
+                              <div className="break-all sm:col-span-2">
+                                related: {issue.related_artifact_path}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="mb-1 font-mono text-[9px] uppercase tracking-widest text-white/30">
+                              Metadata
+                            </div>
+                            {Object.keys(issue.metadata ?? {}).length > 0 && (
+                              <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded border border-white/8 bg-black/25 p-2 text-[10px] leading-relaxed text-white/45 custom-scrollbar">
+                                {formatJson(issue.metadata)}
+                              </pre>
+                            )}
+                            {Object.keys(issue.metadata ?? {}).length === 0 && (
+                              <div className="rounded border border-white/8 bg-black/20 p-2 text-xs text-white/35">
+                                No metadata captured.
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteIssue(issue.id)}
+                            disabled={deletingIssueId === issue.id}
+                            className="inline-flex h-8 items-center gap-2 rounded-md border border-red-400/15 bg-red-500/[0.035] px-3 font-mono text-[10px] uppercase tracking-widest text-red-200/65 hover:border-red-300/25 hover:bg-red-500/[0.08] disabled:cursor-not-allowed disabled:opacity-55"
+                          >
+                            {deletingIssueId === issue.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                            Delete
+                          </button>
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {issues.length === 0 && (
                   <div className="flex h-full items-center justify-center text-center">
                     <div className="space-y-2 text-white/32">

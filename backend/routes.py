@@ -915,6 +915,15 @@ async def update_debug_issue(
     return DebugIssueResponse(**issue)
 
 
+@router.delete("/debug/issues/{issue_id}", status_code=204)
+async def delete_debug_issue(issue_id: str) -> Response:
+    _require_prompt_debug_enabled()
+    deleted = await _store.delete_debug_issue(issue_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Debug issue not found")
+    return Response(status_code=204)
+
+
 @router.get("/{task_id}/events", response_class=EventSourceResponse)
 async def task_events(task_id: str):
     """SSE endpoint: stream real-time logs for a task with deduplicated replay."""

@@ -111,6 +111,14 @@ class TaskStore:
             self._pool = None
             log_event(logger, logging.INFO, "task_store_pool_closed")
 
+    async def delete_debug_issue(self, issue_id: str) -> bool:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "DELETE FROM debug_issues WHERE id = $1::uuid RETURNING id",
+                issue_id,
+            )
+        return row is not None
+
     @property
     def pool(self) -> asyncpg.Pool:
         if self._pool is None:

@@ -134,3 +134,12 @@ export async function createDebugIssue(
   }
   return res.json();
 }
+
+export async function deleteDebugIssue(issueId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/tasks/debug/issues/${issueId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, "Failed to delete debug issue"));
+  }
+}
