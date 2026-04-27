@@ -30,7 +30,14 @@ class TestDefaultSubtitleStyle:
         assert isinstance(video_builder.DEFAULT_SUBTITLE_STYLE, dict)
 
     def test_has_required_keys(self):
-        required = {"FontSize", "PrimaryColour", "OutlineColour", "Outline", "BorderStyle", "MarginV"}
+        required = {
+            "FontSize",
+            "PrimaryColour",
+            "OutlineColour",
+            "Outline",
+            "BorderStyle",
+            "MarginV",
+        }
         assert required.issubset(set(video_builder.DEFAULT_SUBTITLE_STYLE.keys()))
 
 
@@ -73,7 +80,9 @@ class TestGetDuration:
         mock_proc.returncode = 0
         mock_proc.communicate.return_value = (b'{"format": {"duration": "12.5"}}', b"")
 
-        with patch("manim_agent.video_builder.asyncio.create_subprocess_exec", return_value=mock_proc):
+        with patch(
+            "manim_agent.video_builder.asyncio.create_subprocess_exec", return_value=mock_proc
+        ):
             duration = await video_builder._get_duration(video_file)
             assert duration == 12.5
 
@@ -86,7 +95,9 @@ class TestGetDuration:
         mock_proc.returncode = 1
         mock_proc.communicate.return_value = (b"", b"ffprobe error")
 
-        with patch("manim_agent.video_builder.asyncio.create_subprocess_exec", return_value=mock_proc):
+        with patch(
+            "manim_agent.video_builder.asyncio.create_subprocess_exec", return_value=mock_proc
+        ):
             with pytest.raises(RuntimeError, match="ffprobe failed"):
                 await video_builder._get_duration(video_file)
 
@@ -106,6 +117,26 @@ class TestAlignDurations:
 
 
 class TestBuildFFmpegCmd:
+    def test_escapes_windows_subtitle_path_for_filtergraph(self, sample_files):
+        subtitle = (
+            r"D:\C\Documents\AI\tashan\manim-agent\backend\output\96f5a364\timeline_subtitles.srt"
+        )
+        cmd = video_builder._build_ffmpeg_cmd(
+            sample_files["video"],
+            sample_files["audio"],
+            subtitle,
+            sample_files["output"],
+            "shortest",
+            10.0,
+            10.0,
+        )
+        vf = cmd[cmd.index("-vf") + 1]
+
+        assert "subtitles=filename='" in vf
+        assert "D\\:/C/Documents/AI/tashan/manim-agent" in vf
+        assert ":force_style='" in vf
+        assert "original_size" not in vf
+
     def test_with_subtitle(self, sample_files):
         cmd = video_builder._build_ffmpeg_cmd(
             sample_files["video"],
@@ -207,7 +238,9 @@ class TestBuildFinalVideo:
         with (
             patch("manim_agent.video_builder._get_duration", new_callable=AsyncMock) as mock_dur,
             patch("manim_agent.video_builder._build_ffmpeg_cmd") as mock_cmd,
-            patch("manim_agent.video_builder.asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch(
+                "manim_agent.video_builder.asyncio.create_subprocess_exec", return_value=mock_proc
+            ),
         ):
             mock_dur.side_effect = [15.0, 14.0]
             mock_cmd.return_value = ["ffmpeg", "-i", "v", "-i", "a", "-y", "out.mp4"]
@@ -243,7 +276,9 @@ class TestBuildFinalVideo:
         with (
             patch("manim_agent.video_builder._get_duration", new_callable=AsyncMock) as mock_dur,
             patch("manim_agent.video_builder._build_ffmpeg_cmd") as mock_cmd,
-            patch("manim_agent.video_builder.asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch(
+                "manim_agent.video_builder.asyncio.create_subprocess_exec", return_value=mock_proc
+            ),
         ):
             mock_dur.side_effect = [5.0, 5.0]
             mock_cmd.return_value = ["ffmpeg"]

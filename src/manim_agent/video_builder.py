@@ -18,6 +18,12 @@ DEFAULT_SUBTITLE_STYLE: dict[str, str] = {
 _DURATION_TOLERANCE = 0.05
 
 
+def _escape_filter_value(value: str) -> str:
+    """Escape a value embedded inside a single-quoted FFmpeg filter option."""
+    normalized = value.replace("\\", "/")
+    return normalized.replace(":", "\\:").replace("'", r"\'")
+
+
 def _validate_inputs(
     video_path: str,
     audio_path: str,
@@ -98,8 +104,11 @@ def _build_ffmpeg_cmd(
 
     if subtitle_path:
         style_str = ",".join(f"{key}={value}" for key, value in style.items())
-        safe_subtitle_path = subtitle_path.replace("\\", "/")
-        video_filters.append(f"subtitles={safe_subtitle_path}:force_style='{style_str}'")
+        safe_subtitle_path = _escape_filter_value(subtitle_path)
+        safe_style = _escape_filter_value(style_str)
+        video_filters.append(
+            f"subtitles=filename='{safe_subtitle_path}':force_style='{safe_style}'"
+        )
 
     if video_filters:
         cmd.extend(["-vf", ",".join(video_filters)])
@@ -319,11 +328,15 @@ async def concat_videos(
     try:
         cmd = [
             "ffmpeg",
-            "-y",                           # Overwrite output
-            "-f", "concat",                  # Concat demuxer format
-            "-safe", "0",                   # Allow unsafe paths (needed for absolute)
-            "-i", list_path,                # Input list file
-            "-c", "copy",                   # Stream copy — no re-encoding
+            "-y",  # Overwrite output
+            "-f",
+            "concat",  # Concat demuxer format
+            "-safe",
+            "0",  # Allow unsafe paths (needed for absolute)
+            "-i",
+            list_path,  # Input list file
+            "-c",
+            "copy",  # Stream copy — no re-encoding
             output_path,
         ]
 
