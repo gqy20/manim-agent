@@ -11,8 +11,9 @@ PROFILE
 tmp/
 artifacts/
 3b1b_videos/
-# Claude Code (local config, permissions, sessions)
-.claude/
+# Claude Code (local permissions & sessions not versioned)
+.claude/settings.local.json
+.claude/sessions/
 
 # Archive — development temp/test files
 _archive/
