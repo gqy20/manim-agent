@@ -58,8 +58,10 @@ def test_write_prompt_artifact_updates_index(monkeypatch, tmp_path):
     assert artifact["inputs"] == {"topic": "fourier"}
     assert artifact["options"]["output_schema"] == "phase1_planning"
     assert artifact["referenced_artifacts"] == {"plan": "plan.md"}
+    assert artifact["status"] == "started"
     assert index["task_id"] == tmp_path.name
     assert index["phases"][0]["phase_id"] == "phase/1"
+    assert index["phases"][0]["status"] == "started"
 
 
 def test_update_prompt_artifact_merges_output_snapshot(monkeypatch, tmp_path):
@@ -83,3 +85,4 @@ def test_update_prompt_artifact_merges_output_snapshot(monkeypatch, tmp_path):
     assert artifact["system_prompt"] == "system prompt"
     assert artifact["user_prompt"] == "user prompt"
     assert artifact["output_snapshot"] == {"plan_text": "ok"}
+    assert artifact["status"] == "completed"

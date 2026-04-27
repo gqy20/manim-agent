@@ -8,6 +8,16 @@ import time
 from pathlib import Path
 from typing import Any
 
+_PHASE_ORDER = {
+    "phase1": 10,
+    "phase2a": 20,
+    "phase2b": 21,
+    "phase3": 30,
+    "phase3_5": 35,
+    "phase4": 40,
+    "phase5": 50,
+}
+
 
 def prompt_debug_enabled() -> bool:
     value = os.environ.get("ENABLE_PROMPT_DEBUG", "")
@@ -89,6 +99,7 @@ def write_prompt_artifact(
         "referenced_artifacts": _json_safe(referenced_artifacts or {}),
         "output_snapshot": _json_safe(output_snapshot or {}),
         "error": error,
+        "status": "failed" if error else ("completed" if output_snapshot else "started"),
         "metrics": {
             "system_prompt_chars": len(system_text),
             "user_prompt_chars": len(user_text),
@@ -127,8 +138,10 @@ def update_prompt_artifact(
 
     if output_snapshot is not None:
         payload["output_snapshot"] = _json_safe(output_snapshot)
+        payload["status"] = "completed"
     if error is not None:
         payload["error"] = error
+        payload["status"] = "failed"
 
     artifact_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     _update_prompt_index(debug_dir, payload, artifact_path)
@@ -153,8 +166,15 @@ def _update_prompt_index(debug_dir: Path, payload: dict[str, Any], artifact_path
         "artifact_path": str(artifact_path),
         "metrics": payload["metrics"],
         "error": payload["error"],
+        "status": payload.get("status", "started"),
     }
     phases = [p for p in index.get("phases", []) if p.get("phase_id") != payload["phase_id"]]
     phases.append(phase_summary)
-    index["phases"] = phases
+    index["phases"] = sorted(
+        phases,
+        key=lambda phase: (
+            _PHASE_ORDER.get(str(phase.get("phase_id", "")), 999),
+            str(phase.get("phase_id", "")),
+        ),
+    )
     index_path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")

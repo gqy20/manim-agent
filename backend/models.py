@@ -58,6 +58,7 @@ class DebugPromptPhaseSummary(BaseModel):
     artifact_path: str
     metrics: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+    status: str = "started"
 
 
 class DebugPromptIndexResponse(BaseModel):
@@ -77,6 +78,7 @@ class DebugPromptArtifactResponse(BaseModel):
     referenced_artifacts: dict[str, Any] = Field(default_factory=dict)
     output_snapshot: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+    status: str = "started"
     metrics: dict[str, Any] = Field(default_factory=dict)
 
 

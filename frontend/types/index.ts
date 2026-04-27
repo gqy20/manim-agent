@@ -220,6 +220,7 @@ export interface DebugPromptPhaseSummary {
   artifact_path: string;
   metrics: Record<string, unknown>;
   error: string | null;
+  status: "started" | "completed" | "failed" | string;
 }
 
 export interface DebugPromptIndexResponse {
@@ -239,6 +240,7 @@ export interface DebugPromptArtifact {
   referenced_artifacts: Record<string, unknown>;
   output_snapshot: Record<string, unknown>;
   error: string | null;
+  status: "started" | "completed" | "failed" | string;
   metrics: Record<string, unknown>;
 }
 
