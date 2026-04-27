@@ -1,13 +1,44 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
-from backend.content_clarifier import ContentClarifyError
+from backend.content_clarifier import ContentClarifyError, clarify_content
 from backend.models import ContentClarifyData, ContentClarifyRequest
 from backend.routes import clarify_content_route
+
+
+class _FakeAsyncClient:
+    def __init__(self, response: httpx.Response) -> None:
+        self.response = response
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    async def post(self, *_args, **_kwargs):
+        return self.response
+
+
+def _clarify_payload() -> dict[str, object]:
+    return {
+        "topic_interpretation": "Explain the topic as a math animation.",
+        "core_question": "What is the core idea?",
+        "prerequisite_concepts": ["definition"],
+        "explanation_path": ["intuition", "example"],
+        "scope_boundaries": [],
+        "optional_branches": [],
+        "animation_focus": ["visual contrast"],
+        "ambiguity_notes": [],
+        "clarified_brief_cn": "Clarified brief.",
+        "recommended_request_cn": "Create an animation explaining the topic clearly.",
+    }
 
 
 @pytest.mark.asyncio
@@ -48,3 +79,46 @@ async def test_clarify_content_route_maps_clarifier_errors_to_503():
 
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail == "clarifier unavailable"
+
+
+@pytest.mark.asyncio
+async def test_clarify_content_accepts_openai_style_choices(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    response = httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": json.dumps(_clarify_payload()),
+                    }
+                }
+            ]
+        },
+    )
+
+    with patch(
+        "backend.content_clarifier.httpx.AsyncClient",
+        return_value=_FakeAsyncClient(response),
+    ):
+        result = await clarify_content("topic")
+
+    assert result.core_question == "What is the core idea?"
+
+
+@pytest.mark.asyncio
+async def test_clarify_content_accepts_string_content(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    response = httpx.Response(
+        200,
+        json={"content": json.dumps(_clarify_payload())},
+    )
+
+    with patch(
+        "backend.content_clarifier.httpx.AsyncClient",
+        return_value=_FakeAsyncClient(response),
+    ):
+        result = await clarify_content("topic")
+
+    assert result.recommended_request_cn == "Create an animation explaining the topic clearly."

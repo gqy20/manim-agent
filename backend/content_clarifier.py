@@ -1,4 +1,5 @@
 """Lightweight Anthropic-compatible content clarification service."""
+# ruff: noqa: E501
 
 from __future__ import annotations
 
@@ -10,9 +11,8 @@ from typing import Any
 
 import httpx
 
-from .models import ContentClarifyData
 from .log_config import log_event
-
+from .models import ContentClarifyData
 
 DEFAULT_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").strip()
 DEFAULT_MODEL = os.environ.get(
@@ -61,25 +61,99 @@ SYSTEM_PROMPT = """
 """.strip()
 
 
+SYSTEM_PROMPT = """
+你是一个“数学动画内容澄清助手”。你的任务不是生成代码，也不是安排时长、
+画质、配音或制作参数。你只负责把用户输入的主题说明得更清楚，让它更适合后续
+生成教学动画。
+
+请根据用户输入，只输出一个 JSON 对象，不要输出 markdown 或 JSON 以外的内容。
+字段必须严格包含：
+- topic_interpretation: 默认如何理解这个主题
+- core_question: 这个主题想回答的核心问题
+- prerequisite_concepts: 讲清主题前需要铺垫的关键前置概念数组
+- explanation_path: 推荐的讲解主线数组，按顺序排列
+- scope_boundaries: 本次默认不展开或不深入的边界数组
+- optional_branches: 用户后续可以改成的分支方向数组
+- animation_focus: 最适合动画表达的重点数组
+- ambiguity_notes: 需要提醒用户确认的歧义或可能混淆点数组
+- clarified_brief_cn: 给用户看的中文内容理解确认摘要，1 段即可
+- recommended_request_cn: 推荐提交给动画生成系统的中文内容说明
+
+要求：
+- 全部使用简体中文
+- 如果用户输入很短，也要给出合理的默认理解
+- 如果存在歧义，在 ambiguity_notes 里明确指出，但仍然给出 best-guess interpretation
+- recommended_request_cn 要像用户最终提交的一段自然语言任务说明
+- 不要加入时长、画质、配音、BGM 等执行参数
+""".strip()
+
+
 class ContentClarifyError(RuntimeError):
     """Raised when content clarification cannot complete successfully."""
 
 
 def _extract_text_content(payload: dict[str, Any]) -> str:
+    direct_text = payload.get("output_text") or payload.get("text")
+    if isinstance(direct_text, str) and direct_text.strip():
+        return direct_text.strip()
+
+    choices = payload.get("choices")
+    if isinstance(choices, list):
+        parts: list[str] = []
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            message = choice.get("message") or choice.get("delta")
+            if isinstance(message, dict):
+                content = message.get("content")
+                extracted = _extract_text_from_content_value(content)
+                if extracted:
+                    parts.append(extracted)
+            extracted = _extract_text_from_content_value(choice.get("text"))
+            if extracted:
+                parts.append(extracted)
+        if parts:
+            return "\n".join(parts).strip()
+
     content = payload.get("content")
+    extracted = _extract_text_from_content_value(content)
+    if extracted:
+        return extracted
+
+    raise ContentClarifyError("Clarifier response missing text content")
+
+
+def _extract_text_from_content_value(content: Any) -> str | None:
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    if isinstance(content, dict):
+        text = content.get("text") or content.get("content")
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+        if _looks_like_clarify_payload(content):
+            return json.dumps(content, ensure_ascii=False)
+        return None
     if not isinstance(content, list):
-        raise ContentClarifyError("Clarifier response missing content blocks")
+        return None
 
     parts: list[str] = []
     for block in content:
-        if isinstance(block, dict) and block.get("type") == "text":
-            text = block.get("text")
+        if isinstance(block, str) and block.strip():
+            parts.append(block)
+        elif isinstance(block, dict):
+            text = block.get("text") or block.get("content")
             if isinstance(text, str) and text.strip():
                 parts.append(text)
+            elif _looks_like_clarify_payload(block):
+                parts.append(json.dumps(block, ensure_ascii=False))
 
     if not parts:
-        raise ContentClarifyError("Clarifier response did not contain text output")
+        return None
     return "\n".join(parts).strip()
+
+
+def _looks_like_clarify_payload(value: dict[str, Any]) -> bool:
+    return "core_question" in value and "recommended_request_cn" in value
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -159,7 +233,9 @@ async def clarify_content(user_text: str) -> ContentClarifyData:
             duration_ms=duration_ms,
             error_type=type(exc).__name__,
         )
-        raise ContentClarifyError("Content clarification service is temporarily unavailable.") from exc
+        raise ContentClarifyError(
+            "Content clarification service is temporarily unavailable."
+        ) from exc
 
     duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
     log_event(
@@ -191,6 +267,7 @@ async def clarify_content(user_text: str) -> ContentClarifyData:
         raw_data = _extract_json_object(raw_text)
         result = ContentClarifyData.model_validate(raw_data)
     except Exception as exc:
+        response_preview = response.text[:800].replace("\n", "\\n")
         log_event(
             logger,
             logging.ERROR,
@@ -198,8 +275,11 @@ async def clarify_content(user_text: str) -> ContentClarifyData:
             model=DEFAULT_MODEL,
             duration_ms=duration_ms,
             error_type=type(exc).__name__,
+            response_preview=response_preview,
         )
-        raise
+        if isinstance(exc, ContentClarifyError):
+            raise
+        raise ContentClarifyError(f"Clarifier response could not be parsed: {exc}") from exc
 
     log_event(
         logger,
