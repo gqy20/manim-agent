@@ -196,8 +196,9 @@ class TestBuildPhase2ScriptDraftPrompt:
         assert "script draft" in result.lower()
         assert "no rendering" in result.lower()
         assert "/scene-build" in result
-        assert "/scene-direction" in result
-        assert "/layout-safety" in result
+        assert "/scene-direction" not in result
+        assert "/layout-safety" not in result
+        assert "不要读取其他 skill" in result
         assert "build_spec" in result
         assert "## Beat List" not in result
 

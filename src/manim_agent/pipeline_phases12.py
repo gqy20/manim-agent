@@ -266,7 +266,8 @@ def build_implementation_prompt(
         f"- 目标最终视频时长：约 {target_duration}。\n"
         "- Phase 1 `build_spec` 是权威依据。基于它进行实现。\n"
         f"{render_guidance}"
-        "- 编码规则、beat 结构、CJK 处理、动画模式和组件用法全部在 `/scene-build` skill 中——先读取它。\n"
+        "- 编码规则、beat 结构、CJK 处理、动画模式和组件用法全部在 "
+        "`/scene-build` skill 中——先读取它。\n"
         "- `/scene-direction` skill 涵盖节奏和韵律决策。\n"
         "- `/layout-safety` skill 涵盖密集 beat 的重叠审计。\n"
         "- `/narration-sync` skill 涵盖生成对齐的解说文本。\n"
@@ -300,12 +301,12 @@ def build_phase2_script_draft_prompt(
     target_duration = format_target_duration(target_duration_seconds)
     render_mode = render_mode.strip().lower() or "full"
     guidance = (
-        "\n\nPhase 2A —— 脚本草稿阶段（不渲染）：\n"
+        "\n\nPhase 2A —— script draft / 脚本草稿阶段（no rendering / 不渲染）：\n"
         f"- 目标最终视频时长：约 {target_duration}。\n"
         f"- 下游渲染模式：{render_mode}。\n"
-        "- 编码规则、beat 结构、CJK 处理、动画模式和组件用法全部在 `/scene-build` skill 中——先读取它。\n"
-        "- `/scene-direction` skill 涵盖节奏和韵律决策。\n"
-        "- `/layout-safety` skill 涵盖密集 beat 的重叠审计。\n"
+        "- 读取一次 `/scene-build` skill，按其中规则编写 beat-first `scene.py`。\n"
+        "- 本阶段只返回 `phase2_script_draft`；不要读取其他 skill。\n"
+        "- 不要运行布局审计脚本、Manim、FFmpeg、渲染审查或媒体探测。\n"
     )
     if cwd:
         guidance += f"- 任务目录：{cwd}\n"
@@ -330,15 +331,17 @@ def build_phase2_script_repair_prompt(
     target_duration = format_target_duration(target_duration_seconds)
     render_mode = render_mode.strip().lower() or "full"
     guidance = (
-        "\n\nPhase 2A 修复阶段（不渲染）：\n"
+        "\n\nPhase 2A repair pass / 修复阶段（no rendering / 不渲染）：\n"
         f"- 目标最终视频时长仍为约 {target_duration}。\n"
         f"- 下游渲染模式仍为 {render_mode}。\n"
+        "- Do NOT render in this repair pass.\n"
         "- 读取现有的 `scene.py`，仅修复阻塞性的脚本分析问题，"
         "保留已批准的 beat 结构和视觉设计。\n"
         "- 不要渲染、运行 Manim、运行 FFmpeg、创建视频或开始全新规划。\n"
         "- 保持修复范围窄小：语法错误、缺失的 beat 方法、construct 顺序、"
         "或下方报告的显式时序门控问题。\n"
         "- 提交前自检 `scene.py` 是否为有效 Python。特别注意："
+        "修复 positional animation after a keyword argument；"
         "不要在 `self.play(...)` 中将位置参数动画放在关键字参数之后；"
         "要么将所有动画放在 `run_time=` 之前，要么将动画拆分到不同的 `self.play` 调用中。\n"
         "- 仅通过 `phase2_script_draft` schema 返回 SDK structured output。\n"

@@ -162,7 +162,7 @@ async def run_pipeline(
     script_draft_opts = _build_options(
         cwd=resolved_cwd,
         system_prompt=script_draft_system_prompt,
-        max_turns=max_turns,
+        max_turns=min(max_turns, 60),
         prompt_file=prompt_file,
         quality=quality,
         log_callback=log_callback,
@@ -436,7 +436,7 @@ async def run_pipeline(
             repair_opts = _build_options(
                 cwd=resolved_cwd,
                 system_prompt=script_draft_system_prompt,
-                max_turns=max_turns,
+                max_turns=min(max_turns, 24),
                 prompt_file=prompt_file,
                 quality=quality,
                 log_callback=log_callback,

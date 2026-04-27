@@ -88,9 +88,9 @@ class TestGetPhase2ScriptDraftPrompt:
     def test_limited_skill_order_excludes_render_skills(self):
         result = prompts.get_phase2_script_draft_prompt(cwd="/tmp/task")
         assert "scene-build" in result
-        # Phase 2A should mention what NOT to use, but skill list is limited
-        assert "scene-direction" in result
-        assert "layout-safety" in result
+        # Phase 2A keeps the skill list narrow; render-review skills belong to later phases.
+        assert "/scene-direction" not in result
+        assert "/layout-safety" not in result
 
 
 class TestGetRenderReviewPrompt:
