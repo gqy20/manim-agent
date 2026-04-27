@@ -118,73 +118,73 @@ curl -s -X DELETE http://127.0.0.1:8471/api/tasks/debug/issues/<issue_id>
 
 | 检测到的异常 | issue_type | severity | title 示例 |
 |-------------|------------|----------|-----------|
-| `plan_text` 为空 | `提示词` | high | Phase 1 规划文本为空 |
-| `beats` 数组为空 | `结构化输出` | blocker | Phase 1 未生成任何 beat |
-| beat 缺少 title 或 visual_goal | `结构化输出` | medium | Phase 1 部分 beat 信息不完整 |
-| `learning_goal` 或 `audience` 为空 | `提示词` | low | Phase 1 学习目标/受众未设定 |
-| 阶段抛出异常/error | `基础设施` | high | Phase 1 执行异常: {error摘要} |
+| `plan_text` 为空 | `提示词` | high | Phase 1 场景规划文本为空，未生成规划内容 |
+| `beats` 数组为空 | `结构化输出` | blocker | Phase 1 未生成任何动画节拍(beat)，规划失败 |
+| beat 缺少 title 或 visual_goal | `结构化输出` | medium | Phase 1 部分节拍信息不完整，缺少标题或视觉目标 |
+| `learning_goal` 或 `audience` 为空 | `提示词` | low | Phase 1 学习目标或目标受众未设定 |
+| 阶段抛出异常/error | `基础设施` | high | Phase 1 执行过程中抛出异常: {error摘要} |
 
 #### Phase 2A 异常 → 自动创建 Issue
 
 | 检测到的异常 | issue_type | severity | title 示例 |
 |-------------|------------|----------|-----------|
-| `scene_file` 为 null | `脚本结构` | blocker | Phase 2A 未生成场景文件 |
-| `scene_class` 为 null | `脚本结构` | high | Phase 2A 场景类名缺失 |
-| `draft_analysis.accepted` == false | `脚本结构` | high | Phase 2A 脚本分析未通过: {issues摘要} |
-| repair pass 也失败 | `脚本结构` | blocker | Phase 2A repair 仍未通过 |
-| 阶段超时 (>10min) | `基础设施` | high | Phase 2A 执行超时 |
+| `scene_file` 为 null | `脚本结构` | blocker | Phase 2A 未生成场景文件(scene.py)，代码输出缺失 |
+| `scene_class` 为 null | `脚本结构` | high | Phase 2A 场景类名缺失，无法确定渲染入口 |
+| `draft_analysis.accepted` == false | `脚本结构` | high | Phase 2A 脚本草稿分析未通过，存在结构性问题: {issues摘要} |
+| repair pass 也失败 | `脚本结构` | blocker | Phase 2A 修复尝试后仍未通过，需人工介入 |
+| 阶段超时 (>10min) | `基础设施` | high | Phase 2A 执行时间超过10分钟，可能卡死 |
 
 #### Phase 2B 异常 → 自动创建 Issue
 
 | 检测到的异常 | issue_type | severity | title 示例 |
 |-------------|------------|----------|-----------|
-| `source_code` 为 null | `脚本结构` | blocker | Phase 2B 未生成源代码 |
-| `implemented_beats` 为空 | `脚本结构` | high | Phase 2B 未实现任何 beat |
-| `deviation_from_plan` 非空 | `结构化输出` | medium | Phase 2B 实现偏离计划: {偏差列表} |
-| `run_cost_usd` 异常高 (> $2.00) | `基础设施` | medium | Phase 2B 费用偏高: ${cost} |
-| 阶段抛出异常 | `基础设施` | high | Phase 2B 执行异常: {error摘要} |
+| `source_code` 为 null | `脚本结构` | blocker | Phase 2B 未生成源代码，实现阶段完全失败 |
+| `implemented_beats` 为空 | `脚本结构` | high | Phase 2B 未实现任何节拍，所有beat均缺失 |
+| `deviation_from_plan` 非空 | `结构化输出` | medium | Phase 2B 实现结果与规划存在偏差: {偏差列表摘要} |
+| `run_cost_usd` 异常高 (> $5.00) | `基础设施` | high | Phase 2B SDK调用费用异常偏高: ${cost} |
+| 阶段抛出异常 | `基础设施` | high | Phase 2B 执行过程中抛出异常: {error摘要} |
 
 #### Phase 3 异常 → 自动创建 Issue
 
 | 检测到的异常 | issue_type | severity | title 示例 |
 |-------------|------------|----------|-----------|
-| `video_output` 为 null | `渲染执行` | blocker | Phase 3 渲染无输出 |
-| `review_approved` == false | `渲染执行` | high | Phase 3 审查未通过: {blocking_issues} |
-| `review_blocking_issues` 非空 | `渲染执行` | blocker | Phase 3 存在阻塞审查问题 |
-| `review_frame_paths` 为空 | `渲染执行` | medium | Phase 3 无审查帧 |
-| 阶段抛出异常 | `基础设施` | high | Phase 3 执行异常: {error摘要} |
+| `video_output` 为 null | `渲染执行` | blocker | Phase 3 渲染阶段无视频输出，manim渲染可能失败 |
+| `review_approved` == false | `渲染执行` | high | Phase 3 渲染审查未通过，存在质量问题: {blocking_issues摘要} |
+| `review_blocking_issues` 非空 | `渲染执行` | blocker | Phase 3 存在阻塞级审查问题，必须修复后才能继续: {issues摘要} |
+| `review_frame_paths` 为空 | `渲染执行` | medium | Phase 3 未捕获到任何审查帧，无法进行视觉检查 |
+| 阶段抛出异常 | `基础设施` | high | Phase 3 渲染或审查过程抛出异常: {error摘要} |
 
 #### Phase 3.5 异常 → 自动创建 Issue
 
 | 检测到的异常 | issue_type | severity | title 示例 |
 |-------------|------------|----------|-----------|
-| `narration` 为空 | `解说文案` | high | Phase 3.5 解说文案为空 |
-| `narration_coverage_complete` == false | `解说文案` | medium | Phase 3.5 解说覆盖不全 |
-| `beat_to_narration_map` 为空 | `解说文案` | medium | Phase 3.5 无 beat-解说映射 |
+| `narration` 为空 | `解说文案` | high | Phase 3.5 解说文案为空，未生成任何旁白内容 |
+| `narration_coverage_complete` == false | `解说文案` | medium | Phase 3.5 解说文案未能覆盖所有节拍，存在遗漏 |
+| `beat_to_narration_map` 为空 | `解说文案` | medium | Phase 3.5 未建立节拍到解说的映射关系 |
 
 #### Phase 4 异常 → 自动创建 Issue (no_tts=false 时)
 
 | 检测到的异常 | issue_type | severity | title 示例 |
 |-------------|------------|----------|-----------|
-| `audio_path` 为 null | `语音合成` | blocker | Phase 4 TTS 无音频输出 |
-| `tts_duration_ms` == 0 | `语音合成` | high | Phase 4 TTS 音频时长为零 |
-| 阶段抛出异常 | `基础设施` | high | Phase 4 TTS 异常: {error摘要} |
+| `audio_path` 为 null | `语音合成` | blocker | Phase 4 TTS 语音合成无音频输出，TTS调用可能失败 |
+| `tts_duration_ms` == 0 | `语音合成` | high | Phase 4 TTS 生成的音频时长为零，合成结果异常 |
+| 阶段抛出异常 | `基础设施` | high | Phase 4 TTS 语音合成过程抛出异常: {error摘要} |
 
 #### Phase 5 异常 → 自动创建 Issue (no_tts=false 时)
 
 | 检测到的异常 | issue_type | severity | title 示例 |
 |-------------|------------|----------|-----------|
-| `final_video_output` 为 null | `音视频合成` | blocker | Phase 5 Mux 无最终视频 |
-| `duration_seconds` == 0 | `音视频合成` | high | Phase 5 最终视频时长为零 |
-| 阶段抛出异常 | `基础设施` | high | Phase 5 Mux 异常: {error摘要} |
+| `final_video_output` 为 null | `音视频合成` | blocker | Phase 5 音视频合成无最终输出，mux失败 |
+| `duration_seconds` == 0 | `音视频合成` | high | Phase 5 最终视频时长为零，合成结果可能损坏 |
+| 阶段抛出异常 | `基础设施` | high | Phase 5 FFmpeg音视频合成过程抛出异常: {error摘要} |
 
 #### 通用异常
 
 | 检测到的异常 | issue_type | severity | title 示例 |
 |-------------|------------|----------|-----------|
-| 任务整体 status=failed | `基础设施` | blocker | Pipeline 整体失败: {error} |
-| SSE 断连且轮询也失败 | `基础设施` | high | 监控连接中断 |
-| 单阶段超时 >10min 无进展 | `基础设施` | medium | {phase_name} 执行超时 |
+| 任务整体 status=failed | `基础设施` | blocker | Pipeline 整体执行失败，任务终止: {error信息} |
+| SSE 断连且轮询也失败 | `前端界面` | high | 监控连接中断，SSE与轮询均无法获取状态 |
+| 单阶段超时 >10min 无进展 | `基础设施` | medium | {阶段名称} 执行超时超过10分钟，可能卡死或死循环 |
 
 **每次写入时**：
 - `source` 固定为 `"auto-debug"`
@@ -228,7 +228,7 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8471/api/tasks/nonexiste
 |------|--------|------|
 | `user_text` | (必填) | 任务描述 |
 | `quality` | `medium` | high / medium / low |
-| `no_tts` | `true` | 跳过 TTS 加速调试 |
+| `no_tts` | `false` | 是否跳过 TTS（默认不跳过，跑完整流程） |
 | `preset` | `educational` | default / educational / presentation / proof / concept |
 | `target_duration_seconds` | `60` | 30 / 60 / 180 / 300 |
 | `voice_id` | `female-tianmei` | 语音 |
@@ -393,9 +393,9 @@ curl -s -X POST http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues \
 | 音频时长 | `tts_duration_ms` | > 0 | type=`语音合成` sev=high |
 | 字数 | `tts_word_count` | > 0 | type=`语音合成` sev=medium |
 
-(no_tts=true → 标记 SKIPPED，不写 issue)
+(仅当 no_tts=true 时跳过此阶段，不写 issue)
 
-##### Phase 5 — Mux (`phase5`) (no_tts=false)
+##### Phase 5 — Mux (`phase5`) (完整流程，含 TTS)
 **无 Prompt Artifact** ❌ | **可读视图**: `MuxReadable`(Fallback)
 
 | 核对项 | 字段 | 预期 | 异常时 issue 配置 |
@@ -403,7 +403,7 @@ curl -s -X POST http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues \
 | 最终视频 | `final_video_output` | 非 null | type=`音视频合成` sev=blocker |
 | 总时长 | `duration_seconds` | > 0 | type=`音视频合成` sev=high |
 
-(no_tts=true → 标记 SKIPPED，不写 issue)
+(仅当 no_tts=true 时跳过此阶段，正常流程均会执行)
 
 ### Step 5: 收集 Debug 产物 + 汇总 Issues
 
@@ -497,10 +497,11 @@ ls -la backend/output/<task_id>/debug/
 
 ## 注意事项
 
-1. **默认 no_tts=true**: phase4 + phase5 均 exit(cancelled)，这两个阶段不写 issue（属于正常跳过）
+1. **默认 no_tts=false**: 默认跑完整流程（含 TTS+Mux），如需加速可手动设 no_tts=true 跳过语音合成
 2. **默认 quality=medium**: 平衡速度和质量
 3. **Issue 写入依赖 ENABLE_PROMPT_DEBUG**: 未启用时进入只读模式，报告中标注 `Issue Write: DISABLED`
 4. **Issue 写入失败不阻断调试**: 即使 issue API 报错，仍继续完成后续阶段的核对和报告
 5. **Prompt Artifacts 覆盖范围**: 仅 phase1 ~ phase2b 有写入；phase3+ 依赖 pipeline_output
 6. **source 字段区分来源**: skill 自动写入的 issue 用 `source="auto-debug"`，用户手动在 Debug 页面创建的用 `source="manual"`
 7. **报告中始终附带两个链接 + issue 提示**
+8. **Issue 标题和描述统一使用中文**: 方便在 Debug 页面的问题池中快速浏览和分类
