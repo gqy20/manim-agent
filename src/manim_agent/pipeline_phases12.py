@@ -34,20 +34,20 @@ def build_scene_plan_prompt(
     target_duration = format_target_duration(target_duration_seconds)
     render_mode = (render_mode or "full").strip().lower() or "full"
     guidance = (
-        "\n\nPlanning pass only:\n"
-        f"- Target final video duration: about {target_duration}.\n"
-        f"- Preset: {preset}.\n"
-        f"- Quality target: {quality}.\n"
-        f"- Downstream render mode: {render_mode}.\n"
-        "- Return the Phase 1 `build_spec` through the configured structured_output schema.\n"
-        "- Do not use Bash, Read, Glob, Grep, ls, find, or path probes in this pass.\n"
-        "- Do not write, edit, or render any code in this pass.\n"
-        "- Keep the structured plan compact and implementation-ready.\n"
+        "\n\n仅规划阶段：\n"
+        f"- 目标最终视频时长：约 {target_duration}。\n"
+        f"- 预设模式：{preset}。\n"
+        f"- 质量目标：{quality}。\n"
+        f"- 下游渲染模式：{render_mode}。\n"
+        "- 通过配置的 structured_output schema 返回 Phase 1 `build_spec`。\n"
+        "- 本阶段不要使用 Bash、Read、Glob、Grep、ls、find 或路径探测。\n"
+        "- 本阶段不要编写、编辑或渲染任何代码。\n"
+        "- 保持结构化计划紧凑且可直接用于实现。\n"
     )
     if render_mode == "segments":
         guidance += (
-            "- Plan one segment-required beat per major teaching step and use stable beat ids "
-            "that can become segment filenames later.\n"
+            "- 为每个主要教学步骤规划一个需要分段输出的 beat，使用稳定的 beat id，"
+            "以便后续作为分段文件名。\n"
         )
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
@@ -250,28 +250,27 @@ def build_implementation_prompt(
     normalized = user_text.strip()
     target_duration = format_target_duration(target_duration_seconds)
     render_mode = render_mode.strip().lower() or "full"
-    render_guidance = "- Render mode: full — deliver one `video_output` MP4.\n"
+    render_guidance = "- 渲染模式：full —— 交付一个 `video_output` MP4 文件。\n"
     if render_mode == "segments":
         render_guidance = (
-            "- Render mode: segments — deliver beat-level MP4s like "
-            "`segments/<beat_id>.mp4` in canonical build_spec beat order.\n"
-            "- For simple ids this looks like `segments/beat_001.mp4`.\n"
-            "- Report ordered paths in `segment_video_paths`. Set "
-            "`segment_render_complete=true` only when all segments exist.\n"
-            "- Also report `rendered_segments` with one item per build_spec beat: "
-            "`beat_id`, `title`, zero-based `order_index`, and `video_path`.\n"
+            "- 渲染模式：segments —— 按 build_spec beat 顺序交付 beat 级别 MP4，如 "
+            "`segments/<beat_id>.mp4`。\n"
+            "- 简单 id 的格式示例：`segments/beat_001.mp4`。\n"
+            "- 在 `segment_video_paths` 中报告有序路径。仅当所有分段都存在时设置 "
+            "`segment_render_complete=true`。\n"
+            "- 同时在 `rendered_segments` 中为每个 build_spec beat 报告一条记录："
+            "`beat_id`、`title`、从零开始的 `order_index` 和 `video_path`。\n"
         )
     guidance = (
-        "\n\nPhase 2B — render implementation pass:\n"
-        f"- Target final video duration: about {target_duration}.\n"
-        "- The Phase 1 `build_spec` is authoritative. Implement from it.\n"
+        "\n\nPhase 2B —— 渲染实现阶段：\n"
+        f"- 目标最终视频时长：约 {target_duration}。\n"
+        "- Phase 1 `build_spec` 是权威依据。基于它进行实现。\n"
         f"{render_guidance}"
-        "- Coding rules, beat structure, CJK handling, animation patterns, and "
-        "component usage are ALL in the `/scene-build` skill — read it first.\n"
-        "- The `/scene-direction` skill covers pacing and rhythm decisions.\n"
-        "- The `/layout-safety` skill covers overlap auditing for dense beats.\n"
-        "- The `/narration-sync` skill covers generating aligned narration text.\n"
-        "- The `/render-review` skill covers post-render visual quality checks.\n"
+        "- 编码规则、beat 结构、CJK 处理、动画模式和组件用法全部在 `/scene-build` skill 中——先读取它。\n"
+        "- `/scene-direction` skill 涵盖节奏和韵律决策。\n"
+        "- `/layout-safety` skill 涵盖密集 beat 的重叠审计。\n"
+        "- `/narration-sync` skill 涵盖生成对齐的解说文本。\n"
+        "- `/render-review` skill 涵盖渲染后视觉质量检查。\n"
     )
     if script_draft_accepted:
         guidance += (
@@ -301,16 +300,15 @@ def build_phase2_script_draft_prompt(
     target_duration = format_target_duration(target_duration_seconds)
     render_mode = render_mode.strip().lower() or "full"
     guidance = (
-        "\n\nPhase 2A — script draft pass (no rendering):\n"
-        f"- Target final video duration: about {target_duration}.\n"
-        f"- Downstream render mode: {render_mode}.\n"
-        "- Coding rules, beat structure, CJK handling, animation patterns, and "
-        "component usage are ALL in the `/scene-build` skill — read it first.\n"
-        "- The `/scene-direction` skill covers pacing and rhythm decisions.\n"
-        "- The `/layout-safety` skill covers overlap auditing for dense beats.\n"
+        "\n\nPhase 2A —— 脚本草稿阶段（不渲染）：\n"
+        f"- 目标最终视频时长：约 {target_duration}。\n"
+        f"- 下游渲染模式：{render_mode}。\n"
+        "- 编码规则、beat 结构、CJK 处理、动画模式和组件用法全部在 `/scene-build` skill 中——先读取它。\n"
+        "- `/scene-direction` skill 涵盖节奏和韵律决策。\n"
+        "- `/layout-safety` skill 涵盖密集 beat 的重叠审计。\n"
     )
     if cwd:
-        guidance += f"- Task directory: {cwd}\n"
+        guidance += f"- 任务目录：{cwd}\n"
     if build_spec is not None:
         guidance += (
             "\nApproved Phase 1 build_spec (JSON):\n"
@@ -332,19 +330,18 @@ def build_phase2_script_repair_prompt(
     target_duration = format_target_duration(target_duration_seconds)
     render_mode = render_mode.strip().lower() or "full"
     guidance = (
-        "\n\nPhase 2A repair pass (no rendering):\n"
-        f"- Target final video duration remains about {target_duration}.\n"
-        f"- Downstream render mode remains {render_mode}.\n"
-        "- Read the existing `scene.py`, fix only the blocking script-analysis issues, "
-        "and preserve the approved beat structure and visual design.\n"
-        "- Do NOT render, run Manim, run FFmpeg, create videos, or start a fresh plan.\n"
-        "- Keep the fix narrow: syntax errors, missing beat methods, construct order, "
-        "or explicit timing gates reported below.\n"
-        "- Before submitting, self-check that `scene.py` is valid Python. In particular, "
-        "never place another positional animation after a keyword argument inside "
-        "`self.play(...)`; either put all animations before `run_time=` or split the "
-        "animations into separate `self.play` calls.\n"
-        "- Return SDK structured output ONLY via the `phase2_script_draft` schema.\n"
+        "\n\nPhase 2A 修复阶段（不渲染）：\n"
+        f"- 目标最终视频时长仍为约 {target_duration}。\n"
+        f"- 下游渲染模式仍为 {render_mode}。\n"
+        "- 读取现有的 `scene.py`，仅修复阻塞性的脚本分析问题，"
+        "保留已批准的 beat 结构和视觉设计。\n"
+        "- 不要渲染、运行 Manim、运行 FFmpeg、创建视频或开始全新规划。\n"
+        "- 保持修复范围窄小：语法错误、缺失的 beat 方法、construct 顺序、"
+        "或下方报告的显式时序门控问题。\n"
+        "- 提交前自检 `scene.py` 是否为有效 Python。特别注意："
+        "不要在 `self.play(...)` 中将位置参数动画放在关键字参数之后；"
+        "要么将所有动画放在 `run_time=` 之前，要么将动画拆分到不同的 `self.play` 调用中。\n"
+        "- 仅通过 `phase2_script_draft` schema 返回 SDK structured output。\n"
     )
     if cwd:
         guidance += f"- Task directory: {cwd}\n"
