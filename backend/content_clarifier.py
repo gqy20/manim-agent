@@ -19,7 +19,7 @@ DEFAULT_MODEL = os.environ.get(
     "ANTHROPIC_CLARIFIER_MODEL",
     os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest"),
 )
-DEFAULT_MAX_TOKENS = 1400
+DEFAULT_MAX_TOKENS = int(os.environ.get("ANTHROPIC_CLARIFIER_MAX_TOKENS", "5000"))
 DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("ANTHROPIC_CLARIFIER_TIMEOUT_SECONDS", "60"))
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,9 @@ SYSTEM_PROMPT = """
 - 如果用户输入非常短，也要做出一个合理的默认理解
 - 如果存在歧义，要在 ambiguity_notes 里明确指出，但仍然给出 best-guess interpretation
 - recommended_request_cn 要像用户最终提交的一段自然语言任务说明，而不是字段列表
+- 长度约束：prerequisite_concepts、explanation_path、scope_boundaries、optional_branches、animation_focus、ambiguity_notes 每个数组 3-5 条以内；每条尽量不超过 40 个中文字符
+- clarified_brief_cn 控制在 80-120 个中文字符；recommended_request_cn 控制在 120-200 个中文字符
+- 整体 JSON 输出尽量控制在 1500 个中文字符以内，保持简洁、完整、可解析
 """.strip()
 
 
@@ -84,6 +87,9 @@ SYSTEM_PROMPT = """
 - 如果用户输入很短，也要给出合理的默认理解
 - 如果存在歧义，在 ambiguity_notes 里明确指出，但仍然给出 best-guess interpretation
 - recommended_request_cn 要像用户最终提交的一段自然语言任务说明
+- 长度约束：prerequisite_concepts、explanation_path、scope_boundaries、optional_branches、animation_focus、ambiguity_notes 每个数组 3-5 条以内；每条尽量不超过 40 个中文字符
+- clarified_brief_cn 控制在 80-120 个中文字符；recommended_request_cn 控制在 120-200 个中文字符
+- 整体 JSON 输出尽量控制在 1500 个中文字符以内，保持简洁、完整、可解析
 - 不要加入时长、画质、配音、BGM 等执行参数
 """.strip()
 
@@ -205,6 +211,7 @@ async def clarify_content(user_text: str) -> ContentClarifyData:
         "clarifier_request_started",
         model=DEFAULT_MODEL,
         api_base=DEFAULT_BASE_URL,
+        max_tokens=DEFAULT_MAX_TOKENS,
         text_len=len(user_text.strip()),
     )
 

@@ -122,3 +122,27 @@ async def test_clarify_content_accepts_string_content(monkeypatch):
         result = await clarify_content("topic")
 
     assert result.recommended_request_cn == "Create an animation explaining the topic clearly."
+
+
+@pytest.mark.asyncio
+async def test_clarify_content_accepts_fenced_json_content(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    response = httpx.Response(
+        200,
+        json={
+            "content": [
+                {
+                    "type": "text",
+                    "text": f"```json\n{json.dumps(_clarify_payload())}\n```",
+                }
+            ]
+        },
+    )
+
+    with patch(
+        "backend.content_clarifier.httpx.AsyncClient",
+        return_value=_FakeAsyncClient(response),
+    ):
+        result = await clarify_content("topic")
+
+    assert result.core_question == "What is the core idea?"

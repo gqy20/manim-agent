@@ -26,6 +26,10 @@ _RETRYABLE_DB_ERRORS = (
     TimeoutError,
     asyncpg.InterfaceError,
 )
+_POOL_CONNECT_ATTEMPTS = int(os.environ.get("DATABASE_CONNECT_ATTEMPTS", "5"))
+_POOL_CONNECT_BASE_DELAY_SECONDS = float(
+    os.environ.get("DATABASE_CONNECT_BASE_DELAY_SECONDS", "0.75")
+)
 
 
 def _get_database_url() -> str:
@@ -48,11 +52,7 @@ class TaskStore:
 
     async def start(self) -> None:
         """Create the connection pool (call during app lifespan)."""
-        self._pool = await asyncpg.create_pool(
-            _get_database_url(),
-            min_size=2,
-            max_size=10,
-        )
+        self._pool = await self._create_pool_with_retry()
         await self._ensure_status_constraint()
         await self._ensure_debug_issues_table()
         log_event(
@@ -62,6 +62,43 @@ class TaskStore:
             min_size=2,
             max_size=10,
         )
+
+    async def _create_pool_with_retry(self) -> asyncpg.Pool:
+        database_url = _get_database_url()
+        last_error: Exception | None = None
+
+        for attempt in range(1, _POOL_CONNECT_ATTEMPTS + 1):
+            try:
+                return await asyncpg.create_pool(
+                    database_url,
+                    min_size=2,
+                    max_size=10,
+                )
+            except _RETRYABLE_DB_ERRORS as exc:
+                last_error = exc
+                if attempt >= _POOL_CONNECT_ATTEMPTS:
+                    break
+                delay = _POOL_CONNECT_BASE_DELAY_SECONDS * attempt
+                log_event(
+                    logger,
+                    logging.WARNING,
+                    "task_store_pool_connect_retry",
+                    attempt=attempt,
+                    attempts=_POOL_CONNECT_ATTEMPTS,
+                    delay_seconds=delay,
+                    error_type=type(exc).__name__,
+                )
+                await asyncio.sleep(delay)
+
+        assert last_error is not None
+        log_event(
+            logger,
+            logging.ERROR,
+            "task_store_pool_connect_failed",
+            attempts=_POOL_CONNECT_ATTEMPTS,
+            error_type=type(last_error).__name__,
+        )
+        raise last_error
 
     async def save(self) -> None:
         """No-op for PostgreSQL — writes are already transactional."""
