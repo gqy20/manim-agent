@@ -31,12 +31,27 @@ def merge_result_summaries(*summaries: dict | None) -> dict | None:
     merged: dict = {
         "turns": 0,
         "cost_usd": 0.0,
+        "cost_cny": 0.0,
         "duration_ms": 0,
         "is_error": False,
         "stop_reason": None,
         "errors": [],
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "total_tokens": 0,
     }
     saw_cost = False
+    saw_cost_cny = False
+    token_keys = (
+        "input_tokens",
+        "output_tokens",
+        "cache_read_tokens",
+        "cache_write_tokens",
+        "total_tokens",
+    )
+    saw_tokens = {key: False for key in token_keys}
     for summary in usable:
         turns = summary.get("turns")
         if isinstance(turns, int):
@@ -48,6 +63,15 @@ def merge_result_summaries(*summaries: dict | None) -> dict | None:
         if isinstance(cost_usd, (int, float)):
             merged["cost_usd"] += float(cost_usd)
             saw_cost = True
+        cost_cny = summary.get("cost_cny")
+        if isinstance(cost_cny, (int, float)):
+            merged["cost_cny"] += float(cost_cny)
+            saw_cost_cny = True
+        for key in token_keys:
+            value = summary.get(key)
+            if isinstance(value, int):
+                merged[key] += value
+                saw_tokens[key] = True
         merged["is_error"] = merged["is_error"] or bool(summary.get("is_error"))
         merged["stop_reason"] = summary.get("stop_reason") or merged["stop_reason"]
         errors = summary.get("errors") or []
@@ -55,6 +79,11 @@ def merge_result_summaries(*summaries: dict | None) -> dict | None:
             merged["errors"].extend(errors)
     if not saw_cost:
         merged["cost_usd"] = None
+    if not saw_cost_cny:
+        merged["cost_cny"] = None
+    for key in token_keys:
+        if not saw_tokens[key]:
+            merged[key] = None
     return merged
 
 

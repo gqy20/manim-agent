@@ -37,7 +37,7 @@ from .schemas import (
     PipelineOutput,
 )
 from .segment_renderer import discover_segment_video_paths
-from .token_pricing import estimate_token_cost_cny
+from .token_pricing import estimate_result_cost_cny, estimate_token_cost_cny
 
 logger = logging.getLogger(__name__)
 
@@ -349,6 +349,7 @@ class _MessageDispatcher:
             "run_tool_stats": dict(getattr(self, "partial_run_tool_stats", {})),
             "run_duration_ms": getattr(self, "partial_run_duration_ms", None),
             "run_cost_usd": getattr(self, "partial_run_cost_usd", None),
+            "run_cost_cny": getattr(self, "partial_run_cost_cny", None),
             "target_duration_seconds": getattr(self, "partial_target_duration_seconds", None),
             "plan_text": getattr(self, "partial_plan_text", None),
             "review_summary": getattr(self, "partial_review_summary", None),
@@ -570,9 +571,21 @@ class _MessageDispatcher:
         if not hasattr(self, "_result_message") or self._result_message is None:
             return None
         msg = self._result_message
+        cost_estimate = estimate_result_cost_cny(
+            self.last_model_name,
+            msg.usage,
+            msg.model_usage,
+        )
         return {
             "turns": msg.num_turns,
             "cost_usd": msg.total_cost_usd,
+            "cost_cny": cost_estimate.get("estimated_cost_cny"),
+            "pricing_model": cost_estimate.get("pricing_model"),
+            "input_tokens": cost_estimate.get("input_tokens"),
+            "output_tokens": cost_estimate.get("output_tokens"),
+            "cache_read_tokens": cost_estimate.get("cache_read_tokens"),
+            "cache_write_tokens": cost_estimate.get("cache_write_tokens"),
+            "total_tokens": cost_estimate.get("total_tokens"),
             "duration_ms": msg.duration_ms,
             "is_error": msg.is_error,
             "stop_reason": msg.stop_reason,
@@ -815,6 +828,9 @@ class _MessageDispatcher:
         )
         current.run_cost_usd = (
             incoming.run_cost_usd if incoming.run_cost_usd is not None else current.run_cost_usd
+        )
+        current.run_cost_cny = (
+            incoming.run_cost_cny if incoming.run_cost_cny is not None else current.run_cost_cny
         )
         current.target_duration_seconds = (
             incoming.target_duration_seconds

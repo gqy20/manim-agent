@@ -36,6 +36,22 @@ def resolve_pricing_model(model_name: str | None) -> str | None:
     return aliases.get(compact)
 
 
+def infer_pricing_model_name(
+    model_name: str | None,
+    model_usage: dict[str, Any] | None = None,
+) -> str | None:
+    """Choose the best model name for local pricing lookup."""
+    if resolve_pricing_model(model_name):
+        return model_name
+
+    if isinstance(model_usage, dict) and len(model_usage) == 1:
+        candidate = next(iter(model_usage.keys()))
+        if resolve_pricing_model(candidate):
+            return candidate
+
+    return model_name
+
+
 def _pick_price_entry(model_name: str, context_tokens: int | None) -> dict[str, Any] | None:
     pricing = load_model_pricing()
     model_key = resolve_pricing_model(model_name)
@@ -165,3 +181,13 @@ def estimate_token_cost_cny(
         "estimated_cost_cny": estimated,
         "cost_estimate_note": "usage_breakdown" if has_breakdown else "total_tokens_as_input",
     }
+
+
+def estimate_result_cost_cny(
+    model_name: str | None,
+    usage: dict[str, Any] | None,
+    model_usage: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Estimate CNY cost for a Claude Agent SDK result message."""
+    inferred_model = infer_pricing_model_name(model_name, model_usage)
+    return estimate_token_cost_cny(inferred_model, usage)

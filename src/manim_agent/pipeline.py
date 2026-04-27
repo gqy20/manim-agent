@@ -482,6 +482,7 @@ async def run_pipeline(
             dispatcher.partial_run_turns = result_summary.get("turns")
             dispatcher.partial_run_duration_ms = result_summary.get("duration_ms")
             dispatcher.partial_run_cost_usd = result_summary.get("cost_usd")
+            dispatcher.partial_run_cost_cny = result_summary.get("cost_cny")
         dispatcher.partial_run_tool_use_count = dispatcher.tool_use_count
         dispatcher.partial_run_tool_stats = dict(dispatcher.tool_stats)
 
@@ -504,6 +505,10 @@ async def run_pipeline(
             cli_stderr_lines=_cli_stderr_lines,
             render_mode=render_mode,
             no_render_review=no_render_review,
+        )
+        result_summary = merge_result_summaries(
+            result_summary,
+            getattr(dispatcher, "partial_render_review_result_summary", None),
         )
 
         # ══════════════════════════════════════════════
@@ -589,6 +594,7 @@ async def run_pipeline(
             po.run_turns = result_summary.get("turns")
             po.run_duration_ms = result_summary.get("duration_ms")
             po.run_cost_usd = result_summary.get("cost_usd")
+            po.run_cost_cny = result_summary.get("cost_cny")
 
         # ════════════════════════════════════════════
         # Phase 4+5/5: TTS Synthesis + Video Mux

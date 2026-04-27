@@ -107,6 +107,7 @@ function mergePipelineOutput(
     run_tool_stats: mergeNumberMap(prev.run_tool_stats, next.run_tool_stats),
     run_duration_ms: mergeNullableValue(prev.run_duration_ms, next.run_duration_ms),
     run_cost_usd: mergeNullableValue(prev.run_cost_usd, next.run_cost_usd),
+    run_cost_cny: mergeNullableValue(prev.run_cost_cny, next.run_cost_cny),
     target_duration_seconds: mergeNullableValue(
       prev.target_duration_seconds,
       next.target_duration_seconds,

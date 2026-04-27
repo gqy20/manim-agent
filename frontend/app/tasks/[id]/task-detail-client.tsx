@@ -78,6 +78,12 @@ function formatElapsedRuntime(ms: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatCnyCost(value: number): string {
+  if (value < 0.01) return `CNY ${value.toFixed(4)}`;
+  if (value < 1) return `CNY ${value.toFixed(3)}`;
+  return `CNY ${value.toFixed(2)}`;
+}
+
 function getElapsedRuntime(createdAt: string, completedAt: string | null, now: number): number {
   const startedAt = new Date(createdAt).getTime();
   if (Number.isNaN(startedAt)) return 0;
@@ -875,6 +881,7 @@ export default function TaskDetailClient() {
     : `${VOICE_LABELS[task.options.voice_id] ?? task.options.voice_id} / ${task.options.model}`;
   const musicSummary = task.options.bgm_enabled ? "BGM on" : "No BGM";
   const pipelineProfile = `${voiceSummary} / ${musicSummary} / Target ${task.options.target_duration_seconds}s`;
+  const finalAgentCostCny = task.pipeline_output?.run_cost_cny ?? null;
 
   return (
     <main
@@ -933,6 +940,14 @@ export default function TaskDetailClient() {
                 )}
                 Delete
               </Button>
+            )}
+            {finalAgentCostCny != null && (
+              <span
+                title="Final estimated Claude Agent SDK cost across all SDK phases"
+                className="inline-flex h-7 items-center rounded-full border border-emerald-500/20 bg-emerald-500/[0.07] px-3 font-mono text-[10px] font-semibold uppercase tracking-wider text-emerald-300/90"
+              >
+                {formatCnyCost(finalAgentCostCny)}
+              </span>
             )}
             <StatusBadge status={task.status} size="md" className="gsap-header flex-shrink-0" />
           </div>

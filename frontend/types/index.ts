@@ -74,6 +74,7 @@ export interface PipelineOutputData {
   run_tool_stats: Record<string, number>;
   run_duration_ms: number | null;
   run_cost_usd: number | null;
+  run_cost_cny: number | null;
   target_duration_seconds: number | null;
   plan_text: string | null;
   mode?: string | null;

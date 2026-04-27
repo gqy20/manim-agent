@@ -192,6 +192,11 @@ class PipelineOutput(BaseModel):
         description="Total SDK-reported run cost in USD.",
         ge=0,
     )
+    run_cost_cny: float | None = Field(
+        default=None,
+        description="Estimated total Claude Agent SDK token cost in CNY.",
+        ge=0,
+    )
     target_duration_seconds: int | None = Field(
         default=None,
         description="Requested target runtime for the final video in seconds.",

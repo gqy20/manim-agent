@@ -67,6 +67,13 @@ class TestMessageDispatcherState:
         assert dispatcher.result_summary == {
             "turns": 5,
             "cost_usd": 0.056,
+            "cost_cny": None,
+            "pricing_model": None,
+            "input_tokens": 1000,
+            "output_tokens": 2000,
+            "cache_read_tokens": None,
+            "cache_write_tokens": None,
+            "total_tokens": 3000,
             "duration_ms": 5000,
             "is_error": True,
             "stop_reason": "end_turn",

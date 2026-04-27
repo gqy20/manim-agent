@@ -48,8 +48,8 @@ export function VideoPlayer({ src }: VideoPlayerProps) {
   }, []);
 
   return (
-    <div className="group relative flex flex-col gap-3">
-      <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-2xl ring-1 ring-white/5 transition-all duration-300 backdrop-blur-xl">
+    <div className="group relative flex flex-col gap-3 xl:min-h-0 xl:flex-1">
+      <div className="relative overflow-hidden rounded-xl border border-white/10 bg-black/40 shadow-2xl ring-1 ring-white/5 transition-all duration-300 backdrop-blur-xl xl:flex xl:min-h-0 xl:flex-1">
         <div className="pointer-events-none absolute inset-0 bg-blue-500/5 blur-[100px]" />
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
 
@@ -78,7 +78,7 @@ export function VideoPlayer({ src }: VideoPlayerProps) {
             key={`${src}-${retryToken}`}
             src={src}
             controls
-            className="relative z-10 block max-h-[42vh] w-full bg-black aspect-video object-contain"
+            className="relative z-10 block aspect-video w-full bg-black object-contain xl:h-full xl:min-h-0 xl:aspect-auto"
             preload="metadata"
             onLoadStart={() => {
               setState("loading");

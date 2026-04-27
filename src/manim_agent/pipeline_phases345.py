@@ -18,6 +18,7 @@ from .pipeline_gates import (
     duration_target_issue,
     has_narration_sync_summary,
     has_structured_build_summary,
+    merge_result_summaries,
     narration_is_too_short_for_video,
 )
 from .prompt_builder import format_target_duration
@@ -30,6 +31,7 @@ from .segment_renderer import (
     read_segment_render_plan,
     write_segment_render_plan,
 )
+from .token_pricing import estimate_result_cost_cny
 from .video_builder import _get_duration, build_final_video, concat_videos
 
 logger = logging.getLogger(__name__)
@@ -136,7 +138,8 @@ async def run_render_review(
     quality: str,
     log_callback: Callable[[str], None] | None,
     implemented_beats: list[str] | None = None,
-) -> Phase3RenderReviewOutput:
+    return_summary: bool = False,
+) -> Phase3RenderReviewOutput | tuple[Phase3RenderReviewOutput, dict[str, Any]]:
     """Ask Claude to review sampled render frames and return a structured verdict."""
     beat_labels = _build_frame_labels(implemented_beats, len(frame_paths))
     labeled_frames = "\n".join(
@@ -186,7 +189,37 @@ async def run_render_review(
     raw = result_message.structured_output
     if isinstance(raw, str):
         raw = json.loads(raw)
-    return Phase3RenderReviewOutput.model_validate(raw)
+    result_summary = _result_message_summary(result_message)
+    output = Phase3RenderReviewOutput.model_validate(raw)
+    if return_summary:
+        return output, result_summary
+    return output
+
+
+def _result_message_summary(
+    result_message: ResultMessage,
+    model_name: str | None = None,
+) -> dict[str, Any]:
+    cost_estimate = estimate_result_cost_cny(
+        model_name,
+        result_message.usage,
+        result_message.model_usage,
+    )
+    return {
+        "turns": result_message.num_turns,
+        "cost_usd": result_message.total_cost_usd,
+        "cost_cny": cost_estimate.get("estimated_cost_cny"),
+        "pricing_model": cost_estimate.get("pricing_model"),
+        "input_tokens": cost_estimate.get("input_tokens"),
+        "output_tokens": cost_estimate.get("output_tokens"),
+        "cache_read_tokens": cost_estimate.get("cache_read_tokens"),
+        "cache_write_tokens": cost_estimate.get("cache_write_tokens"),
+        "total_tokens": cost_estimate.get("total_tokens"),
+        "duration_ms": result_message.duration_ms,
+        "is_error": result_message.is_error,
+        "stop_reason": result_message.stop_reason,
+        "errors": result_message.errors,
+    }
 
 
 # ── Phase 3: Render Resolve + Review ───────────────────────────────
@@ -388,7 +421,7 @@ async def run_phase3_render(
         review_result: Phase3RenderReviewOutput | None = None
         review_warning: str | None = None
         try:
-            review_result = await run_render_review(
+            review_response = await run_render_review(
                 user_text=user_text,
                 plan_text=plan_text,
                 video_output=video_output,
@@ -400,7 +433,36 @@ async def run_phase3_render(
                 quality=quality,
                 log_callback=log_callback,
                 implemented_beats=po.implemented_beats if po is not None else None,
+                return_summary=True,
             )
+            if isinstance(review_response, tuple):
+                review_result, review_result_summary = review_response
+            else:
+                review_result = review_response
+                review_result_summary = None
+
+            if review_result_summary is not None:
+                result_summary = merge_result_summaries(result_summary, review_result_summary)
+                dispatcher.partial_run_turns = (
+                    result_summary.get("turns") if result_summary else None
+                )
+                dispatcher.partial_run_duration_ms = (
+                    result_summary.get("duration_ms") if result_summary else None
+                )
+                dispatcher.partial_run_cost_usd = (
+                    result_summary.get("cost_usd") if result_summary else None
+                )
+                dispatcher.partial_run_cost_cny = (
+                    result_summary.get("cost_cny") if result_summary else None
+                )
+                dispatcher.partial_render_review_result_summary = review_result_summary
+                if po is not None:
+                    po.run_turns = result_summary.get("turns") if result_summary else None
+                    po.run_duration_ms = (
+                        result_summary.get("duration_ms") if result_summary else None
+                    )
+                    po.run_cost_usd = result_summary.get("cost_usd") if result_summary else None
+                    po.run_cost_cny = result_summary.get("cost_cny") if result_summary else None
         except RuntimeError as exc:
             if "structured verdict" not in str(exc):
                 raise
@@ -764,6 +826,7 @@ def _populate_po_metadata(
         po.run_turns = result_summary.get("turns")
         po.run_duration_ms = result_summary.get("duration_ms")
         po.run_cost_usd = result_summary.get("cost_usd")
+        po.run_cost_cny = result_summary.get("cost_cny")
     po.run_tool_use_count = dispatcher.tool_use_count
     po.run_tool_stats = dict(dispatcher.tool_stats)
     po.target_duration_seconds = target_duration_seconds
