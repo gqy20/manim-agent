@@ -22,6 +22,7 @@ from .pipeline_gates import (
     narration_is_too_short_for_video,
 )
 from .prompt_builder import format_target_duration
+from .prompt_debug import write_prompt_artifact
 from .render_review import extract_review_frames
 from .schemas import Phase3RenderReviewOutput, PhaseSchemaRegistry
 from .segment_renderer import (
@@ -176,6 +177,24 @@ async def run_render_review(
         log_callback=log_callback,
         output_format=PhaseSchemaRegistry.output_format_schema("phase3_render_review"),
         allowed_tools=["Read", "Glob", "Grep"],
+    )
+    write_prompt_artifact(
+        output_dir=cwd,
+        phase_id="phase3",
+        phase_name="Render Review",
+        system_prompt=system_prompt,
+        user_prompt=review_prompt,
+        inputs={
+            "user_text": user_text,
+            "target_duration_seconds": target_duration_seconds,
+            "video_output": video_output,
+            "frame_paths": frame_paths,
+            "implemented_beats": implemented_beats or [],
+            "actual_duration_seconds": actual_duration_seconds,
+        },
+        options=review_opts,
+        options_summary={"output_schema": "phase3_render_review"},
+        referenced_artifacts={"video_output": video_output},
     )
 
     result_message: ResultMessage | None = None
@@ -612,6 +631,27 @@ async def run_phase4_tts(
     dispatcher._print(
         f"\n{_EMOJI['tts']} Audio orchestration in progress... (voice={voice_id}, model={model})"
     )
+    write_prompt_artifact(
+        output_dir=str(Path(output_path).parent),
+        phase_id="phase4",
+        phase_name="Audio Orchestration",
+        inputs={
+            "voice_id": voice_id,
+            "model": model,
+            "target_duration_seconds": target_duration_seconds,
+            "bgm_enabled": bgm_enabled,
+            "bgm_prompt": bgm_prompt,
+            "preset": preset,
+            "narration_text": narration_text,
+            "implemented_beats": list(getattr(po, "implemented_beats", []) or []),
+            "beat_to_narration_map": list(getattr(po, "beat_to_narration_map", []) or []),
+        },
+        referenced_artifacts={
+            "video_output": video_output,
+            "timeline": "timeline.json",
+            "audio_manifest": "audio_manifest.json",
+        },
+    )
     audio_result = await orchestrate_audio_assets(
         po=po,
         user_text=user_text,
@@ -713,6 +753,27 @@ async def run_phase5_mux(
         else "video + audio + subtitle"
     )
     dispatcher._print(f"[MUX] FFmpeg in progress... ({mux_desc})")
+    write_prompt_artifact(
+        output_dir=str(Path(output_path).parent),
+        phase_id="phase5",
+        phase_name="Mux",
+        inputs={
+            "video_output": video_output,
+            "mux_video_path": mux_video_path,
+            "output_path": output_path,
+            "audio_path": getattr(audio_result, "concatenated_audio_path", None),
+            "subtitle_path": getattr(audio_result, "concatenated_subtitle_path", None),
+            "bgm_path": getattr(audio_result, "bgm_path", None),
+            "bgm_volume": bgm_volume,
+            "intro_outro": intro_outro,
+            "used_segment_visuals": used_segment_visuals,
+        },
+        referenced_artifacts={
+            "segment_render_plan": getattr(po, "segment_render_plan_path", None)
+            if po is not None
+            else None,
+        },
+    )
     emit_status(
         event_callback,
         task_status="running",

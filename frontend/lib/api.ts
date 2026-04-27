@@ -1,6 +1,10 @@
 import type {
   ClarifyContentPayload,
   ClarifyContentResponse,
+  DebugIssue,
+  DebugIssueCreatePayload,
+  DebugPromptArtifact,
+  DebugPromptIndexResponse,
   Task,
   TaskCreatePayload,
 } from "@/types";
@@ -82,4 +86,39 @@ export function getVideoUrl(
     return videoPath;
   }
   return `${API_BASE}/api/tasks/${taskId}/video`;
+}
+
+export async function getDebugPromptIndex(taskId: string): Promise<DebugPromptIndexResponse> {
+  const res = await fetch(`${API_BASE}/api/tasks/${taskId}/debug/prompts`);
+  if (!res.ok) throw new Error("Failed to fetch debug prompt index");
+  return res.json();
+}
+
+export async function getDebugPromptArtifact(
+  taskId: string,
+  phaseId: string,
+): Promise<DebugPromptArtifact> {
+  const res = await fetch(`${API_BASE}/api/tasks/${taskId}/debug/prompts/${phaseId}`);
+  if (!res.ok) throw new Error("Failed to fetch debug prompt artifact");
+  return res.json();
+}
+
+export async function listDebugIssues(taskId: string): Promise<DebugIssue[]> {
+  const res = await fetch(`${API_BASE}/api/tasks/${taskId}/debug/issues`);
+  if (!res.ok) throw new Error("Failed to fetch debug issues");
+  const data = (await res.json()) as { issues: DebugIssue[] };
+  return data.issues;
+}
+
+export async function createDebugIssue(
+  taskId: string,
+  payload: DebugIssueCreatePayload,
+): Promise<DebugIssue> {
+  const res = await fetch(`${API_BASE}/api/tasks/${taskId}/debug/issues`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to create debug issue");
+  return res.json();
 }

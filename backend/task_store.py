@@ -11,14 +11,13 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import asyncpg
 
 from .log_config import log_event
-from .models import TaskCreateRequest, TaskStatus, TaskResponse
-
+from .models import TaskCreateRequest, TaskResponse, TaskStatus
 
 logger = logging.getLogger(__name__)
 _RETRYABLE_DB_ERRORS = (
@@ -34,8 +33,7 @@ def _get_database_url() -> str:
     url = os.environ.get("DATABASE_URL", "")
     if not url:
         raise RuntimeError(
-            "DATABASE_URL is not set. "
-            "Copy .env.example to .env and add your Neon URL."
+            "DATABASE_URL is not set. Copy .env.example to .env and add your Neon URL."
         )
     return url
 
@@ -56,6 +54,7 @@ class TaskStore:
             max_size=10,
         )
         await self._ensure_status_constraint()
+        await self._ensure_debug_issues_table()
         log_event(
             logger,
             logging.INFO,
@@ -153,9 +152,7 @@ class TaskStore:
             if "stopped" in (status_constraint_definition or ""):
                 return
 
-            await conn.execute(
-                f'ALTER TABLE tasks DROP CONSTRAINT "{status_constraint_name}"'
-            )
+            await conn.execute(f'ALTER TABLE tasks DROP CONSTRAINT "{status_constraint_name}"')
             await conn.execute(
                 """
                 ALTER TABLE tasks
@@ -170,9 +167,42 @@ class TaskStore:
                 constraint=status_constraint_name,
             )
 
+    async def _ensure_debug_issues_table(self) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS debug_issues (
+                    id UUID PRIMARY KEY,
+                    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                    phase_id TEXT,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    issue_type TEXT NOT NULL DEFAULT 'other',
+                    severity TEXT NOT NULL DEFAULT 'medium',
+                    status TEXT NOT NULL DEFAULT 'open',
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    prompt_artifact_path TEXT,
+                    related_artifact_path TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    fixed_at TIMESTAMPTZ,
+                    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+                )
+                """
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_debug_issues_task_id ON debug_issues (task_id)"
+            )
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_debug_issues_status_created
+                ON debug_issues (status, created_at DESC)
+                """
+            )
+
     async def create(self, req: TaskCreateRequest) -> dict[str, Any]:
         task_id = str(uuid.uuid4())[:8]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         options_json = json.dumps(req.model_dump(), ensure_ascii=False)
 
         async with self.pool.acquire() as conn:
@@ -211,11 +241,9 @@ class TaskStore:
             return None
         return _row_to_dict(row)
 
-    async def update_status(
-        self, task_id: str, status: TaskStatus, **kwargs: Any
-    ) -> None:
+    async def update_status(self, task_id: str, status: TaskStatus, **kwargs: Any) -> None:
         completed_at = (
-            datetime.now(timezone.utc)
+            datetime.now(UTC)
             if status in (TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.STOPPED)
             else None
         )
@@ -241,7 +269,7 @@ class TaskStore:
                     idx += 1
 
                 sets.append(f"updated_at = ${idx}")
-                vals.append(datetime.now(timezone.utc))
+                vals.append(datetime.now(UTC))
 
                 sql = f"UPDATE tasks SET {', '.join(sets)} WHERE id = $1"
                 await conn.execute(sql, *vals)
@@ -278,6 +306,110 @@ class TaskStore:
 
         await self._run_with_retry(f"delete[{task_id}]", _delete)
 
+    async def create_debug_issue(
+        self,
+        task_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        issue_id = str(uuid.uuid4())
+        now = datetime.now(UTC)
+        metadata = json.dumps(payload.get("metadata") or {}, ensure_ascii=False)
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO debug_issues (
+                    id, task_id, phase_id, title, description, issue_type, severity,
+                    status, source, prompt_artifact_path, related_artifact_path,
+                    created_at, updated_at, fixed_at, metadata
+                )
+                VALUES (
+                    $1::uuid, $2, $3, $4, $5, $6, $7,
+                    $8, $9, $10, $11, $12, $12, $13, $14::jsonb
+                )
+                RETURNING *
+                """,
+                issue_id,
+                task_id,
+                payload.get("phase_id"),
+                payload["title"],
+                payload["description"],
+                payload.get("issue_type") or "other",
+                payload.get("severity") or "medium",
+                payload.get("status") or "open",
+                payload.get("source") or "manual",
+                payload.get("prompt_artifact_path"),
+                payload.get("related_artifact_path"),
+                now,
+                now if payload.get("status") == "fixed" else None,
+                metadata,
+            )
+        return _debug_issue_row_to_dict(row)
+
+    async def list_debug_issues(self, task_id: str) -> list[dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM debug_issues
+                WHERE task_id = $1
+                ORDER BY created_at DESC
+                """,
+                task_id,
+            )
+        return [_debug_issue_row_to_dict(row) for row in rows]
+
+    async def update_debug_issue(
+        self,
+        issue_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        allowed = {
+            "title",
+            "description",
+            "issue_type",
+            "severity",
+            "status",
+            "prompt_artifact_path",
+            "related_artifact_path",
+            "metadata",
+        }
+        updates = {
+            key: value for key, value in payload.items() if key in allowed and value is not None
+        }
+        if not updates:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT * FROM debug_issues WHERE id = $1::uuid",
+                    issue_id,
+                )
+            return None if row is None else _debug_issue_row_to_dict(row)
+
+        vals: list[Any] = [issue_id]
+        sets: list[str] = []
+        idx = 2
+        for key, value in updates.items():
+            if key == "metadata":
+                value = json.dumps(value, ensure_ascii=False)
+                sets.append(f"{key} = ${idx}::jsonb")
+            else:
+                sets.append(f"{key} = ${idx}")
+            vals.append(value)
+            idx += 1
+        sets.append(f"updated_at = ${idx}")
+        vals.append(datetime.now(UTC))
+        idx += 1
+        if updates.get("status") == "fixed":
+            sets.append(f"fixed_at = ${idx}")
+            vals.append(datetime.now(UTC))
+        elif updates.get("status") and updates.get("status") != "fixed":
+            sets.append("fixed_at = NULL")
+
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"UPDATE debug_issues SET {', '.join(sets)} WHERE id = $1::uuid RETURNING *",
+                *vals,
+            )
+        return None if row is None else _debug_issue_row_to_dict(row)
+
     # ── Compatibility: expose _tasks for startup banner ──────
 
     @property
@@ -305,6 +437,15 @@ def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
         )
     if "options" in d:
         d["options"] = _jsonish_to_dict(d["options"])
+    return d
+
+
+def _debug_issue_row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
+    d = dict(row)
+    for key in ("created_at", "updated_at", "fixed_at"):
+        d[key] = _datetime_to_iso(d.get(key))
+    d["id"] = str(d["id"])
+    d["metadata"] = _jsonish_to_dict(d.get("metadata"))
     return d
 
 

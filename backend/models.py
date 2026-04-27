@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -50,6 +49,82 @@ class ContentClarifyData(BaseModel):
 class ContentClarifyResponse(BaseModel):
     original_user_text: str
     clarification: ContentClarifyData
+
+
+class DebugPromptPhaseSummary(BaseModel):
+    phase_id: str
+    phase_name: str
+    created_at: str
+    artifact_path: str
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+
+
+class DebugPromptIndexResponse(BaseModel):
+    task_id: str
+    phases: list[DebugPromptPhaseSummary] = Field(default_factory=list)
+
+
+class DebugPromptArtifactResponse(BaseModel):
+    task_id: str
+    phase_id: str
+    phase_name: str
+    created_at: str
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    system_prompt: str = ""
+    user_prompt: str = ""
+    options: dict[str, Any] = Field(default_factory=dict)
+    referenced_artifacts: dict[str, Any] = Field(default_factory=dict)
+    output_snapshot: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+    metrics: dict[str, Any] = Field(default_factory=dict)
+
+
+class DebugIssueCreateRequest(BaseModel):
+    phase_id: str | None = None
+    title: str = Field(..., min_length=1, max_length=240)
+    description: str = Field(..., min_length=1)
+    issue_type: str = "other"
+    severity: str = "medium"
+    status: str = "open"
+    source: str = "manual"
+    prompt_artifact_path: str | None = None
+    related_artifact_path: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DebugIssueUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=240)
+    description: str | None = Field(default=None, min_length=1)
+    issue_type: str | None = None
+    severity: str | None = None
+    status: str | None = None
+    prompt_artifact_path: str | None = None
+    related_artifact_path: str | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class DebugIssueResponse(BaseModel):
+    id: str
+    task_id: str
+    phase_id: str | None = None
+    title: str
+    description: str
+    issue_type: str
+    severity: str
+    status: str
+    source: str
+    prompt_artifact_path: str | None = None
+    related_artifact_path: str | None = None
+    created_at: str
+    updated_at: str
+    fixed_at: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class DebugIssueListResponse(BaseModel):
+    issues: list[DebugIssueResponse]
+    total: int
 
 
 class PipelineOutputData(BaseModel):
@@ -143,8 +218,7 @@ class SSEEvent(BaseModel):
         ...,
         alias="type",
         description=(
-            "SSE event name: log, status, error, "
-            "tool_start, tool_result, thinking, progress"
+            "SSE event name: log, status, error, tool_start, tool_result, thinking, progress"
         ),
     )
     data: str | dict[str, Any] = Field(

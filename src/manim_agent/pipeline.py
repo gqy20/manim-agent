@@ -55,6 +55,7 @@ from .pipeline_phases345 import (
     run_render_review,
 )
 from .pipeline_trace import TraceSpan, create_trace_id
+from .prompt_debug import write_prompt_artifact
 from .schemas import PhaseSchemaRegistry
 
 logger = logging.getLogger(__name__)
@@ -242,6 +243,27 @@ async def run_pipeline(
             quality=quality,
             render_mode=render_mode,
         )
+        common_debug_inputs = {
+            "user_text": user_text,
+            "target_duration_seconds": target_duration_seconds,
+            "quality": quality,
+            "preset": preset,
+            "render_mode": render_mode,
+            "voice_id": voice_id,
+            "model": model,
+            "no_tts": no_tts,
+            "bgm_enabled": bgm_enabled,
+        }
+        write_prompt_artifact(
+            output_dir=resolved_cwd,
+            phase_id="phase1",
+            phase_name="Scene Planning",
+            system_prompt=planning_system_prompt,
+            user_prompt=planning_prompt,
+            inputs=common_debug_inputs,
+            options=planning_options,
+            options_summary={"output_schema": "phase1_planning"},
+        )
         planning_result_summary = await run_phase1_planning(
             planning_prompt=planning_prompt,
             target_duration_seconds=target_duration_seconds,
@@ -258,9 +280,11 @@ async def run_pipeline(
         plan_text = dispatcher.partial_plan_text
         build_spec = getattr(dispatcher, "partial_build_spec", None)
         _emit_phase_exit(
-            event_callback, phase_id="phase1", phase_name="Scene Planning",
+            event_callback,
+            phase_id="phase1",
+            phase_name="Scene Planning",
             trace_id=pipeline_trace_id,
-            beats_count=len(build_spec.beats) if hasattr(build_spec, 'beats') else None,
+            beats_count=len(build_spec.beats) if hasattr(build_spec, "beats") else None,
         )
         if build_spec is not None:
             _beats = getattr(build_spec, "beats", None) or []
@@ -323,6 +347,20 @@ async def run_pipeline(
             resolved_cwd,
             render_mode=render_mode,
         )
+        write_prompt_artifact(
+            output_dir=resolved_cwd,
+            phase_id="phase2a",
+            phase_name="Script Draft",
+            system_prompt=script_draft_system_prompt,
+            user_prompt=script_draft_prompt,
+            inputs={
+                **common_debug_inputs,
+                "build_spec": build_spec.model_dump() if build_spec is not None else None,
+            },
+            options=script_draft_opts,
+            options_summary={"output_schema": "phase2_script_draft"},
+            referenced_artifacts={"phase1_planning": "phase1_planning.json"},
+        )
         script_draft_result_summary = await run_phase2_script_draft(
             script_draft_prompt=script_draft_prompt,
             script_draft_options_instance=script_draft_opts,
@@ -370,8 +408,15 @@ async def run_pipeline(
                     "scene_class": getattr(draft_output, "scene_class", None),
                     "implemented_beats": list(getattr(draft_output, "implemented_beats", []) or []),
                     "build_summary": getattr(draft_output, "build_summary", None) or "",
-                    "estimated_duration_seconds": getattr(draft_output, "estimated_duration_seconds", None) or 0,
-                    "beat_timing_seconds": dict(getattr(draft_output, "beat_timing_seconds", {}) or {}),
+                    "estimated_duration_seconds": getattr(
+                        draft_output,
+                        "estimated_duration_seconds",
+                        None,
+                    )
+                    or 0,
+                    "beat_timing_seconds": dict(
+                        getattr(draft_output, "beat_timing_seconds", {}) or {}
+                    ),
                     "plan_text": plan_text or "",
                     "target_duration_seconds": target_duration_seconds,
                 },
@@ -403,6 +448,24 @@ async def run_pipeline(
             resolved_cwd,
             render_mode=render_mode,
             script_draft_accepted=True,
+        )
+        write_prompt_artifact(
+            output_dir=resolved_cwd,
+            phase_id="phase2b",
+            phase_name="Render Implementation",
+            system_prompt=implementation_system_prompt,
+            user_prompt=implementation_prompt,
+            inputs={
+                **common_debug_inputs,
+                "build_spec": build_spec.model_dump() if build_spec is not None else None,
+                "plan_text": plan_text,
+            },
+            options=build_opts,
+            options_summary={"output_schema": "phase2_implementation"},
+            referenced_artifacts={
+                "phase1_planning": "phase1_planning.json",
+                "phase2_script_draft": "phase2_script_draft.json",
+            },
         )
         implementation_result_summary = await run_phase2_implementation(
             implementation_prompt=implementation_prompt,
@@ -452,7 +515,9 @@ async def run_pipeline(
         dispatcher.pipeline_output = phase2_po
         dispatcher.expected_output = "pipeline_output"
         _emit_phase_exit(
-            event_callback, phase_id="phase2b", phase_name="Render Implementation",
+            event_callback,
+            phase_id="phase2b",
+            phase_name="Render Implementation",
             trace_id=pipeline_trace_id,
             turn_count=(
                 dispatcher.result_summary.get("turns") if dispatcher.result_summary else None
@@ -515,7 +580,9 @@ async def run_pipeline(
         # Phase 3.5/5: Narration Generation Pass
         # ══════════════════════════════════════════════
         _emit_phase_exit(
-            event_callback, phase_id="phase3", phase_name="Render+Review",
+            event_callback,
+            phase_id="phase3",
+            phase_name="Render+Review",
             trace_id=pipeline_trace_id,
             status="ok" if po else "error",
         )
@@ -578,9 +645,20 @@ async def run_pipeline(
             message="Phase 3.5 narration generation complete.",
             pipeline_output={
                 "narration": narration_text or "",
-                "beat_to_narration_map": list(getattr(narration_output, "beat_to_narration_map", []) or []),
-                "narration_coverage_complete": getattr(narration_output, "narration_coverage_complete", None),
-                "estimated_narration_duration_seconds": getattr(narration_output, "estimated_narration_duration_seconds", None) or 0,
+                "beat_to_narration_map": list(
+                    getattr(narration_output, "beat_to_narration_map", []) or []
+                ),
+                "narration_coverage_complete": getattr(
+                    narration_output,
+                    "narration_coverage_complete",
+                    None,
+                ),
+                "estimated_narration_duration_seconds": getattr(
+                    narration_output,
+                    "estimated_narration_duration_seconds",
+                    None,
+                )
+                or 0,
                 "plan_text": plan_text or "",
                 "target_duration_seconds": target_duration_seconds,
                 "implemented_beats": list(getattr(po, "implemented_beats", []) or []) if po else [],
@@ -600,7 +678,9 @@ async def run_pipeline(
         # Phase 4+5/5: TTS Synthesis + Video Mux
         # ══════════════════════════════════════════════
         _emit_phase_exit(
-            event_callback, phase_id="phase3_5", phase_name="Narration",
+            event_callback,
+            phase_id="phase3_5",
+            phase_name="Narration",
             trace_id=pipeline_trace_id,
         )
         _emit_phase_enter(
@@ -620,12 +700,18 @@ async def run_pipeline(
                 "  [SKIP] Phase 5/5 skipped: Video muxing requires TTS output and is disabled."
             )
             _emit_phase_exit(
-                event_callback, phase_id="phase4", phase_name="TTS+Mux",
-                trace_id=pipeline_trace_id, status="cancelled",
+                event_callback,
+                phase_id="phase4",
+                phase_name="TTS+Mux",
+                trace_id=pipeline_trace_id,
+                status="cancelled",
             )
             _emit_phase_exit(
-                event_callback, phase_id="phase5", phase_name="Mux",
-                trace_id=pipeline_trace_id, status="cancelled",
+                event_callback,
+                phase_id="phase5",
+                phase_name="Mux",
+                trace_id=pipeline_trace_id,
+                status="cancelled",
             )
             _emit_status(
                 event_callback,
@@ -678,12 +764,18 @@ async def run_pipeline(
             event_callback=event_callback,
         )
         _emit_phase_exit(
-            event_callback, phase_id="phase4", phase_name="TTS",
-            trace_id=pipeline_trace_id, status="ok",
+            event_callback,
+            phase_id="phase4",
+            phase_name="TTS",
+            trace_id=pipeline_trace_id,
+            status="ok",
         )
         _emit_phase_exit(
-            event_callback, phase_id="phase5", phase_name="Mux",
-            trace_id=pipeline_trace_id, status="ok",
+            event_callback,
+            phase_id="phase5",
+            phase_name="Mux",
+            trace_id=pipeline_trace_id,
+            status="ok",
         )
         if po is not None:
             _emit_status(

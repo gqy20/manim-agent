@@ -28,6 +28,12 @@ from .log_config import bind_log_context, get_log_context, log_event, set_log_co
 from .models import (
     ContentClarifyRequest,
     ContentClarifyResponse,
+    DebugIssueCreateRequest,
+    DebugIssueListResponse,
+    DebugIssueResponse,
+    DebugIssueUpdateRequest,
+    DebugPromptArtifactResponse,
+    DebugPromptIndexResponse,
     TaskCreateRequest,
     TaskListResponse,
     TaskResponse,
@@ -68,6 +74,34 @@ _TERMINAL_TASK_STATUSES = {
     TaskStatus.FAILED.value,
     TaskStatus.STOPPED.value,
 }
+
+
+def _prompt_debug_enabled() -> bool:
+    return os.environ.get("ENABLE_PROMPT_DEBUG", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _require_prompt_debug_enabled() -> None:
+    if not _prompt_debug_enabled():
+        raise HTTPException(status_code=404, detail="Prompt debug is disabled")
+
+
+def _task_debug_dir(task_id: str) -> Path:
+    return (_OUTPUT_ROOT / task_id / "debug").resolve()
+
+
+def _read_debug_json(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(status_code=404, detail="Debug artifact not found") from None
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=404, detail="Debug artifact is invalid")
+    return data
 
 
 @clarify_router.post("/clarify-content", response_model=ContentClarifyResponse)
@@ -293,6 +327,7 @@ def _safe_schedule(loop: asyncio.AbstractEventLoop, coro_factory) -> None:
     Silently drops the callback if the loop is already closed (e.g. during
     test teardown or server shutdown).
     """
+
     def _schedule() -> None:
         task = asyncio.create_task(coro_factory())
 
@@ -420,7 +455,8 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
             return
         logger.debug("task=%s log_callback line=%r", task_id, line)
         _safe_schedule(
-            main_loop, lambda ln=line: _store.append_log(task_id, ln),
+            main_loop,
+            lambda ln=line: _store.append_log(task_id, ln),
         )
         try:
             main_loop.call_soon_threadsafe(_sse_mgr.push, task_id, line)
@@ -452,9 +488,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
                     )
             main_loop.call_soon_threadsafe(_sse_mgr.push, task_id, event)
         except RuntimeError:
-            logger.debug(
-                "task=%s event_callback failed to schedule to loop", task_id
-            )
+            logger.debug("task=%s event_callback failed to schedule to loop", task_id)
             pass  # loop closed during shutdown/test teardown
 
     def _run_pipeline_thread() -> None:
@@ -813,6 +847,72 @@ async def get_task(task_id: str) -> TaskResponse:
         task_status=task.get("status"),
     )
     return _store.to_response(task)
+
+
+@router.get("/{task_id}/debug/prompts", response_model=DebugPromptIndexResponse)
+async def get_task_debug_prompts(task_id: str) -> DebugPromptIndexResponse:
+    _require_prompt_debug_enabled()
+    if not await _store.get(task_id):
+        raise HTTPException(status_code=404, detail="Task not found")
+    index_path = _task_debug_dir(task_id) / "prompt_index.json"
+    data = _read_debug_json(index_path)
+    return DebugPromptIndexResponse(**data)
+
+
+@router.get(
+    "/{task_id}/debug/prompts/{phase_id}",
+    response_model=DebugPromptArtifactResponse,
+)
+async def get_task_debug_prompt_artifact(
+    task_id: str,
+    phase_id: str,
+) -> DebugPromptArtifactResponse:
+    _require_prompt_debug_enabled()
+    if not await _store.get(task_id):
+        raise HTTPException(status_code=404, detail="Task not found")
+    safe_phase_id = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in phase_id)
+    artifact_path = _task_debug_dir(task_id) / f"{safe_phase_id}.prompt.json"
+    data = _read_debug_json(artifact_path)
+    return DebugPromptArtifactResponse(**data)
+
+
+@router.get("/{task_id}/debug/issues", response_model=DebugIssueListResponse)
+async def list_task_debug_issues(task_id: str) -> DebugIssueListResponse:
+    _require_prompt_debug_enabled()
+    if not await _store.get(task_id):
+        raise HTTPException(status_code=404, detail="Task not found")
+    issues = await _store.list_debug_issues(task_id)
+    return DebugIssueListResponse(
+        issues=[DebugIssueResponse(**issue) for issue in issues],
+        total=len(issues),
+    )
+
+
+@router.post("/{task_id}/debug/issues", response_model=DebugIssueResponse, status_code=201)
+async def create_task_debug_issue(
+    task_id: str,
+    req: DebugIssueCreateRequest,
+) -> DebugIssueResponse:
+    _require_prompt_debug_enabled()
+    if not await _store.get(task_id):
+        raise HTTPException(status_code=404, detail="Task not found")
+    issue = await _store.create_debug_issue(task_id, req.model_dump())
+    return DebugIssueResponse(**issue)
+
+
+@router.patch("/debug/issues/{issue_id}", response_model=DebugIssueResponse)
+async def update_debug_issue(
+    issue_id: str,
+    req: DebugIssueUpdateRequest,
+) -> DebugIssueResponse:
+    _require_prompt_debug_enabled()
+    issue = await _store.update_debug_issue(
+        issue_id,
+        req.model_dump(exclude_unset=True),
+    )
+    if issue is None:
+        raise HTTPException(status_code=404, detail="Debug issue not found")
+    return DebugIssueResponse(**issue)
 
 
 @router.get("/{task_id}/events", response_class=EventSourceResponse)

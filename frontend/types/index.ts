@@ -213,6 +213,66 @@ export interface Task {
   pipeline_output: PipelineOutputData | null;
 }
 
+export interface DebugPromptPhaseSummary {
+  phase_id: string;
+  phase_name: string;
+  created_at: string;
+  artifact_path: string;
+  metrics: Record<string, unknown>;
+  error: string | null;
+}
+
+export interface DebugPromptIndexResponse {
+  task_id: string;
+  phases: DebugPromptPhaseSummary[];
+}
+
+export interface DebugPromptArtifact {
+  task_id: string;
+  phase_id: string;
+  phase_name: string;
+  created_at: string;
+  inputs: Record<string, unknown>;
+  system_prompt: string;
+  user_prompt: string;
+  options: Record<string, unknown>;
+  referenced_artifacts: Record<string, unknown>;
+  output_snapshot: Record<string, unknown>;
+  error: string | null;
+  metrics: Record<string, unknown>;
+}
+
+export interface DebugIssue {
+  id: string;
+  task_id: string;
+  phase_id: string | null;
+  title: string;
+  description: string;
+  issue_type: string;
+  severity: string;
+  status: string;
+  source: string;
+  prompt_artifact_path: string | null;
+  related_artifact_path: string | null;
+  created_at: string;
+  updated_at: string;
+  fixed_at: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface DebugIssueCreatePayload {
+  phase_id: string | null;
+  title: string;
+  description: string;
+  issue_type: string;
+  severity: string;
+  status: string;
+  source?: string;
+  prompt_artifact_path?: string | null;
+  related_artifact_path?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
 export interface ToolStartPayload {
   tool_use_id: string;
   name: string;

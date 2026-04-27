@@ -7,13 +7,15 @@ import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from claude_agent_sdk import ResultMessage, query
 
 from .dispatcher import _MessageDispatcher
-from .schemas import Phase3_5NarrationOutput, PhaseSchemaRegistry
 from .pipeline_config import build_options
 from .prompt_builder import build_narration_generation_prompt
+from .prompt_debug import write_prompt_artifact
+from .schemas import Phase3_5NarrationOutput, PhaseSchemaRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +125,11 @@ def _build_template_narration(
     text = "".join(parts)
     return Phase3_5NarrationOutput(
         narration=text,
-        beat_coverage=list(used_beats) if used_beats else (list(implemented_beats) if implemented_beats else ["默认内容"]),
+        beat_coverage=(
+            list(used_beats)
+            if used_beats
+            else (list(implemented_beats) if implemented_beats else ["默认内容"])
+        ),
         char_count=len(text),
         generation_method="template",
     )
@@ -174,7 +180,9 @@ async def generate_narration(
         target_duration_seconds=target_duration_seconds,
         plan_text=plan_text,
         implemented_beats=list(po.implemented_beats) if hasattr(po, "implemented_beats") else [],
-        beat_to_narration_map=list(po.beat_to_narration_map) if hasattr(po, "beat_to_narration_map") else [],
+        beat_to_narration_map=(
+            list(po.beat_to_narration_map) if hasattr(po, "beat_to_narration_map") else []
+        ),
         build_summary=po.build_summary if hasattr(po, "build_summary") else "",
         video_duration_seconds=po.duration_seconds if hasattr(po, "duration_seconds") else None,
     )
@@ -189,6 +197,32 @@ async def generate_narration(
         allowed_tools=[],
         use_default_output_format=False,
         output_format=PhaseSchemaRegistry.output_format_schema("phase3_5_narration"),
+    )
+    write_prompt_artifact(
+        output_dir=resolved_cwd,
+        phase_id="phase3_5",
+        phase_name="Narration",
+        system_prompt=system_prompt,
+        user_prompt=narration_prompt,
+        inputs={
+            "user_text": user_text,
+            "target_duration_seconds": target_duration_seconds,
+            "plan_text": plan_text,
+            "video_output": video_output,
+            "implemented_beats": list(po.implemented_beats)
+            if hasattr(po, "implemented_beats")
+            else [],
+            "beat_to_narration_map": list(po.beat_to_narration_map)
+            if hasattr(po, "beat_to_narration_map")
+            else [],
+            "build_summary": po.build_summary if hasattr(po, "build_summary") else "",
+            "video_duration_seconds": po.duration_seconds
+            if hasattr(po, "duration_seconds")
+            else None,
+        },
+        options=narration_opts,
+        options_summary={"output_schema": "phase3_5_narration"},
+        referenced_artifacts={"video_output": video_output},
     )
 
     generated_text: str | None = None
@@ -206,7 +240,8 @@ async def generate_narration(
             try:
                 validated = Phase3_5NarrationOutput.model_validate(raw)
                 dispatcher._print(
-                    f"  [NARRATION] Structured narration accepted ({len(validated.narration)} chars)"
+                    "  [NARRATION] Structured narration accepted "
+                    f"({len(validated.narration)} chars)"
                 )
                 return validated
             except Exception as exc:
@@ -224,7 +259,8 @@ async def generate_narration(
 
     if generated_text and _looks_like_spoken_narration(generated_text):
         dispatcher._print(
-            f"  [NARRATION] Generated narration ({len(generated_text)} chars): {generated_text[:80]}..."
+            "  [NARRATION] Generated narration "
+            f"({len(generated_text)} chars): {generated_text[:80]}..."
         )
         return Phase3_5NarrationOutput(
             narration=generated_text,
@@ -238,7 +274,9 @@ async def generate_narration(
     topic_hint = user_text.strip().split("，")[0].split(",")[0][:30]
     template_output = _build_template_narration(
         implemented_beats=list(po.implemented_beats) if hasattr(po, "implemented_beats") else [],
-        beat_to_narration_map=list(po.beat_to_narration_map) if hasattr(po, "beat_to_narration_map") else [],
+        beat_to_narration_map=(
+            list(po.beat_to_narration_map) if hasattr(po, "beat_to_narration_map") else []
+        ),
         user_topic=topic_hint,
     )
     dispatcher._print(f"  [NARRATION] Template narration ({len(template_output.narration)} chars)")

@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import Link from "next/link";
-import { ArrowLeft, Check, Copy, Expand, FileCode2, Film, Loader2, Play, Terminal, Trash2, X, XCircle } from "lucide-react";
+import { ArrowLeft, Bug, Check, Copy, Expand, FileCode2, Film, Loader2, Play, Terminal, Trash2, X, XCircle } from "lucide-react";
 
 import { LogViewer } from "@/components/log-viewer";
 import { PipelinePhaseCards } from "@/components/pipeline-phase-cards";
@@ -28,6 +28,7 @@ const VOICE_LABELS: Record<string, string> = {
   "male-qn-qingse": "Warm Male",
   "female-yujie": "Elegant Female",
 };
+const PROMPT_DEBUG_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PROMPT_DEBUG === "1";
 
 const VIDEO_PHASE_META: Record<
   VideoPlaceholderPhase,
@@ -948,6 +949,19 @@ export default function TaskDetailClient() {
               >
                 {formatCnyCost(finalAgentCostCny)}
               </span>
+            )}
+            {PROMPT_DEBUG_ENABLED && (
+              <Link href={`/tasks/${task.id}/debug`}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-white/12 bg-white/[0.04] text-white/75 hover:bg-white/[0.08] hover:text-white"
+                >
+                  <Bug className="mr-2 h-3.5 w-3.5" />
+                  Debug
+                </Button>
+              </Link>
             )}
             <StatusBadge status={task.status} size="md" className="gsap-header flex-shrink-0" />
           </div>
