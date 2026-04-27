@@ -6,7 +6,6 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from time import perf_counter
-from pathlib import Path
 
 import httpx
 from anyio import BrokenResourceError
@@ -18,11 +17,11 @@ from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .log_config import configure_logging, install_request_logging_middleware, log_event
+from .paths import BACKEND_LOG_ROOT, BACKEND_OUTPUT_ROOT, PROJECT_ROOT
 from .routes import _r2_client, clarify_router, init_r2_client, router, set_store
 from .task_store import TaskStore
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(_PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env")
 
 _NEXTJS_HOST = os.environ.get("NEXTJS_HOST", "127.0.0.1")
 _NEXTJS_PORT = int(os.environ.get("NEXT_PORT", "3000"))
@@ -76,8 +75,8 @@ class _SSEDisconnectMiddleware:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Path("backend/output").mkdir(parents=True, exist_ok=True)
-    Path("backend/logs").mkdir(parents=True, exist_ok=True)
+    BACKEND_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    BACKEND_LOG_ROOT.mkdir(parents=True, exist_ok=True)
 
     store = TaskStore()
     await store.start()
@@ -106,7 +105,7 @@ async def lifespan(app: FastAPI):
     print("  Manim Agent Backend Ready")
     print(f"  Tasks in DB:   {count}")
     print(f"  Storage:      {r2_mode}")
-    print(f"  Output dir:   {Path('backend/output').resolve()}")
+    print(f"  Output dir:   {BACKEND_OUTPUT_ROOT}")
     print(f"  Next.js proxy: {_NEXTJS_BASE}")
     print("=" * 56)
     print()
@@ -140,7 +139,7 @@ install_request_logging_middleware(app)
 app.include_router(router)
 app.include_router(clarify_router)
 
-output_dir = Path("backend/output")
+output_dir = BACKEND_OUTPUT_ROOT
 output_dir.mkdir(parents=True, exist_ok=True)
 if output_dir.exists():
     app.mount("/videos", StaticFiles(directory=str(output_dir)), name="videos")

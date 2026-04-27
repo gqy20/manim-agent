@@ -6,7 +6,6 @@ import asyncio
 import json
 from pathlib import Path
 
-
 DEFAULT_SUBTITLE_STYLE: dict[str, str] = {
     "FontSize": "20",
     "PrimaryColour": "&H00FFFFFF",
@@ -174,7 +173,9 @@ async def build_final_video(
     _, stderr = await proc.communicate()
 
     if proc.returncode != 0:
-        raise RuntimeError(f"ffmpeg failed (exit code {proc.returncode}): {stderr.decode().strip()}")
+        raise RuntimeError(
+            f"ffmpeg failed (exit code {proc.returncode}): {stderr.decode().strip()}"
+        )
 
     return output_path
 
@@ -190,16 +191,24 @@ async def concat_audios(
     for path in audio_paths:
         if not path:
             continue
-        if not Path(path).exists():
+        resolved_path = Path(path).resolve()
+        if not resolved_path.exists():
             raise FileNotFoundError(f"Audio file not found: {path}")
-        valid_paths.append(path)
+        if not resolved_path.is_file():
+            raise FileNotFoundError(f"Audio path is not a file: {path}")
+        if resolved_path.stat().st_size <= 0:
+            raise RuntimeError(f"Audio file is empty: {resolved_path}")
+        valid_paths.append(str(resolved_path))
+
+    output = Path(output_path).resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
 
     if len(valid_paths) < 2:
-        if len(valid_paths) == 1 and valid_paths[0] != output_path:
+        if len(valid_paths) == 1 and Path(valid_paths[0]).resolve() != output:
             import shutil
 
-            shutil.copy2(valid_paths[0], output_path)
-        return output_path
+            shutil.copy2(valid_paths[0], output)
+        return str(output)
 
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".txt", delete=False, encoding="utf-8"
@@ -221,7 +230,7 @@ async def concat_audios(
             list_path,
             "-c",
             "copy",
-            output_path,
+            str(output),
         ]
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -230,13 +239,29 @@ async def concat_audios(
         )
         _, stderr = await proc.communicate()
         if proc.returncode != 0:
+            diagnostics = []
+            for path in valid_paths:
+                p = Path(path)
+                try:
+                    diagnostics.append(
+                        f"{p} exists={p.exists()} size={p.stat().st_size if p.exists() else 'n/a'}"
+                    )
+                except OSError as exc:
+                    diagnostics.append(f"{p} stat_error={exc}")
+            try:
+                list_contents = Path(list_path).read_text(encoding="utf-8")
+            except OSError as exc:
+                list_contents = f"<unable to read concat list: {exc}>"
             raise RuntimeError(
-                f"ffmpeg audio concat failed (exit code {proc.returncode}): {stderr.decode().strip()}"
+                "ffmpeg audio concat failed "
+                f"(exit code {proc.returncode}): {stderr.decode().strip()}\n"
+                f"Concat list: {list_path}\n{list_contents}"
+                f"\nInput diagnostics: {'; '.join(diagnostics)}"
             )
     finally:
         Path(list_path).unlink(missing_ok=True)
 
-    return output_path
+    return str(output)
 
 
 async def concat_videos(

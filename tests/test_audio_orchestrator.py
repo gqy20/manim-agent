@@ -1,11 +1,14 @@
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
 from manim_agent.audio_orchestrator import (
     build_beats_from_pipeline_output,
     orchestrate_audio_assets,
+    synthesize_beat_tts,
 )
+from manim_agent.beat_schema import BeatSpec
 
 
 class TestBuildBeatsFromPipelineOutput:
@@ -110,3 +113,29 @@ class TestOrchestrateAudioAssets:
         assert result.timeline.beats[1].start_seconds == 1.0
         assert result.concatenated_audio_path == str(tmp_path / "audio_track.mp3")
         assert result.bgm_path == str(tmp_path / "bgm.mp3")
+
+
+class TestSynthesizeBeatTts:
+    @pytest.mark.asyncio
+    async def test_raises_when_tts_returns_missing_audio_file(self, tmp_path):
+        async def fake_synthesize(**_kwargs):
+            return SimpleNamespace(
+                audio_path=str(tmp_path / "audio" / "beat_001" / "audio.mp3"),
+                subtitle_path="",
+                extra_info_path="",
+                duration_ms=1000,
+                word_count=3,
+                usage_characters=12,
+                mode="sync",
+            )
+
+        with (
+            patch("manim_agent.audio_orchestrator.tts_client.synthesize", fake_synthesize),
+            pytest.raises(RuntimeError, match="does not exist"),
+        ):
+            await synthesize_beat_tts(
+                beats=[BeatSpec(id="beat_001", title="Opening", narration_text="Hello")],
+                voice_id="female-tianmei",
+                model="speech-2.8-hd",
+                output_dir=str(tmp_path),
+            )

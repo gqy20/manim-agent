@@ -10,17 +10,24 @@ from manim_agent.schemas import Phase3RenderReviewOutput as RenderReviewOutput
 from manim_agent.schemas.phase3_5_narration import Phase3_5NarrationOutput
 
 from ._test_main_dispatcher_helpers import (
-    _make_two_stage_query_side_effect,
-    _make_text_block,
+    _DEFAULT_DRAFT_SOURCE,
     _make_assistant_message,
     _make_result_message,
-    _DEFAULT_DRAFT_SOURCE,
+    _make_text_block,
+    _make_two_stage_query_side_effect,
     _phase2_output,
 )
 
 
 def _write_mock_scene(path):
     path.write_text(_DEFAULT_DRAFT_SOURCE, encoding="utf-8")
+
+
+def _write_mock_tts_artifact(tmp_path):
+    audio_path = tmp_path / "audio" / "beat_001" / "audio.mp3"
+    audio_path.parent.mkdir(parents=True, exist_ok=True)
+    audio_path.write_bytes(b"fake-mp3")
+    return audio_path
 
 
 class TestStderrHandlerForwardsToCallback:
@@ -89,9 +96,10 @@ class TestPipelinePhaseLogsViaCallback:
             ),
         ):
             mock_query.side_effect = _make_two_stage_query_side_effect(mock_messages)
+            audio_path = _write_mock_tts_artifact(tmp_path)
             mock_tts.return_value = MagicMock(
-                audio_path="/tmp/audio.mp3",
-                subtitle_path="/tmp/sub.srt",
+                audio_path=str(audio_path),
+                subtitle_path="",
                 duration_ms=1200,
                 word_count=42,
             )
@@ -130,9 +138,10 @@ class TestPipelinePhaseLogsViaCallback:
                 ),
             ),
         ]
+        audio_path = _write_mock_tts_artifact(tmp_path)
         mock_tts_result = MagicMock(
-            audio_path="/tmp/audio.mp3",
-            subtitle_path="/tmp/sub.srt",
+            audio_path=str(audio_path),
+            subtitle_path="",
             duration_ms=1200,
             word_count=42,
         )

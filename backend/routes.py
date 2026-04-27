@@ -20,6 +20,7 @@ try:
 except ImportError:
     from sse_starlette.sse import EventSourceResponse
 
+from manim_agent.event_store import EventStore
 from manim_agent.pipeline_events import EventType, PipelineEvent, StatusPayload
 
 from .content_clarifier import ContentClarifyError, clarify_content
@@ -32,11 +33,10 @@ from .models import (
     TaskResponse,
     TaskStatus,
 )
+from .paths import BACKEND_LOG_ROOT, BACKEND_OUTPUT_ROOT
 from .pipeline_runner import PipelineExecutionError, _pipeline_body
 from .sse_manager import SSESubscriptionManager
 from .storage.r2_client import R2Client, is_r2_url, r2_object_key
-
-from manim_agent.event_store import EventStore
 from .task_runtime import (
     TaskRuntime,
     TaskTerminationRequested,
@@ -58,7 +58,7 @@ logger = logging.getLogger(__name__)
 _store: TaskStore  # set via set_store()
 
 _r2_client: R2Client | None = None
-_OUTPUT_ROOT = Path("backend/output")
+_OUTPUT_ROOT = BACKEND_OUTPUT_ROOT
 _EVENT_STORE_DIR = _OUTPUT_ROOT / "events"
 _event_store: EventStore = EventStore(store_dir=str(_EVENT_STORE_DIR))
 _sse_mgr: SSESubscriptionManager = SSESubscriptionManager(event_store=_event_store)
@@ -399,7 +399,7 @@ async def create_task(req: TaskCreateRequest) -> TaskResponse:
         task_status=task.get("status"),
     )
 
-    output_dir = Path("backend/output") / task_id
+    output_dir = _OUTPUT_ROOT / task_id
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = str(output_dir / "final.mp4")
     runtime = register_task_runtime(
@@ -1064,7 +1064,7 @@ async def get_video(task_id: str):
 
 
 # ── 前端日志接收端点 ──────────────────────────────────────────
-_FRONTEND_LOG_DIR = Path("backend/logs")
+_FRONTEND_LOG_DIR = BACKEND_LOG_ROOT
 
 
 @router.post("/frontend-logs", status_code=204)

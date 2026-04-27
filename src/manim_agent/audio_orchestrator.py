@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,74 @@ def _coerce_duration_seconds(value: Any) -> float:
     if isinstance(value, (int, float)):
         return float(value) / 1000.0
     return 0.0
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _resolve_tts_artifact_path(
+    *,
+    raw_path: str | None,
+    output_root: Path,
+    beat_id: str,
+    artifact_name: str,
+    required: bool = False,
+    non_empty: bool = False,
+) -> str | None:
+    path_text = _optional_str(raw_path)
+    if path_text is None:
+        if required:
+            raise RuntimeError(f"TTS did not return {artifact_name} for {beat_id}.")
+        return None
+
+    path = Path(path_text)
+    if not path.is_absolute():
+        path = output_root / path
+    path = path.resolve()
+
+    if not _is_relative_to(path, output_root):
+        raise RuntimeError(
+            f"TTS returned {artifact_name} outside task output directory for {beat_id}: {path}"
+        )
+    if not path.exists():
+        raise RuntimeError(f"TTS {artifact_name} file for {beat_id} does not exist: {path}")
+    if not path.is_file():
+        raise RuntimeError(f"TTS {artifact_name} path for {beat_id} is not a file: {path}")
+    if non_empty and path.stat().st_size <= 0:
+        raise RuntimeError(f"TTS {artifact_name} file for {beat_id} is empty: {path}")
+    return str(path)
+
+
+def _write_audio_manifest(beats: list[BeatSpec], output_path: str) -> str:
+    payload = {
+        "beats": [
+            {
+                "id": beat.id,
+                "title": beat.title,
+                "audio_path": beat.audio_path,
+                "audio_exists": Path(beat.audio_path).exists() if beat.audio_path else False,
+                "audio_size_bytes": (
+                    Path(beat.audio_path).stat().st_size
+                    if beat.audio_path and Path(beat.audio_path).exists()
+                    else None
+                ),
+                "subtitle_path": beat.subtitle_path,
+                "extra_info_path": beat.extra_info_path,
+                "tts_mode": beat.tts_mode,
+                "duration_seconds": beat.actual_audio_duration_seconds,
+            }
+            for beat in beats
+        ]
+    }
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return str(path)
 
 
 def build_beats_from_pipeline_output(
@@ -118,7 +187,7 @@ async def synthesize_beat_tts(
 ) -> list[BeatSpec]:
     """Synthesize TTS for each beat with bounded concurrency."""
     semaphore = asyncio.Semaphore(max(1, concurrency))
-    root = Path(output_dir)
+    root = Path(output_dir).resolve()
 
     async def _run(beat: BeatSpec) -> BeatSpec:
         async with semaphore:
@@ -129,9 +198,26 @@ async def synthesize_beat_tts(
                 model=model,
                 output_dir=str(beat_dir),
             )
-            beat.audio_path = _optional_str(getattr(result, "audio_path", None))
-            beat.subtitle_path = _optional_str(getattr(result, "subtitle_path", None))
-            beat.extra_info_path = _optional_str(getattr(result, "extra_info_path", None))
+            beat.audio_path = _resolve_tts_artifact_path(
+                raw_path=getattr(result, "audio_path", None),
+                output_root=root,
+                beat_id=beat.id,
+                artifact_name="audio",
+                required=True,
+                non_empty=True,
+            )
+            beat.subtitle_path = _resolve_tts_artifact_path(
+                raw_path=getattr(result, "subtitle_path", None),
+                output_root=root,
+                beat_id=beat.id,
+                artifact_name="subtitle",
+            )
+            beat.extra_info_path = _resolve_tts_artifact_path(
+                raw_path=getattr(result, "extra_info_path", None),
+                output_root=root,
+                beat_id=beat.id,
+                artifact_name="extra info",
+            )
             beat.tts_mode = _optional_str(getattr(result, "mode", None))
             beat.actual_audio_duration_seconds = _coerce_duration_seconds(
                 getattr(result, "duration_ms", 0)
@@ -220,6 +306,7 @@ async def orchestrate_audio_assets(
 
     timeline = finalize_timeline(beats_result)
     timeline_path = write_timeline_file(timeline, str(Path(output_dir) / "timeline.json"))
+    _write_audio_manifest(beats_result, str(Path(output_dir) / "audio_manifest.json"))
 
     audio_paths = [beat.audio_path for beat in beats_result if beat.audio_path]
     subtitle_paths = [beat.subtitle_path for beat in beats_result if beat.subtitle_path]
