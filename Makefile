@@ -7,8 +7,8 @@ BE_PORT ?= 8471
 FE_PORT ?= 3147
 # Backend reloader default is off for stability.
 RELOAD ?= false
-# Set PROMPT_DEBUG=1 when you want task prompt artifacts and the debug UI enabled.
-PROMPT_DEBUG ?= 0
+# Prompt artifacts and the debug UI are enabled by default during development.
+PROMPT_DEBUG ?= 1
 
 # ── Help ──────────────────────────────────────────────────
 help: ## Show available targets

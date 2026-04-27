@@ -11,7 +11,7 @@ from typing import Any
 
 def prompt_debug_enabled() -> bool:
     value = os.environ.get("ENABLE_PROMPT_DEBUG", "")
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _json_safe(value: Any) -> Any:
@@ -63,7 +63,7 @@ def write_prompt_artifact(
     output_snapshot: dict[str, Any] | None = None,
     error: str | None = None,
 ) -> str | None:
-    """Persist a phase prompt/debug snapshot when ENABLE_PROMPT_DEBUG is enabled."""
+    """Persist a phase prompt/debug snapshot unless debug is explicitly disabled."""
     if not prompt_debug_enabled():
         return None
 

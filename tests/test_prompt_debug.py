@@ -5,8 +5,23 @@ import json
 from manim_agent.prompt_debug import write_prompt_artifact
 
 
-def test_write_prompt_artifact_respects_feature_flag(monkeypatch, tmp_path):
+def test_write_prompt_artifact_defaults_to_enabled(monkeypatch, tmp_path):
     monkeypatch.delenv("ENABLE_PROMPT_DEBUG", raising=False)
+
+    result = write_prompt_artifact(
+        output_dir=str(tmp_path),
+        phase_id="phase1",
+        phase_name="Planning",
+        system_prompt="system",
+        user_prompt="user",
+    )
+
+    assert result is not None
+    assert (tmp_path / "debug" / "phase1.prompt.json").exists()
+
+
+def test_write_prompt_artifact_can_be_disabled(monkeypatch, tmp_path):
+    monkeypatch.setenv("ENABLE_PROMPT_DEBUG", "0")
 
     result = write_prompt_artifact(
         output_dir=str(tmp_path),

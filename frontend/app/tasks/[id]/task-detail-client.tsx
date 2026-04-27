@@ -28,7 +28,7 @@ const VOICE_LABELS: Record<string, string> = {
   "male-qn-qingse": "Warm Male",
   "female-yujie": "Elegant Female",
 };
-const PROMPT_DEBUG_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PROMPT_DEBUG === "1";
+const PROMPT_DEBUG_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PROMPT_DEBUG !== "0";
 
 const VIDEO_PHASE_META: Record<
   VideoPlaceholderPhase,

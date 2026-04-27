@@ -77,11 +77,11 @@ _TERMINAL_TASK_STATUSES = {
 
 
 def _prompt_debug_enabled() -> bool:
-    return os.environ.get("ENABLE_PROMPT_DEBUG", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
+    return os.environ.get("ENABLE_PROMPT_DEBUG", "").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
     }
 
 
