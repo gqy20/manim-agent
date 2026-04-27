@@ -11,6 +11,18 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
+async function readApiError(res: Response, fallback: string): Promise<string> {
+  try {
+    const data = (await res.json()) as { detail?: unknown };
+    if (typeof data.detail === "string" && data.detail.trim()) {
+      return data.detail.trim();
+    }
+  } catch {
+    // Fall back to the supplied message when the body is not JSON.
+  }
+  return fallback;
+}
+
 export async function createTask(payload: TaskCreatePayload): Promise<Task> {
   const res = await fetch(`${API_BASE}/api/tasks`, {
     method: "POST",
@@ -32,15 +44,7 @@ export async function clarifyContent(
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const data = (await res.json()) as { detail?: string };
-      if (typeof data?.detail === "string" && data.detail.trim()) {
-        detail = data.detail.trim();
-      }
-    } catch {
-      // Fall back to HTTP status text when the response body is not JSON.
-    }
+    const detail = await readApiError(res, res.statusText);
     throw new Error(detail || "Failed to clarify content");
   }
   return res.json();
@@ -90,7 +94,9 @@ export function getVideoUrl(
 
 export async function getDebugPromptIndex(taskId: string): Promise<DebugPromptIndexResponse> {
   const res = await fetch(`${API_BASE}/api/tasks/${taskId}/debug/prompts`);
-  if (!res.ok) throw new Error("Failed to fetch debug prompt index");
+  if (!res.ok) {
+    throw new Error(await readApiError(res, "Failed to fetch debug prompt index"));
+  }
   return res.json();
 }
 
@@ -99,13 +105,17 @@ export async function getDebugPromptArtifact(
   phaseId: string,
 ): Promise<DebugPromptArtifact> {
   const res = await fetch(`${API_BASE}/api/tasks/${taskId}/debug/prompts/${phaseId}`);
-  if (!res.ok) throw new Error("Failed to fetch debug prompt artifact");
+  if (!res.ok) {
+    throw new Error(await readApiError(res, "Failed to fetch debug prompt artifact"));
+  }
   return res.json();
 }
 
 export async function listDebugIssues(taskId: string): Promise<DebugIssue[]> {
   const res = await fetch(`${API_BASE}/api/tasks/${taskId}/debug/issues`);
-  if (!res.ok) throw new Error("Failed to fetch debug issues");
+  if (!res.ok) {
+    throw new Error(await readApiError(res, "Failed to fetch debug issues"));
+  }
   const data = (await res.json()) as { issues: DebugIssue[] };
   return data.issues;
 }
@@ -119,6 +129,8 @@ export async function createDebugIssue(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to create debug issue");
+  if (!res.ok) {
+    throw new Error(await readApiError(res, "Failed to create debug issue"));
+  }
   return res.json();
 }
