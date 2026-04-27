@@ -55,6 +55,7 @@ export interface PipelineOutputData {
   timeline_total_duration_seconds?: number | null;
   segment_render_plan_path?: string | null;
   segment_video_paths?: string[];
+  rendered_segments?: RenderedSegmentOutput[];
   audio_concat_path?: string | null;
   source_code: string | null;
   audio_path: string | null;
@@ -85,6 +86,7 @@ export interface PipelineOutputData {
   phase1_planning?: Phase1PlanningOutput | null;
   phase2_implementation?: Phase2ImplementationOutput | null;
   phase3_render_review?: Phase3RenderReviewOutput | null;
+  phase3_5_narration?: Phase35NarrationOutput | null;
   phase4_tts?: Phase4TTSOutput | null;
   phase5_mux?: Phase5MuxOutput | null;
   beats?: PipelineBeat[] | null;
@@ -138,7 +140,31 @@ export interface Phase2ImplementationOutput {
   render_mode: string | null;
   segment_render_complete: boolean | null;
   segment_video_paths: string[];
+  rendered_segments?: RenderedSegmentOutput[];
   source_code: string | null;
+}
+
+export interface RenderedSegmentOutput {
+  beat_id: string;
+  title: string;
+  order_index: number;
+  video_path: string;
+  duration_seconds: number | null;
+}
+
+export interface BeatNarrationOutput {
+  beat_id: string;
+  title: string;
+  text: string;
+  target_duration_seconds: number;
+}
+
+export interface Phase35NarrationOutput {
+  narration: string;
+  beat_coverage: string[];
+  beat_narrations?: BeatNarrationOutput[];
+  char_count: number;
+  generation_method: string;
 }
 
 export interface FrameAnalysisOutput {
@@ -188,18 +214,25 @@ export interface PipelineBeat {
   required_elements?: string[];
   segment_required?: boolean;
   audio_path?: string | null;
+  normalized_audio_path?: string | null;
   subtitle_path?: string | null;
   extra_info_path?: string | null;
   actual_audio_duration_seconds?: number | null;
+  normalized_audio_duration_seconds?: number | null;
+  normalization_strategy?: string | null;
   tts_mode?: string | null;
 }
 
 export interface AudioSegmentOutput {
   beat_id: string;
   audio_path: string | null;
+  normalized_audio_path?: string | null;
   subtitle_path: string | null;
   extra_info_path: string | null;
   duration_seconds: number | null;
+  target_duration_seconds?: number | null;
+  normalized_duration_seconds?: number | null;
+  normalization_strategy?: string | null;
   tts_mode: string | null;
 }
 

@@ -9,11 +9,16 @@ from .beat_schema import BeatSpec, TimelineSpec
 
 
 def finalize_timeline(beats: list[BeatSpec]) -> TimelineSpec:
-    """Assign start/end offsets to beats using measured audio durations."""
+    """Assign start/end offsets using the visual beat window as the main clock."""
     cursor = 0.0
     normalized: list[BeatSpec] = []
     for beat in beats:
-        duration = float(beat.actual_audio_duration_seconds or 0.0)
+        duration = float(
+            beat.target_duration_seconds
+            or beat.normalized_audio_duration_seconds
+            or beat.actual_audio_duration_seconds
+            or 0.0
+        )
         beat.start_seconds = cursor
         beat.end_seconds = cursor + duration
         cursor += duration

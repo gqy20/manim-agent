@@ -57,6 +57,23 @@ class TestModelCreation:
         m = PipelineOutput(video_output="/x.mp4", duration_seconds=0)
         assert m.duration_seconds == 0
 
+    def test_rendered_segments_are_structured(self):
+        m = PipelineOutput(
+            video_output="/x.mp4",
+            rendered_segments=[
+                {
+                    "beat_id": "beat_001",
+                    "title": "Intro",
+                    "order_index": 0,
+                    "video_path": "segments/beat_001.mp4",
+                    "duration_seconds": 5.5,
+                }
+            ],
+        )
+
+        assert m.rendered_segments[0].beat_id == "beat_001"
+        assert m.rendered_segments[0].duration_seconds == 5.5
+
 
 # ── 序列化 ─────────────────────────────────────────────────────
 

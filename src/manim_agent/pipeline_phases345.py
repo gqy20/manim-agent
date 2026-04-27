@@ -93,6 +93,107 @@ def _phase3_gate_issue(*, po: Any, render_mode: str, resolved_cwd: str) -> str |
     return None
 
 
+def _expected_rendered_segment_ids(po: Any) -> list[str]:
+    phase1 = getattr(po, "phase1_planning", None)
+    build_spec = getattr(phase1, "build_spec", None)
+    beats = list(getattr(build_spec, "beats", []) or [])
+    if beats:
+        return [
+            str(getattr(beat, "id"))
+            for beat in beats
+            if getattr(beat, "segment_required", True)
+        ]
+
+    structured_beats = list(getattr(po, "beats", []) or [])
+    ids: list[str] = []
+    for index, beat in enumerate(structured_beats, start=1):
+        data = beat.model_dump() if hasattr(beat, "model_dump") else beat
+        if isinstance(data, dict):
+            ids.append(str(data.get("id") or data.get("beat_id") or f"beat_{index:03d}"))
+    return ids
+
+
+async def _resolve_rendered_segments(
+    *,
+    po: Any,
+    output_dir: str,
+) -> None:
+    """Normalize rendered segment records and fill measured durations when possible."""
+    if po is None:
+        return
+
+    rendered = list(getattr(po, "rendered_segments", []) or [])
+    segment_paths = [str(path) for path in (getattr(po, "segment_video_paths", []) or []) if path]
+    expected_ids = _expected_rendered_segment_ids(po)
+    implemented = list(getattr(po, "implemented_beats", []) or [])
+
+    if not rendered and segment_paths:
+        records: list[dict[str, Any]] = []
+        for index, path in enumerate(segment_paths):
+            beat_id = expected_ids[index] if index < len(expected_ids) else f"beat_{index + 1:03d}"
+            title = implemented[index] if index < len(implemented) else beat_id
+            records.append(
+                {
+                    "beat_id": beat_id,
+                    "title": title,
+                    "order_index": index,
+                    "video_path": path,
+                    "duration_seconds": None,
+                }
+            )
+        rendered = records
+        po.rendered_segments = records
+
+    if not rendered:
+        return
+
+    actual_ids: list[str] = []
+    normalized_records: list[Any] = []
+    for index, segment in enumerate(rendered):
+        data = segment.model_dump() if hasattr(segment, "model_dump") else dict(segment)
+        beat_id = str(data.get("beat_id") or f"beat_{index + 1:03d}")
+        actual_ids.append(beat_id)
+        raw_path = str(data.get("video_path") or "")
+        path = Path(raw_path)
+        if raw_path and not path.is_absolute():
+            path = Path(output_dir) / raw_path
+        data["video_path"] = str(path)
+        data["order_index"] = int(data.get("order_index", index))
+
+        if path.exists() and data.get("duration_seconds") is None:
+            try:
+                data["duration_seconds"] = await _get_duration(str(path))
+            except Exception as exc:
+                logger.warning(
+                    "run_phase3_render: unable to probe segment duration %s: %s",
+                    path,
+                    exc,
+                )
+
+        if hasattr(segment, "model_copy"):
+            normalized_records.append(segment.model_copy(update=data))
+        else:
+            normalized_records.append(data)
+
+    if expected_ids and actual_ids != expected_ids:
+        raise RuntimeError(
+            "Rendered segments do not match build_spec beats. "
+            f"expected={expected_ids}, actual={actual_ids}"
+        )
+
+    po.rendered_segments = normalized_records
+    paths: list[str] = []
+    for segment in normalized_records:
+        if isinstance(segment, dict):
+            video_path = str(segment.get("video_path") or "")
+        else:
+            video_path = str(segment.video_path)
+        if video_path:
+            paths.append(video_path)
+    if paths:
+        po.segment_video_paths = paths
+
+
 # ── Frame labeling ──────────────────────────────────────────────────
 
 
@@ -333,6 +434,7 @@ async def run_phase3_render(
             dispatcher._print(
                 f"  [RENDER] Discovered pre-rendered segment videos: {len(existing_segments)}"
             )
+        await _resolve_rendered_segments(po=po, output_dir=resolved_cwd)
         segment_visual_track = await _resolve_segment_review_video(
             po=po,
             render_mode=render_mode,
@@ -690,9 +792,13 @@ async def run_phase4_tts(
             {
                 "beat_id": beat.id,
                 "audio_path": beat.audio_path,
+                "normalized_audio_path": beat.normalized_audio_path,
                 "subtitle_path": beat.subtitle_path,
                 "extra_info_path": beat.extra_info_path,
                 "duration_seconds": beat.actual_audio_duration_seconds,
+                "target_duration_seconds": beat.target_duration_seconds,
+                "normalized_duration_seconds": beat.normalized_audio_duration_seconds,
+                "normalization_strategy": beat.normalization_strategy,
                 "tts_mode": beat.tts_mode,
             }
             for beat in audio_result.beats

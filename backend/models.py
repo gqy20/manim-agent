@@ -152,6 +152,7 @@ class PipelineOutputData(BaseModel):
     timeline_total_duration_seconds: float | None = None
     segment_render_plan_path: str | None = None
     segment_video_paths: list[str] = Field(default_factory=list)
+    rendered_segments: list[dict[str, Any]] = Field(default_factory=list)
     audio_concat_path: str | None = None
     source_code: str | None = None
     audio_path: str | None = None
@@ -182,6 +183,7 @@ class PipelineOutputData(BaseModel):
     phase1_planning: dict[str, Any] | None = None
     phase2_implementation: dict[str, Any] | None = None
     phase3_render_review: dict[str, Any] | None = None
+    phase3_5_narration: dict[str, Any] | None = None
     phase4_tts: dict[str, Any] | None = None
     phase5_mux: dict[str, Any] | None = None
     review_summary: str | None = None

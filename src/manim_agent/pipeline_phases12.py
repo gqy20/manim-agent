@@ -228,6 +228,7 @@ def build_pipeline_output_from_phase2(
         render_mode=phase2_output.render_mode,
         segment_render_complete=phase2_output.segment_render_complete,
         segment_video_paths=list(phase2_output.segment_video_paths),
+        rendered_segments=list(phase2_output.rendered_segments),
         source_code=phase2_output.source_code,
         target_duration_seconds=target_duration_seconds,
         plan_text=plan_text,
@@ -253,9 +254,12 @@ def build_implementation_prompt(
     if render_mode == "segments":
         render_guidance = (
             "- Render mode: segments — deliver beat-level MP4s like "
-            "`segments/beat_001.mp4`, `segments/beat_002.mp4` in beat order.\n"
+            "`segments/<beat_id>.mp4` in canonical build_spec beat order.\n"
+            "- For simple ids this looks like `segments/beat_001.mp4`.\n"
             "- Report ordered paths in `segment_video_paths`. Set "
             "`segment_render_complete=true` only when all segments exist.\n"
+            "- Also report `rendered_segments` with one item per build_spec beat: "
+            "`beat_id`, `title`, zero-based `order_index`, and `video_path`.\n"
         )
     guidance = (
         "\n\nPhase 2B — render implementation pass:\n"

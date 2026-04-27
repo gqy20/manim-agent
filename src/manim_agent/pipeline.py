@@ -789,6 +789,7 @@ async def run_pipeline(
         narration_text = narration_output.narration
         if po is not None:
             po.narration = narration_text
+            po.phase3_5_narration = narration_output
         update_prompt_artifact(
             output_dir=resolved_cwd,
             phase_id="phase3_5",

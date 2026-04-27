@@ -85,6 +85,7 @@ function mergePipelineOutput(
       next.segment_render_plan_path,
     ),
     segment_video_paths: mergeArray(prev.segment_video_paths, next.segment_video_paths),
+    rendered_segments: mergeArray(prev.rendered_segments, next.rendered_segments),
     audio_concat_path: mergeNullableValue(prev.audio_concat_path ?? null, next.audio_concat_path),
     source_code: mergeNullableValue(prev.source_code, next.source_code),
     audio_path: mergeNullableValue(prev.audio_path, next.audio_path),
@@ -126,6 +127,10 @@ function mergePipelineOutput(
     phase3_render_review: mergeNullableValue(
       prev.phase3_render_review ?? null,
       next.phase3_render_review,
+    ),
+    phase3_5_narration: mergeNullableValue(
+      prev.phase3_5_narration ?? null,
+      next.phase3_5_narration,
     ),
     phase4_tts: mergeNullableValue(prev.phase4_tts ?? null, next.phase4_tts),
     phase5_mux: mergeNullableValue(prev.phase5_mux ?? null, next.phase5_mux),

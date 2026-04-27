@@ -11,7 +11,8 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from .phase1_planning import BuildSpec, Phase1PlanningOutput
-from .phase2_implementation import Phase2ImplementationOutput
+from .phase2_implementation import Phase2ImplementationOutput, RenderedSegment
+from .phase3_5_narration import Phase3_5NarrationOutput
 from .phase3_render_review import Phase3RenderReviewOutput
 from .phase4_tts import Phase4TTSOutput
 from .phase5_mux import Phase5MuxOutput
@@ -105,6 +106,10 @@ class PipelineOutput(BaseModel):
     segment_video_paths: list[str] = Field(
         default_factory=list,
         description="Reserved output paths for future beat-level rendered video segments.",
+    )
+    rendered_segments: list[RenderedSegment] = Field(
+        default_factory=list,
+        description="Ordered real beat-level rendered video segments with measured durations.",
     )
     audio_concat_path: str | None = Field(
         default=None,
@@ -283,6 +288,10 @@ class PipelineOutput(BaseModel):
         default=None,
         description="Phase 3 (render review) output - quality check result.",
     )
+    phase3_5_narration: Phase3_5NarrationOutput | None = Field(
+        default=None,
+        description="Phase 3.5 narration generation output.",
+    )
     phase4_tts: Phase4TTSOutput | None = Field(
         default=None,
         description="Phase 4 (TTS) output - text-to-speech result.",
@@ -306,6 +315,7 @@ __all__ = [
     "BuildSpec",
     "Phase1PlanningOutput",
     "Phase2ImplementationOutput",
+    "RenderedSegment",
     "Phase3RenderReviewOutput",
     "Phase4TTSOutput",
     "Phase5MuxOutput",

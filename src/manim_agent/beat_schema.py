@@ -15,9 +15,12 @@ class BeatSpec(BaseModel):
     start_seconds: float | None = Field(default=None, ge=0)
     end_seconds: float | None = Field(default=None, ge=0)
     audio_path: str | None = None
+    normalized_audio_path: str | None = None
     subtitle_path: str | None = None
     extra_info_path: str | None = None
     tts_mode: str | None = None
+    normalization_strategy: str | None = None
+    normalized_audio_duration_seconds: float | None = Field(default=None, ge=0)
 
 
 class AudioSegmentSpec(BaseModel):

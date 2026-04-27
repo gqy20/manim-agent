@@ -135,6 +135,56 @@ def _build_template_narration(
     )
 
 
+def _collect_beat_timing(po: Any) -> list[dict[str, Any]]:
+    """Collect the best available beat timing windows for narration generation."""
+    structured_beats = list(getattr(po, "beats", []) or [])
+    rendered_segments = list(getattr(po, "rendered_segments", []) or [])
+    rendered_by_id: dict[str, dict[str, Any]] = {}
+    for segment in rendered_segments:
+        data = segment.model_dump() if hasattr(segment, "model_dump") else segment
+        if isinstance(data, dict) and data.get("beat_id"):
+            rendered_by_id[str(data["beat_id"])] = data
+
+    timing: list[dict[str, Any]] = []
+    if structured_beats:
+        for index, beat in enumerate(structured_beats, start=1):
+            data = beat.model_dump() if hasattr(beat, "model_dump") else beat
+            if not isinstance(data, dict):
+                continue
+            beat_id = str(data.get("id") or data.get("beat_id") or f"beat_{index:03d}")
+            segment = rendered_by_id.get(beat_id, {})
+            duration = (
+                segment.get("duration_seconds")
+                or data.get("target_duration_seconds")
+                or data.get("duration_seconds")
+            )
+            timing.append(
+                {
+                    "beat_id": beat_id,
+                    "title": data.get("title") or segment.get("title") or beat_id,
+                    "target_duration_seconds": duration,
+                    "timing_source": "rendered_segment"
+                    if segment.get("duration_seconds")
+                    else "planned_or_analyzed",
+                }
+            )
+        return timing
+
+    implemented = list(getattr(po, "implemented_beats", []) or [])
+    total = float(getattr(po, "duration_seconds", 0) or 0)
+    per_beat = total / len(implemented) if implemented and total > 0 else None
+    for index, title in enumerate(implemented, start=1):
+        timing.append(
+            {
+                "beat_id": f"beat_{index:03d}",
+                "title": title,
+                "target_duration_seconds": per_beat,
+                "timing_source": "even_split" if per_beat else "unknown",
+            }
+        )
+    return timing
+
+
 async def generate_narration(
     *,
     user_text: str,
@@ -185,6 +235,7 @@ async def generate_narration(
         ),
         build_summary=po.build_summary if hasattr(po, "build_summary") else "",
         video_duration_seconds=po.duration_seconds if hasattr(po, "duration_seconds") else None,
+        beat_timing=_collect_beat_timing(po),
     )
 
     narration_opts = build_options(

@@ -183,6 +183,65 @@ class TestPipelineAudioPhases:
         mock_concat.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_run_phase3_render_backfills_rendered_segment_durations(self, tmp_path):
+        dispatcher = _MessageDispatcher(verbose=False, output_cwd=str(tmp_path))
+        render_path = tmp_path / "media" / "out.mp4"
+        render_path.parent.mkdir(parents=True, exist_ok=True)
+        render_path.write_bytes(b"render")
+        segment_a = tmp_path / "segments" / "beat_001.mp4"
+        segment_a.parent.mkdir(parents=True, exist_ok=True)
+        segment_a.write_bytes(b"a")
+        po = SimpleNamespace(
+            video_output=str(render_path),
+            duration_seconds=4.0,
+            implemented_beats=["Opening"],
+            beat_to_narration_map=["Opening -> intro"],
+            build_summary="Built one beat.",
+            deviations_from_plan=[],
+            narration_coverage_complete=True,
+            estimated_narration_duration_seconds=4.0,
+            segment_video_paths=[str(segment_a)],
+            rendered_segments=[
+                {
+                    "beat_id": "beat_001",
+                    "title": "Opening",
+                    "order_index": 0,
+                    "video_path": str(segment_a),
+                    "duration_seconds": None,
+                }
+            ],
+            scene_file=None,
+            scene_class=None,
+        )
+
+        with (
+            patch.object(dispatcher, "get_pipeline_output", return_value=po),
+            patch(
+                "manim_agent.pipeline_phases345._get_duration",
+                new_callable=AsyncMock,
+                return_value=4.25,
+            ),
+        ):
+            result_po, _, _ = await run_phase3_render(
+                dispatcher=dispatcher,
+                hook_state=SimpleNamespace(captured_source_code={}),
+                user_text="Explain a concept",
+                plan_text="Plan",
+                result_summary=None,
+                target_duration_seconds=30,
+                resolved_cwd=str(tmp_path),
+                system_prompt="system",
+                quality="high",
+                prompt_file=None,
+                log_callback=None,
+                event_callback=None,
+                cli_stderr_lines=[],
+                no_render_review=True,
+            )
+
+        assert result_po.rendered_segments[0]["duration_seconds"] == 4.25
+
+    @pytest.mark.asyncio
     async def test_run_phase3_render_rejects_incomplete_segment_output_without_repair(
         self, tmp_path
     ):

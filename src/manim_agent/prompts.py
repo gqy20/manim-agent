@@ -295,7 +295,7 @@ Your only job: produce natural spoken Chinese narration that matches the rendere
 - Do NOT write or edit code.
 - Do NOT render, re-render, or inspect video files.
 - Do NOT perform TTS synthesis, muxing, upload, or any post-narration step.
-- Return plain text only (no structured output / no JSON schema).
+- Return the required structured output through the `phase3_5_narration` schema.
 
 # Narration Rules
 - Write in natural spoken Simplified Chinese, as if you are explaining the animation
@@ -317,6 +317,8 @@ Return a structured narration verdict with these fields:
 - `narration` (string, required): the full spoken Chinese narration text
 - `beat_coverage` (list of string, required): beat titles covered, in order
 - `char_count` (int, required): total character count of the narration
+- `beat_narrations` (list, required when beat timing is provided): one spoken text
+  item per beat with `beat_id`, `title`, `text`, and `target_duration_seconds`
 - `generation_method` (string, required): "llm" for AI-generated, "template" for fallback,
   "reused" when reusing existing valid narration
 """

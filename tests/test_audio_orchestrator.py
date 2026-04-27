@@ -5,6 +5,7 @@ import pytest
 
 from manim_agent.audio_orchestrator import (
     build_beats_from_pipeline_output,
+    normalize_beat_audios,
     orchestrate_audio_assets,
     synthesize_beat_tts,
 )
@@ -139,3 +140,43 @@ class TestSynthesizeBeatTts:
                 model="speech-2.8-hd",
                 output_dir=str(tmp_path),
             )
+
+
+class TestNormalizeBeatAudios:
+    @pytest.mark.asyncio
+    async def test_normalizes_each_beat_to_target_duration(self, tmp_path):
+        audio = tmp_path / "raw.mp3"
+        audio.write_bytes(b"audio")
+        beats = [
+            BeatSpec(
+                id="beat_001",
+                title="Opening",
+                audio_path=str(audio),
+                actual_audio_duration_seconds=4.0,
+                target_duration_seconds=6.0,
+            )
+        ]
+
+        async def fake_normalize_audio_to_duration(**kwargs):
+            output = tmp_path / "normalized.mp3"
+            output.write_bytes(b"normalized")
+            assert kwargs["target_duration_seconds"] == 6.0
+            return type(
+                "Result",
+                (),
+                {
+                    "output_path": str(output),
+                    "duration_seconds": 6.0,
+                    "strategy": "pad_silence",
+                },
+            )()
+
+        with patch(
+            "manim_agent.audio_orchestrator.normalize_audio_to_duration",
+            side_effect=fake_normalize_audio_to_duration,
+        ):
+            result = await normalize_beat_audios(beats=beats, output_dir=str(tmp_path))
+
+        assert result[0].normalized_audio_path == str(tmp_path / "normalized.mp3")
+        assert result[0].normalized_audio_duration_seconds == 6.0
+        assert result[0].normalization_strategy == "pad_silence"

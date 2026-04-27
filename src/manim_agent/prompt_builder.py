@@ -196,6 +196,7 @@ def build_narration_generation_prompt(
     beat_to_narration_map: list[str],
     build_summary: str | None,
     video_duration_seconds: float | None,
+    beat_timing: list[dict] | None = None,
 ) -> str:
     """Build a no-tools prompt for generating natural spoken Chinese narration.
 
@@ -207,6 +208,7 @@ def build_narration_generation_prompt(
 
     beats_json = json.dumps(implemented_beats, ensure_ascii=False, indent=2)
     beat_map_json = json.dumps(beat_to_narration_map, ensure_ascii=False, indent=2)
+    beat_timing_json = json.dumps(beat_timing or [], ensure_ascii=False, indent=2)
 
     duration_context = (
         f"{video_duration_seconds:.1f}s"
@@ -234,6 +236,7 @@ def build_narration_generation_prompt(
         "## Animation structure (what was actually built)\n"
         f"- Implemented beats (in order):\n{beats_json}\n\n"
         f"- Beat-to-narration hints from the build phase:\n{beat_map_json}\n\n"
+        f"- Beat timing windows (authoritative when present):\n{beat_timing_json}\n\n"
         f"- Build summary: {build_summary or '(none)'}\n\n"
 
         "## Approved scene plan (reference for context)\n"
@@ -242,6 +245,9 @@ def build_narration_generation_prompt(
         "## Output requirements\n"
         "- Write the narration as continuous spoken Chinese, like a teacher explaining to students.\n"
         "- Each sentence should map naturally to one animation beat in order.\n"
+        "- Also return `beat_narrations`: one item per beat timing window, using the same "
+        "`beat_id`, `title`, and `target_duration_seconds` values.\n"
+        "- Keep each beat narration short enough to fit its own target duration.\n"
         "- Use conversational connectors: '首先', '接下来', '然后', "
         "'我们可以看到', '注意', '最后', '也就是说'.\n"
         "- Avoid bullet points, numbered lists, or instructional language.\n"
@@ -250,6 +256,7 @@ def build_narration_generation_prompt(
         "- Do NOT read formulas verbatim — describe what they show instead.\n"
         f"- Match the narration length to the video duration: aim for about "
         f"{char_min}–{char_max} Chinese characters.\n"
-        "- Return ONLY the narration text as your response, nothing else.\n"
+        "- Return the structured `phase3_5_narration` output, including both the full "
+        "`narration` string and the ordered `beat_narrations` list.\n"
     )
     return f"{normalized}{guidance}" if normalized else guidance.strip()

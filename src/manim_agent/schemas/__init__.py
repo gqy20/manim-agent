@@ -24,9 +24,9 @@ from copy import deepcopy
 from typing import Any
 
 from .phase1_planning import BuildSpec, BuildSpecBeat, Phase1PlanningOutput
-from .phase2_implementation import Phase2ImplementationOutput
+from .phase2_implementation import Phase2ImplementationOutput, RenderedSegment
 from .phase2_script_draft import Phase2ScriptDraftOutput
-from .phase3_5_narration import Phase3_5NarrationOutput
+from .phase3_5_narration import BeatNarration, Phase3_5NarrationOutput
 from .phase3_render_review import FrameAnalysis, Phase3RenderReviewOutput
 from .phase4_tts import Phase4TTSOutput
 from .phase5_mux import Phase5MuxOutput
@@ -196,7 +196,9 @@ __all__ = [
     "Phase1PlanningOutput",
     "Phase2ScriptDraftOutput",
     "Phase3_5NarrationOutput",
+    "BeatNarration",
     "Phase2ImplementationOutput",
+    "RenderedSegment",
     "Phase3RenderReviewOutput",
     "Phase4TTSOutput",
     "Phase5MuxOutput",

@@ -330,6 +330,7 @@ class _MessageDispatcher:
             "timeline_total_duration_seconds": None,
             "segment_render_plan_path": None,
             "segment_video_paths": discovered_segments,
+            "rendered_segments": [],
             "audio_concat_path": None,
             "source_code": None,
             "audio_path": None,
@@ -781,6 +782,8 @@ class _MessageDispatcher:
         )
         if incoming.segment_video_paths:
             current.segment_video_paths = incoming.segment_video_paths
+        if incoming.rendered_segments:
+            current.rendered_segments = incoming.rendered_segments
         current.audio_concat_path = incoming.audio_concat_path or current.audio_concat_path
         current.source_code = incoming.source_code or current.source_code
         current.audio_path = incoming.audio_path or current.audio_path
@@ -980,6 +983,9 @@ class _MessageDispatcher:
             validated_output.segment_video_paths = [
                 self._normalize_output_path(path) for path in validated_output.segment_video_paths
             ]
+        if validated_output.rendered_segments:
+            for segment in validated_output.rendered_segments:
+                segment.video_path = self._normalize_output_path(segment.video_path)
         return validated_output
 
     def _normalize_output_path(self, value: str) -> str:

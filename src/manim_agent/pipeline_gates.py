@@ -266,6 +266,18 @@ def apply_phase2_build_spec_defaults(
         )
         if discovered_segments:
             po.segment_video_paths = discovered_segments
+            if not po.rendered_segments:
+                required_beats = [beat for beat in ordered_beats if beat.segment_required]
+                po.rendered_segments = [
+                    {
+                        "beat_id": beat.id,
+                        "title": beat.title,
+                        "order_index": index,
+                        "video_path": path,
+                        "duration_seconds": None,
+                    }
+                    for index, (beat, path) in enumerate(zip(required_beats, discovered_segments))
+                ]
             if po.segment_render_complete is None and len(discovered_segments) == len(
                 expected_paths
             ):

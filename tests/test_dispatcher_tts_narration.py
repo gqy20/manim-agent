@@ -1,5 +1,6 @@
 """Tests for TTS narration flow in pipeline."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -32,9 +33,13 @@ class TestTTSNarrationFlow:
         ]
         captured_tts_text: list[str] = []
 
-        async def capture_tts(text, **_kw):
+        async def capture_tts(text, **kw):
             captured_tts_text.append(text)
-            return MagicMock(audio_path="a.mp3", subtitle_path="sub.srt", duration_ms=1000)
+            output_dir = Path(kw["output_dir"])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            audio_path = output_dir / "a.mp3"
+            audio_path.write_bytes(b"audio")
+            return MagicMock(audio_path=str(audio_path), subtitle_path="", duration_ms=1000)
 
         expected_tts_texts = [
             "Introduce the intuition.",
@@ -55,6 +60,11 @@ class TestTTSNarrationFlow:
                 ),
             ),
             patch("manim_agent.pipeline.tts_client.synthesize", side_effect=capture_tts),
+            patch(
+                "manim_agent.audio_orchestrator.normalize_beat_audios",
+                new_callable=AsyncMock,
+                side_effect=lambda beats, **_kw: beats,
+            ),
             patch(
                 "manim_agent.pipeline.video_builder.build_final_video", new_callable=AsyncMock
             ) as mock_vid,
