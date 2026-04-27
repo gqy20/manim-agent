@@ -66,6 +66,17 @@ logger = logging.getLogger(__name__)
 stderr_handler = _stderr_handler
 _run_render_review = run_render_review
 
+
+def _debug_dump(value: Any) -> Any:
+    """Return a debug snapshot without assuming the value is a Pydantic model."""
+    if value is None:
+        return None
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return model_dump()
+    return value
+
+
 # ── Main Pipeline ────────────────────────────────────────────────────
 
 
@@ -355,7 +366,7 @@ async def run_pipeline(
             user_prompt=script_draft_prompt,
             inputs={
                 **common_debug_inputs,
-                "build_spec": build_spec.model_dump() if build_spec is not None else None,
+                "build_spec": _debug_dump(build_spec),
             },
             options=script_draft_opts,
             options_summary={"output_schema": "phase2_script_draft"},
@@ -457,7 +468,7 @@ async def run_pipeline(
             user_prompt=implementation_prompt,
             inputs={
                 **common_debug_inputs,
-                "build_spec": build_spec.model_dump() if build_spec is not None else None,
+                "build_spec": _debug_dump(build_spec),
                 "plan_text": plan_text,
             },
             options=build_opts,
