@@ -11,6 +11,7 @@ from typing import Any
 from . import music_client, tts_client, video_builder
 from .audio_normalizer import normalize_audio_to_duration
 from .beat_schema import AudioOrchestrationResult, BeatSpec
+from .subtitle_builder import write_timeline_srt
 from .timeline_builder import finalize_timeline, write_timeline_file
 
 logger = logging.getLogger(__name__)
@@ -415,6 +416,10 @@ async def orchestrate_audio_assets(
 
     timeline = finalize_timeline(beats_result)
     timeline_path = write_timeline_file(timeline, str(Path(output_dir) / "timeline.json"))
+    timeline_subtitle_path = write_timeline_srt(
+        timeline,
+        str(Path(output_dir) / "timeline_subtitles.srt"),
+    )
     _write_audio_manifest(beats_result, str(Path(output_dir) / "audio_manifest.json"))
 
     audio_paths = [
@@ -422,9 +427,8 @@ async def orchestrate_audio_assets(
         for beat in beats_result
         if beat.normalized_audio_path or beat.audio_path
     ]
-    subtitle_paths = [beat.subtitle_path for beat in beats_result if beat.subtitle_path]
     concatenated_audio_path = None
-    concatenated_subtitle_path = None
+    concatenated_subtitle_path = timeline_subtitle_path
     if len(audio_paths) == 1:
         concatenated_audio_path = audio_paths[0]
     elif audio_paths:
@@ -432,9 +436,6 @@ async def orchestrate_audio_assets(
             audio_paths=audio_paths,
             output_path=str(Path(output_dir) / "audio_track.mp3"),
         )
-
-    if len(subtitle_paths) == 1:
-        concatenated_subtitle_path = subtitle_paths[0]
 
     result = AudioOrchestrationResult(
         beats=timeline.beats,

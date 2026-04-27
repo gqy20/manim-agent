@@ -113,6 +113,7 @@ class TestOrchestrateAudioAssets:
         assert result.timeline.beats[0].start_seconds == 0.0
         assert result.timeline.beats[1].start_seconds == 1.0
         assert result.concatenated_audio_path == str(tmp_path / "audio_track.mp3")
+        assert result.concatenated_subtitle_path == str(tmp_path / "timeline_subtitles.srt")
         assert result.bgm_path == str(tmp_path / "bgm.mp3")
 
 
