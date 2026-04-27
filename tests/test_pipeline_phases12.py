@@ -201,6 +201,34 @@ class TestBuildPhase2ScriptDraftPrompt:
         assert "build_spec" in result
         assert "## Beat List" not in result
 
+    def test_script_repair_prompt_includes_analysis_and_syntax_guard(self):
+        from manim_agent.pipeline_phases12 import build_phase2_script_repair_prompt
+
+        result = build_phase2_script_repair_prompt(
+            "Explain Fourier transforms",
+            60,
+            {"beats": [{"id": "beat_001_intro"}]},
+            {
+                "issues": [
+                    "scene.py is not valid Python at line 12, column 45: "
+                    "positional argument follows keyword argument."
+                ],
+                "syntax_error": {
+                    "line": 12,
+                    "offset": 45,
+                    "text": "self.play(Create(a), run_time=0.4, Create(b))",
+                },
+            },
+            cwd="/tmp/task",
+            render_mode="full",
+        )
+
+        assert "Phase 2A repair pass" in result
+        assert "Do NOT render" in result
+        assert "positional animation after a keyword argument" in result
+        assert "self.play(Create(a), run_time=0.4, Create(b))" in result
+        assert "phase2_script_draft" in result
+
 
 class TestBuildOutputRepairPrompt:
     def test_segment_mode_without_video_output_mentions_segment_paths(self):
@@ -466,34 +494,36 @@ class TestPhase1ValidationLogic:
         from manim_agent.pipeline_phases12 import render_build_spec_markdown
         from manim_agent.schemas import Phase1PlanningOutput as ScenePlanOutput
 
-        output = ScenePlanOutput.model_validate({
-            "build_spec": {
-                "mode": "educational",
-                "learning_goal": "test",
-                "audience": "university students",
-                "target_duration_seconds": 60,
-                "beats": [
-                    {
-                        "id": "beat_001_intro",
-                        "title": "Intro",
-                        "visual_goal": "Show setup",
-                        "narration_intent": "Introduce the setup",
-                        "target_duration_seconds": 20,
-                        "required_elements": [],
-                        "segment_required": True,
-                    },
-                    {
-                        "id": "beat_002_proof",
-                        "title": "Proof",
-                        "visual_goal": "Explain the proof",
-                        "narration_intent": "Explain the proof",
-                        "target_duration_seconds": 40,
-                        "required_elements": [],
-                        "segment_required": True,
-                    },
-                ],
-            },
-        })
+        output = ScenePlanOutput.model_validate(
+            {
+                "build_spec": {
+                    "mode": "educational",
+                    "learning_goal": "test",
+                    "audience": "university students",
+                    "target_duration_seconds": 60,
+                    "beats": [
+                        {
+                            "id": "beat_001_intro",
+                            "title": "Intro",
+                            "visual_goal": "Show setup",
+                            "narration_intent": "Introduce the setup",
+                            "target_duration_seconds": 20,
+                            "required_elements": [],
+                            "segment_required": True,
+                        },
+                        {
+                            "id": "beat_002_proof",
+                            "title": "Proof",
+                            "visual_goal": "Explain the proof",
+                            "narration_intent": "Explain the proof",
+                            "target_duration_seconds": 40,
+                            "required_elements": [],
+                            "segment_required": True,
+                        },
+                    ],
+                },
+            }
+        )
 
         result = render_build_spec_markdown(output, target_duration_seconds=60)
 

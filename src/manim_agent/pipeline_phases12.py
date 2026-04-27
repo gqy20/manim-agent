@@ -249,9 +249,7 @@ def build_implementation_prompt(
     normalized = user_text.strip()
     target_duration = format_target_duration(target_duration_seconds)
     render_mode = render_mode.strip().lower() or "full"
-    render_guidance = (
-        "- Render mode: full — deliver one `video_output` MP4.\n"
-    )
+    render_guidance = "- Render mode: full — deliver one `video_output` MP4.\n"
     if render_mode == "segments":
         render_guidance = (
             "- Render mode: segments — deliver beat-level MP4s like "
@@ -283,10 +281,7 @@ def build_implementation_prompt(
             f"{json.dumps(build_spec, ensure_ascii=False, indent=2)}\n"
         )
     else:
-        guidance += (
-            "\nApproved build plan/context:\n"
-            f"{plan_text}\n"
-        )
+        guidance += f"\nApproved build plan/context:\n{plan_text}\n"
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
 
@@ -320,6 +315,56 @@ def build_phase2_script_draft_prompt(
     return f"{normalized}{guidance}" if normalized else guidance.strip()
 
 
+def build_phase2_script_repair_prompt(
+    user_text: str,
+    target_duration_seconds: int,
+    build_spec: dict[str, Any] | None,
+    analysis: dict[str, Any],
+    cwd: str | None = None,
+    render_mode: str = "full",
+) -> str:
+    """Build a focused repair prompt for a rejected Phase 2A script draft."""
+    normalized = user_text.strip()
+    target_duration = format_target_duration(target_duration_seconds)
+    render_mode = render_mode.strip().lower() or "full"
+    guidance = (
+        "\n\nPhase 2A repair pass (no rendering):\n"
+        f"- Target final video duration remains about {target_duration}.\n"
+        f"- Downstream render mode remains {render_mode}.\n"
+        "- Read the existing `scene.py`, fix only the blocking script-analysis issues, "
+        "and preserve the approved beat structure and visual design.\n"
+        "- Do NOT render, run Manim, run FFmpeg, create videos, or start a fresh plan.\n"
+        "- Keep the fix narrow: syntax errors, missing beat methods, construct order, "
+        "or explicit timing gates reported below.\n"
+        "- Before submitting, self-check that `scene.py` is valid Python. In particular, "
+        "never place another positional animation after a keyword argument inside "
+        "`self.play(...)`; either put all animations before `run_time=` or split the "
+        "animations into separate `self.play` calls.\n"
+        "- Return SDK structured output ONLY via the `phase2_script_draft` schema.\n"
+    )
+    if cwd:
+        guidance += f"- Task directory: {cwd}\n"
+    if build_spec is not None:
+        guidance += (
+            "\nApproved Phase 1 build_spec (JSON):\n"
+            f"{json.dumps(build_spec, ensure_ascii=False, indent=2)}\n"
+        )
+    guidance += (
+        "\nBlocking script-analysis result to repair:\n"
+        f"{json.dumps(analysis, ensure_ascii=False, indent=2)}\n"
+    )
+    return f"{normalized}{guidance}" if normalized else guidance.strip()
+
+
+def reset_phase2_script_draft_capture(dispatcher: _MessageDispatcher) -> None:
+    """Clear Phase 2A structured-output capture before a repair pass."""
+    dispatcher.phase2_script_draft_output = None
+    dispatcher._phase2_script_draft_output_candidate = None
+    dispatcher.raw_structured_output = None
+    dispatcher.raw_result_text = None
+    dispatcher._result_message = None
+
+
 async def run_phase1_planning(
     planning_prompt: str,
     target_duration_seconds: int,
@@ -347,8 +392,7 @@ async def run_phase1_planning(
         dispatcher._print("  [ERR] Structured Phase 1 planning output missing or invalid.")
         if diagnostics.get("scene_plan_validation_error"):
             dispatcher._print(
-                "  [ERR] scene_plan_validation_error="
-                f"{diagnostics['scene_plan_validation_error']}"
+                f"  [ERR] scene_plan_validation_error={diagnostics['scene_plan_validation_error']}"
             )
         dispatcher._print(
             "  [ERR] raw_structured_output_present="

@@ -34,6 +34,7 @@ class Phase2ScriptAnalysis:
     beat_duration_seconds: dict[str, float] = field(default_factory=dict)
     issues: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    syntax_error: dict[str, Any] | None = None
 
     @property
     def accepted(self) -> bool:
@@ -75,6 +76,12 @@ def analyze_phase2_script(
     try:
         tree = ast.parse(source)
     except SyntaxError as exc:
+        syntax_error = _syntax_error_details(exc, source)
+        location = ""
+        if syntax_error.get("line") is not None:
+            location = f" at line {syntax_error['line']}"
+            if syntax_error.get("offset") is not None:
+                location += f", column {syntax_error['offset']}"
         return Phase2ScriptAnalysis(
             scene_file=str(script_path),
             scene_class=scene_class_name,
@@ -83,7 +90,8 @@ def analyze_phase2_script(
             construct_calls=[],
             estimated_duration_seconds=0.0,
             beat_duration_seconds={},
-            issues=[f"scene.py is not valid Python: {exc.msg}."],
+            issues=[f"scene.py is not valid Python{location}: {exc.msg}."],
+            syntax_error=syntax_error,
         )
 
     scene_node = _find_class(tree, scene_class_name)
@@ -190,6 +198,22 @@ def _resolve_script_path(scene_file: str | None, root: Path) -> Path | None:
     return root / path
 
 
+def _syntax_error_details(exc: SyntaxError, source: str) -> dict[str, Any]:
+    line_text = exc.text
+    if not line_text and exc.lineno is not None:
+        lines = source.splitlines()
+        if 1 <= exc.lineno <= len(lines):
+            line_text = lines[exc.lineno - 1]
+    return {
+        "message": exc.msg,
+        "line": exc.lineno,
+        "offset": exc.offset,
+        "end_line": exc.end_lineno,
+        "end_offset": exc.end_offset,
+        "text": line_text.rstrip("\n") if line_text else None,
+    }
+
+
 def _extract_expected_beat_ids(build_spec: dict[str, Any] | None) -> list[str]:
     if not build_spec:
         return []
@@ -229,11 +253,7 @@ def _find_first_class(tree: ast.AST) -> ast.ClassDef | None:
 def _class_methods(node: ast.ClassDef | None) -> dict[str, ast.FunctionDef]:
     if node is None:
         return {}
-    return {
-        item.name: item
-        for item in node.body
-        if isinstance(item, ast.FunctionDef)
-    }
+    return {item.name: item for item in node.body if isinstance(item, ast.FunctionDef)}
 
 
 def _self_method_calls(node: ast.FunctionDef | None) -> list[str]:
@@ -298,9 +318,7 @@ def _estimate_beat_duration_seconds(
     method_nodes: dict[str, ast.FunctionDef],
     expected_beat_ids: list[str],
 ) -> dict[str, float]:
-    beat_ids = expected_beat_ids or [
-        name for name in method_nodes if name.startswith("beat_")
-    ]
+    beat_ids = expected_beat_ids or [name for name in method_nodes if name.startswith("beat_")]
     durations: dict[str, float] = {}
     for beat_id in beat_ids:
         method = method_nodes.get(beat_id)

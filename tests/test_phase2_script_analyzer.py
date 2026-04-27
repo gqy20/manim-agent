@@ -129,6 +129,44 @@ class GeneratedScene(Scene):
     assert any("Missing beat-first methods" in issue for issue in analysis.issues)
 
 
+def test_analyzer_reports_syntax_error_location_and_source_line(tmp_path: Path):
+    script = tmp_path / "scene.py"
+    script.write_text(
+        """
+from manim import *
+
+class GeneratedScene(Scene):
+    def construct(self):
+        self.beat_001_setup()
+        self.beat_002_rearrange()
+
+    def beat_001_setup(self):
+        a = Square()
+        b = Circle()
+        self.play(Create(a), run_time=0.4, Create(b))
+        self.wait(1)
+
+    def beat_002_rearrange(self):
+        self.wait(5)
+""",
+        encoding="utf-8",
+    )
+
+    analysis = analyze_phase2_script(
+        scene_file=str(script),
+        scene_class="GeneratedScene",
+        build_spec=_build_spec(),
+        target_duration_seconds=10,
+        output_dir=str(tmp_path),
+    )
+
+    assert not analysis.accepted
+    assert any("line 12" in issue for issue in analysis.issues)
+    assert analysis.syntax_error is not None
+    assert analysis.syntax_error["line"] == 12
+    assert "Create(b)" in analysis.syntax_error["text"]
+
+
 def test_analyzer_rejects_unstable_text_glyph_and_short_duration(tmp_path: Path):
     script = tmp_path / "scene.py"
     script.write_text(

@@ -43,7 +43,9 @@ from .pipeline_narration import generate_narration
 from .pipeline_phases12 import (
     build_implementation_prompt,
     build_phase2_script_draft_prompt,
+    build_phase2_script_repair_prompt,
     build_scene_plan_prompt,
+    reset_phase2_script_draft_capture,
     run_phase1_planning,
     run_phase2_implementation,
     run_phase2_script_draft,
@@ -415,10 +417,93 @@ async def run_pipeline(
         if not draft_analysis.accepted:
             for issue in draft_analysis.issues:
                 dispatcher._print(f"  [BUILD][ERR] {issue}")
-            raise RuntimeError(
-                "Phase 2A script draft analysis failed. Blocking issue: "
-                + "; ".join(draft_analysis.issues)
+            dispatcher._print("  [BUILD] Phase 2A repair pass started.")
+            _emit_status(
+                event_callback,
+                task_status="running",
+                phase="script_draft",
+                message="Phase 2A script draft rejected. Starting focused repair pass.",
             )
+            reset_phase2_script_draft_capture(dispatcher)
+            repair_prompt = build_phase2_script_repair_prompt(
+                user_text,
+                target_duration_seconds,
+                build_spec,
+                draft_analysis.model_dump(),
+                resolved_cwd,
+                render_mode=render_mode,
+            )
+            write_prompt_artifact(
+                output_dir=resolved_cwd,
+                phase_id="phase2a-repair",
+                phase_name="Script Draft Repair",
+                system_prompt=script_draft_system_prompt,
+                user_prompt=repair_prompt,
+                inputs={
+                    **common_debug_inputs,
+                    "build_spec": _debug_dump(build_spec),
+                    "failed_analysis": draft_analysis.model_dump(),
+                },
+                options=script_draft_opts,
+                options_summary={"output_schema": "phase2_script_draft"},
+                referenced_artifacts={
+                    "phase1_planning": "phase1_planning.json",
+                    "failed_analysis": "phase2_script_draft_analysis.json",
+                },
+            )
+            repair_result_summary = await run_phase2_script_draft(
+                script_draft_prompt=repair_prompt,
+                script_draft_options_instance=script_draft_opts,
+                dispatcher=dispatcher,
+                resolved_cwd=resolved_cwd,
+            )
+            script_draft_result_summary = (
+                merge_result_summaries(script_draft_result_summary, repair_result_summary)
+                or script_draft_result_summary
+            )
+            draft_output = dispatcher.get_phase2_script_draft_output()
+            draft_analysis = analyze_phase2_script(
+                scene_file=getattr(draft_output, "scene_file", None),
+                scene_class=getattr(draft_output, "scene_class", None),
+                build_spec=build_spec,
+                target_duration_seconds=target_duration_seconds,
+                output_dir=resolved_cwd,
+            )
+            draft_analysis_path = persist_phase2_script_analysis(
+                draft_analysis,
+                output_dir=resolved_cwd,
+                filename="phase2_script_draft_analysis.json",
+            )
+            dispatcher.phase2_script_draft_analysis_path = draft_analysis_path
+            update_prompt_artifact(
+                output_dir=resolved_cwd,
+                phase_id="phase2a-repair",
+                output_snapshot={
+                    "draft_output": _debug_dump(draft_output),
+                    "draft_analysis": draft_analysis.model_dump(),
+                    "analysis_path": draft_analysis_path,
+                    "result_summary": repair_result_summary,
+                },
+            )
+            update_prompt_artifact(
+                output_dir=resolved_cwd,
+                phase_id="phase2a",
+                output_snapshot={
+                    "draft_output": _debug_dump(draft_output),
+                    "draft_analysis": draft_analysis.model_dump(),
+                    "analysis_path": draft_analysis_path,
+                    "result_summary": script_draft_result_summary,
+                    "repair_attempted": True,
+                },
+            )
+            if not draft_analysis.accepted:
+                for issue in draft_analysis.issues:
+                    dispatcher._print(f"  [BUILD][ERR] {issue}")
+                raise RuntimeError(
+                    "Phase 2A script draft analysis failed after repair. Blocking issue: "
+                    + "; ".join(draft_analysis.issues)
+                )
+            dispatcher._print("  [BUILD] Phase 2A repair accepted.")
         _emit_phase_exit(
             event_callback,
             phase_id="phase2a",
