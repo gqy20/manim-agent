@@ -56,6 +56,54 @@ class GeneratedScene(Scene):
     }
 
 
+def test_analyzer_estimates_helpers_variables_and_fixed_loops(tmp_path: Path):
+    script = tmp_path / "scene.py"
+    script.write_text(
+        """
+from manim import *
+
+class GeneratedScene(Scene):
+    def construct(self):
+        self.beat_001_setup()
+        self.beat_002_rearrange()
+
+    def _flash(self, name, run_time=0.5):
+        self.play(FadeIn(Square()), run_time=run_time)
+
+    def beat_001_setup(self):
+        names = ["A", "B", "C"]
+        flash_time = 0.7
+        for index, name in enumerate(names):
+            self._flash(name, run_time=flash_time)
+            self.wait(0.1)
+        self.wait(0.5)
+
+    def beat_002_rearrange(self):
+        step_time = 0.4
+        for index in range(3):
+            self._flash(index, run_time=step_time)
+        self._flash("default")
+        self.wait(0.5)
+""",
+        encoding="utf-8",
+    )
+
+    analysis = analyze_phase2_script(
+        scene_file=str(script),
+        scene_class="GeneratedScene",
+        build_spec=_build_spec(),
+        target_duration_seconds=4,
+        output_dir=str(tmp_path),
+    )
+
+    assert analysis.accepted
+    assert analysis.beat_duration_seconds == {
+        "beat_001_setup": 2.9,
+        "beat_002_rearrange": 2.2,
+    }
+    assert analysis.estimated_duration_seconds == 5.1
+
+
 def test_analyzer_rejects_missing_beat_methods(tmp_path: Path):
     script = tmp_path / "scene.py"
     script.write_text(

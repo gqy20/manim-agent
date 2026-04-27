@@ -9,6 +9,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+StaticValue = float | int | str | list[Any] | tuple[Any, ...]
+
 UNSTABLE_TEXT_GLYPHS = ("²", "³", "√", "≤", "≥")
 RANDOM_REARRANGE_PATTERNS = (
     "offset = half_c *",
@@ -304,32 +306,163 @@ def _estimate_beat_duration_seconds(
         method = method_nodes.get(beat_id)
         if method is None:
             continue
-        durations[beat_id] = _estimate_method_duration_seconds(method)
+        durations[beat_id] = _estimate_method_duration_seconds(
+            method,
+            method_nodes=method_nodes,
+        )
     return durations
 
 
-def _estimate_method_duration_seconds(node: ast.FunctionDef) -> float:
+def _estimate_method_duration_seconds(
+    node: ast.FunctionDef,
+    *,
+    method_nodes: dict[str, ast.FunctionDef] | None = None,
+    env: dict[str, StaticValue] | None = None,
+    call_stack: tuple[str, ...] = (),
+) -> float:
+    method_nodes = method_nodes or {}
+    env = dict(env or {})
     total = 0.0
-    for item in ast.walk(node):
-        if not isinstance(item, ast.Call):
-            continue
-        if _is_self_method_call(item, "wait"):
-            total += _call_wait_duration(item)
-        elif _is_self_method_call(item, "play"):
-            total += _call_play_duration(item)
+    for stmt in node.body:
+        total += _estimate_stmt_duration_seconds(
+            stmt,
+            method_nodes=method_nodes,
+            env=env,
+            call_stack=call_stack + (node.name,),
+        )
     return round(total, 3)
 
 
-def _call_wait_duration(node: ast.Call) -> float:
+def _estimate_stmt_duration_seconds(
+    stmt: ast.stmt,
+    *,
+    method_nodes: dict[str, ast.FunctionDef],
+    env: dict[str, StaticValue],
+    call_stack: tuple[str, ...],
+) -> float:
+    if isinstance(stmt, ast.Assign):
+        value = _static_value(stmt.value, env)
+        if value is not None:
+            for target in stmt.targets:
+                if isinstance(target, ast.Name):
+                    env[target.id] = value
+        return 0.0
+    if isinstance(stmt, ast.AnnAssign):
+        value = _static_value(stmt.value, env) if stmt.value is not None else None
+        if value is not None and isinstance(stmt.target, ast.Name):
+            env[stmt.target.id] = value
+        return 0.0
+    if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+        return _estimate_call_duration_seconds(
+            stmt.value,
+            method_nodes=method_nodes,
+            env=env,
+            call_stack=call_stack,
+        )
+    if isinstance(stmt, ast.For):
+        iterable = _static_iterable(stmt.iter, env)
+        if not isinstance(iterable, (list, tuple)):
+            return 0.0
+        total = 0.0
+        for item in iterable:
+            loop_env = dict(env)
+            _bind_loop_target(stmt.target, item, loop_env)
+            for child in stmt.body:
+                total += _estimate_stmt_duration_seconds(
+                    child,
+                    method_nodes=method_nodes,
+                    env=loop_env,
+                    call_stack=call_stack,
+                )
+        return total
+    if isinstance(stmt, ast.If):
+        body_env = dict(env)
+        body_total = sum(
+            _estimate_stmt_duration_seconds(
+                child,
+                method_nodes=method_nodes,
+                env=body_env,
+                call_stack=call_stack,
+            )
+            for child in stmt.body
+        )
+        else_env = dict(env)
+        else_total = sum(
+            _estimate_stmt_duration_seconds(
+                child,
+                method_nodes=method_nodes,
+                env=else_env,
+                call_stack=call_stack,
+            )
+            for child in stmt.orelse
+        )
+        return max(body_total, else_total)
+    return 0.0
+
+
+def _estimate_call_duration_seconds(
+    node: ast.Call,
+    *,
+    method_nodes: dict[str, ast.FunctionDef],
+    env: dict[str, StaticValue],
+    call_stack: tuple[str, ...],
+) -> float:
+    if _is_self_method_call(node, "wait"):
+        return _call_wait_duration(node, env)
+    if _is_self_method_call(node, "play"):
+        return _call_play_duration(node, env)
+
+    func = node.func
+    if not (
+        isinstance(func, ast.Attribute)
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "self"
+    ):
+        return 0.0
+    method = method_nodes.get(func.attr)
+    if method is None or method.name in call_stack:
+        return 0.0
+
+    helper_env: dict[str, StaticValue] = {}
+    params = [arg.arg for arg in method.args.args if arg.arg != "self"]
+    defaults = method.args.defaults
+    if defaults:
+        default_params = params[-len(defaults) :]
+        for param, default in zip(default_params, defaults, strict=False):
+            value = _static_value(default, env)
+            if value is not None:
+                helper_env[param] = value
+    for index, arg_node in enumerate(node.args):
+        if index >= len(params):
+            break
+        value = _static_value(arg_node, env)
+        if value is not None:
+            helper_env[params[index]] = value
+    for keyword in node.keywords:
+        if keyword.arg is None:
+            continue
+        value = _static_value(keyword.value, env)
+        if value is not None:
+            helper_env[keyword.arg] = value
+
+    return _estimate_method_duration_seconds(
+        method,
+        method_nodes=method_nodes,
+        env=helper_env,
+        call_stack=call_stack,
+    )
+
+
+def _call_wait_duration(node: ast.Call, env: dict[str, StaticValue] | None = None) -> float:
     if not node.args:
         return 1.0
-    return _literal_number(node.args[0]) or 0.0
+    return _static_number(node.args[0], env or {}) or 0.0
 
 
-def _call_play_duration(node: ast.Call) -> float:
+def _call_play_duration(node: ast.Call, env: dict[str, StaticValue] | None = None) -> float:
     for keyword in node.keywords:
         if keyword.arg == "run_time":
-            return _literal_number(keyword.value) or 0.0
+            return _static_number(keyword.value, env or {}) or 0.0
     return 1.0
 
 
@@ -349,6 +482,72 @@ def _literal_number(node: ast.AST) -> float | None:
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         value = _literal_number(node.operand)
         return -value if value is not None else None
+    return None
+
+
+def _static_iterable(node: ast.AST, env: dict[str, StaticValue]) -> StaticValue | None:
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "enumerate"
+        and node.args
+    ):
+        iterable = _static_value(node.args[0], env)
+        if isinstance(iterable, (list, tuple)):
+            return list(enumerate(iterable))
+        return None
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "range"
+        and 1 <= len(node.args) <= 3
+    ):
+        values = [_static_number(arg, env) for arg in node.args]
+        if all(value is not None and value.is_integer() for value in values):
+            int_values = [int(value) for value in values if value is not None]
+            return list(range(*int_values))
+        return None
+    return _static_value(node, env)
+
+
+def _bind_loop_target(
+    target: ast.expr,
+    value: StaticValue,
+    env: dict[str, StaticValue],
+) -> None:
+    if isinstance(target, ast.Name):
+        env[target.id] = value
+        return
+    if isinstance(target, (ast.Tuple, ast.List)) and isinstance(value, (tuple, list)):
+        for child_target, child_value in zip(target.elts, value, strict=False):
+            _bind_loop_target(child_target, child_value, env)
+
+
+def _static_number(node: ast.AST, env: dict[str, StaticValue]) -> float | None:
+    value = _static_value(node, env)
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _static_value(node: ast.AST | None, env: dict[str, StaticValue]) -> StaticValue | None:
+    if node is None:
+        return None
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float, str)):
+        return node.value
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        value = _static_number(node.operand, env)
+        return -value if value is not None else None
+    if isinstance(node, ast.Name):
+        return env.get(node.id)
+    if isinstance(node, ast.List):
+        values = [_static_value(item, env) for item in node.elts]
+        if all(value is not None for value in values):
+            return values
+    if isinstance(node, ast.Tuple):
+        values = tuple(_static_value(item, env) for item in node.elts)
+        if all(value is not None for value in values):
+            return values
     return None
 
 
