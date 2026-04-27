@@ -90,7 +90,11 @@ function AnimatedCheckbox({ checked, onChange, disabled }: { checked: boolean; o
       aria-checked={checked}
       onClick={() => !disabled && onChange(!checked)}
       disabled={disabled}
-      className="relative h-4 w-4 shrink-0 rounded border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/32"
+      className={`relative h-4 w-4 shrink-0 rounded border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/32 ${
+        checked
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-white/10 bg-white/[0.025] text-transparent"
+      }`}
     >
       <motion.div
         className="absolute inset-0 flex items-center justify-center"
@@ -277,15 +281,20 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
     <form
       ref={formRef}
       onSubmit={handleSubmit}
-      className="flex h-full min-h-0 flex-col gap-4"
+      className="flex h-full min-h-0 flex-col"
     >
-      <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
+      <div className="grid min-h-0 flex-1 gap-5 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-start">
         {/* Left — Input */}
         <div className="flex min-h-0 flex-col gap-4">
-          <div className="flex min-h-[calc(var(--app-content-height)-12.5rem)] flex-1 flex-col gap-4 rounded-2xl border border-border bg-card p-5">
-            <p className="text-sm text-foreground/40">
-              描述你想讲解的数学概念。
-            </p>
+          <div className="flex min-h-[520px] flex-1 flex-col gap-4 rounded-[1.35rem] border border-white/9 bg-[linear-gradient(180deg,oklch(0.17_0.008_250/0.76),oklch(0.135_0.007_250/0.9))] p-4 shadow-[0_24px_70px_-58px_oklch(0.72_0.11_250/0.55),inset_0_1px_0_oklch(1_0_0/0.045)] sm:p-5 xl:min-h-[calc(var(--app-content-height)-13.5rem)]">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm font-medium text-foreground/58">
+                描述你想讲解的数学概念
+              </p>
+              <span className="shrink-0 font-mono text-[11px] text-foreground/28">
+                {text.trim().length} chars
+              </span>
+            </div>
 
             <div className={`flex min-h-0 flex-1 gap-4 ${bgmPanelVisible ? "grid grid-cols-2" : ""}`}>
               <Textarea
@@ -295,7 +304,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 onChange={(e) => setText(e.target.value)}
                 rows={8}
                 disabled={submitting}
-                className="min-h-[360px] flex-1 resize-none rounded-xl border-border bg-background px-4 py-3 text-[15px] leading-relaxed placeholder:text-muted-foreground/40 focus:border-primary/30 focus:ring-primary/15"
+                className="min-h-[300px] flex-1 resize-none rounded-[1rem] border-white/8 bg-black/18 px-5 py-4 text-[15px] leading-7 text-foreground/82 shadow-[inset_0_1px_0_oklch(1_0_0/0.025)] placeholder:text-muted-foreground/34 focus-visible:border-primary/28 focus-visible:ring-primary/12 sm:min-h-[360px] xl:min-h-[390px]"
               />
 
               <AnimatePresence mode="wait">
@@ -306,14 +315,14 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                     animate={{ opacity: 1, x: 0, scale: 1 }}
                     exit={{ opacity: 0, x: 16, scale: 0.97 }}
                     transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-                    className="flex min-w-0 flex-col gap-3 rounded-xl border border-primary/12 bg-primary/[0.02] p-4"
+                    className="flex min-w-0 flex-col gap-3 rounded-[1rem] border border-primary/14 bg-primary/[0.025] p-4 shadow-[inset_0_1px_0_oklch(1_0_0/0.035)]"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-[11px] uppercase tracking-[0.16em] text-primary/55">Background Music</p>
                       <button
                         type="button"
                         onClick={() => setBgmEnabled(false)}
-                        className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background/50 text-foreground/35 transition-colors hover:bg-background hover:text-foreground/60"
+                        className="flex h-6 w-6 items-center justify-center rounded-full border border-white/8 bg-black/20 text-foreground/35 transition-colors hover:bg-background hover:text-foreground/60"
                         aria-label="关闭背景音乐配置"
                       >
                         <X className="h-3 w-3" />
@@ -329,10 +338,10 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                         rows={5}
                         disabled={submitting}
                         placeholder="冷静、极简、轻微存在感的钢琴与弦乐"
-                        className="min-h-0 flex-1 resize-none rounded-lg border-border bg-background px-3 py-2.5 text-[13px] leading-relaxed placeholder:text-muted-foreground/35 focus:border-primary/30"
+                        className="min-h-0 flex-1 resize-none rounded-lg border-white/8 bg-black/18 px-3 py-2.5 text-[13px] leading-relaxed placeholder:text-muted-foreground/35 focus-visible:border-primary/30"
                       />
 
-                      <div className="rounded-lg border border-border bg-background/50 p-2.5">
+                      <div className="rounded-lg border border-white/8 bg-black/18 p-2.5">
                         <FieldLabel label="音量" />
                         <input
                           id="bgm-volume"
@@ -357,7 +366,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
               </AnimatePresence>
             </div>
 
-            <div className="flex gap-2">
+            <div className="grid gap-2 sm:flex sm:flex-wrap">
               {TEMPLATES.map((template) => (
                 <motion.button
                   key={template.text}
@@ -366,12 +375,12 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                   disabled={submitting || clarifying}
                   whileHover={{ y: -1 }}
                   whileTap={{ scale: 0.97 }}
-                  className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-left transition-colors hover:border-white/15 hover:bg-foreground/[0.03]"
+                  className="flex min-w-0 items-center gap-2 rounded-full border border-white/8 bg-white/[0.025] px-3 py-2 text-left transition-colors hover:border-primary/18 hover:bg-primary/[0.035]"
                 >
-                  <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-foreground/[0.04] text-[10px] font-mono text-foreground/50">
+                  <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/8 bg-black/20 text-[10px] font-mono text-foreground/50">
                     {template.icon}
                   </span>
-                  <span className="line-clamp-1 text-xs text-foreground/50">{template.text}</span>
+                  <span className="line-clamp-1 text-xs text-foreground/52">{template.text}</span>
                 </motion.button>
               ))}
             </div>
@@ -447,20 +456,23 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
         </div>
 
         {/* Right — Params + Actions */}
-        <aside className="flex min-h-0 flex-col gap-4">
-          <div className="rounded-2xl border border-border bg-card p-4 space-y-4">
-            <div>
-              <h3 className="text-sm font-medium text-foreground/82">输出设置</h3>
+        <aside className="flex min-h-0 flex-col gap-4 xl:sticky xl:top-[calc(var(--app-header-height)+1.5rem)]">
+          <div className="space-y-4 rounded-[1.35rem] border border-white/9 bg-[linear-gradient(180deg,oklch(0.17_0.008_250/0.78),oklch(0.135_0.007_250/0.92))] p-4 shadow-[0_20px_60px_-52px_oklch(0.72_0.11_250/0.45),inset_0_1px_0_oklch(1_0_0/0.045)]">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground/84">输出设置</h3>
+              <span className="rounded-full border border-white/8 bg-white/[0.025] px-2 py-0.5 font-mono text-[10px] text-foreground/34">
+                {targetDurationSeconds}s
+              </span>
             </div>
 
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <FieldLabel label="音色" />
                 <Select value={voiceId} onValueChange={(v) => v && setVoiceId(v)} disabled={submitting}>
-                  <SelectTrigger className="h-9 w-full border-border bg-background text-[12px] focus:border-primary/35">
+                  <SelectTrigger className="h-10 w-full border-white/8 bg-black/18 px-3 text-[13px] focus:border-primary/35">
                     <SelectValue>{getLabel(VOICES, voiceId)}</SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="border-border bg-popover">
+                  <SelectContent className="border-white/10 bg-popover">
                     {VOICES.map((voice) => (
                       <SelectItem key={voice.id} value={voice.id} className="text-[11px]">
                         {voice.label}
@@ -474,10 +486,10 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 <div className="space-y-1.5">
                   <FieldLabel label="画质" />
                   <Select value={quality} onValueChange={(v) => v && setQuality(v as "high" | "medium" | "low")} disabled={submitting}>
-                    <SelectTrigger className="h-9 w-full border-border bg-background text-[12px] focus:border-primary/35">
+                    <SelectTrigger className="h-10 w-full border-white/8 bg-black/18 px-3 text-[13px] focus:border-primary/35">
                       <SelectValue>{getLabel(QUALITIES, quality)}</SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="border-border bg-popover">
+                    <SelectContent className="border-white/10 bg-popover">
                       {QUALITIES.map((item) => (
                         <SelectItem key={item.value} value={item.value} className="text-[11px]">
                           {item.label}
@@ -490,10 +502,10 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 <div className="space-y-1.5">
                   <FieldLabel label="时长" />
                   <Select value={String(targetDurationSeconds)} onValueChange={(v) => v && setTargetDurationSeconds(Number(v) as TaskDurationSeconds)} disabled={submitting}>
-                    <SelectTrigger className="h-9 w-full border-border bg-background text-[12px] focus:border-primary/35">
+                    <SelectTrigger className="h-10 w-full border-white/8 bg-black/18 px-3 text-[13px] focus:border-primary/35">
                       <SelectValue>{getLabel(DURATIONS, String(targetDurationSeconds))}</SelectValue>
                     </SelectTrigger>
-                    <SelectContent className="border-border bg-popover">
+                    <SelectContent className="border-white/10 bg-popover">
                       {DURATIONS.map((item) => (
                         <SelectItem key={item.value} value={String(item.value)} className="text-[11px]">
                           {item.label}
@@ -507,10 +519,10 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
               <div className="space-y-1.5">
                 <FieldLabel label="模式" />
                 <Select value={preset} onValueChange={(v) => v && setPreset(v as "default" | "educational" | "presentation" | "proof" | "concept")} disabled={submitting}>
-                  <SelectTrigger className="h-9 w-full border-border bg-background text-[12px] focus:border-primary/35">
+                  <SelectTrigger className="h-10 w-full border-white/8 bg-black/18 px-3 text-[13px] focus:border-primary/35">
                     <SelectValue>{getLabel(PRESETS, preset)}</SelectValue>
                   </SelectTrigger>
-                  <SelectContent className="border-border bg-popover">
+                  <SelectContent className="border-white/10 bg-popover">
                     {PRESETS.map((item) => (
                       <SelectItem key={item.value} value={item.value} className="text-[11px]">
                         {item.label}
@@ -523,15 +535,15 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
           </div>
 
           {/* Options & Actions */}
-          <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5">
+          <div className="flex flex-col gap-4 rounded-[1.35rem] border border-white/9 bg-[linear-gradient(180deg,oklch(0.17_0.008_250/0.72),oklch(0.13_0.007_250/0.92))] p-4 shadow-[inset_0_1px_0_oklch(1_0_0/0.04)]">
             <div className="space-y-3">
-              <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-background/35 px-3.5 py-3 select-none transition-colors hover:bg-foreground/[0.02]">
+              <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-white/8 bg-black/14 px-3.5 py-3 select-none transition-colors hover:bg-white/[0.025]">
                 <AnimatedCheckbox
                   checked={noTts}
                   onChange={setNoTts}
                   disabled={submitting}
                 />
-                <span className="text-[13px] text-foreground/70">跳过语音合成，仅生成静音视频</span>
+                <span className="text-[13px] text-foreground/68">跳过语音合成，仅生成静音视频</span>
               </label>
 
               <motion.button
@@ -539,11 +551,11 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 onClick={() => { if (submitting || noTts) return; setBgmEnabled((v) => !v); }}
                 disabled={submitting || noTts}
                 whileTap={!submitting && !noTts ? { scale: 0.99 } : {}}
-                className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border bg-background/35 px-4 py-3 text-left transition-colors hover:bg-white/[0.02] disabled:opacity-50"
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/8 bg-black/14 px-4 py-3 text-left transition-colors hover:bg-white/[0.025] disabled:opacity-50"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <motion.div
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${bgmPanelVisible ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-foreground/[0.03] text-foreground/36"}`}
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${bgmPanelVisible ? "border-primary/30 bg-primary/10 text-primary" : "border-white/8 bg-white/[0.025] text-foreground/36"}`}
                     animate={bgmPanelVisible ? { rotate: [0, -10, 10, 0] } : {}}
                     transition={{ duration: 0.35 }}
                   >
@@ -553,7 +565,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-foreground/82">背景音乐</span>
                       <motion.span
-                        className={`rounded-full px-2 py-0.5 text-[10px] ${bgmPanelVisible ? "bg-primary/10 text-primary" : "bg-foreground/[0.05] text-foreground/32"}`}
+                        className={`rounded-full px-2 py-0.5 text-[10px] ${bgmPanelVisible ? "bg-primary/10 text-primary" : "bg-white/[0.045] text-foreground/34"}`}
                         layout
                         transition={{ type: "spring", stiffness: 400, damping: 25 }}
                       >
@@ -587,12 +599,12 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
             </div>
 
             <div className="mt-auto space-y-2.5 pt-1">
-              <motion.div whileHover={canSubmit ? { scale: 1.005 } : {}} whileTap={canSubmit ? { scale: 0.98 } : {}}>
+              <motion.div whileHover={canSubmit ? { y: -1 } : {}} whileTap={canSubmit ? { scale: 0.985 } : {}}>
                 <Button
                   type="submit"
                   disabled={!canSubmit}
                   size="lg"
-                  className="h-11 w-full text-[14px] font-medium btn-glow"
+                  className="h-11 w-full rounded-xl text-[14px] font-medium btn-glow disabled:bg-white/[0.06] disabled:text-foreground/28 disabled:shadow-none"
                 >
                   {submitting ? (
                     <><Loader2 className="mr-2 h-4 w-4 animate-spin" />正在创建...</>
@@ -607,13 +619,13 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
               </motion.div>
 
               {!hasCurrentClarification && (
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-1">
                   <Button
                     type="button"
                     variant="outline"
                     disabled={!canSubmit}
                     onClick={handleCreateWithoutClarification}
-                    className="h-10 border-border bg-transparent text-foreground/70 hover:bg-foreground/[0.04] hover:text-foreground/85"
+                    className="h-10 rounded-xl border-white/8 bg-white/[0.025] text-foreground/64 hover:bg-white/[0.045] hover:text-foreground/82"
                   >
                     {submitting ? (
                       <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />提交中...</>
@@ -627,7 +639,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                     variant="secondary"
                     disabled={!canSubmit}
                     onClick={handleClarifyAndRun}
-                    className="h-10 border border-border bg-foreground/[0.06] text-foreground/80 hover:bg-foreground/[0.1]"
+                    className="h-10 rounded-xl border border-white/8 bg-white/[0.055] text-foreground/78 hover:bg-white/[0.085]"
                   >
                     {clarifying ? (
                       <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />处理中...</>

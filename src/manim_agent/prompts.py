@@ -194,6 +194,10 @@ inside each skill subdirectory.
 - scene_file, scene_class, video_output (or segment_video_paths)
 - implemented_beats, build_summary, narration
 - deviations_from_plan, render_mode, source_code
+- `segment_render_complete` must be a JSON boolean (`true` or `false`) or `null`.
+  Never output the strings `"true"` or `"false"`.
+- When `render_mode` is `"full"`: set `segment_render_complete` to `null` and
+  `segment_video_paths` to an empty array (`[]`).
 """
 
 

@@ -51,11 +51,11 @@ function FloatingSymbols() {
         <span
           key={sym + i}
           data-symbol
-          className="absolute font-serif text-[clamp(1.2rem,3vw,2.4rem)] text-primary/0 select-none"
+          className="absolute select-none font-serif text-[clamp(1.1rem,2.5vw,2.1rem)] text-primary/10"
           style={{
             left: `${SYMBOL_POSITIONS[i].left}%`,
             top: `${SYMBOL_POSITIONS[i].top}%`,
-            opacity: 0.05,
+            opacity: 0.035,
           }}
         >
           {sym}
@@ -159,38 +159,38 @@ function PreviewCanvas() {
     <Link
       ref={containerRef}
       href="/create"
-      className="group relative block overflow-hidden rounded-2xl border border-border bg-card transition-colors hover:border-primary/25"
+      className="group relative block overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,oklch(0.17_0.01_250/0.82),oklch(0.12_0.008_250/0.92))] shadow-[0_28px_80px_-46px_oklch(0.72_0.11_250/0.45),inset_0_1px_0_oklch(1_0_0/0.06)] ring-1 ring-primary/[0.03] transition-all duration-300 hover:border-primary/24 hover:shadow-[0_32px_90px_-42px_oklch(0.72_0.11_250/0.58),inset_0_1px_0_oklch(1_0_0/0.08)]"
     >
       <FloatingSymbols />
-      <div className="aspect-[2/1]">
+      <div className="aspect-[1.95/1]">
         <svg ref={svgRef} viewBox="0 0 400 265" fill="none" className="h-full w-full" xmlns="http://www.w3.org/2000/svg">
           <pattern id="pg" width="20" height="20" patternUnits="userSpaceOnUse">
-            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="currentColor" strokeWidth="0.4" opacity="0.08" />
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="currentColor" strokeWidth="0.4" opacity="0.12" />
           </pattern>
           <rect width="100%" height="100%" fill="url(#pg)" />
 
-          <line x1="50" y1="190" x2="360" y2="190" stroke="currentColor" strokeWidth="1.2" opacity="0.3" />
-          <line x1="120" y1="40" x2="120" y2="205" stroke="currentColor" strokeWidth="1.2" opacity="0.3" />
-          <path d="M 355 186 L 360 190 L 355 194" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.2" />
-          <path d="M 116 45 L 120 40 L 124 45" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.2" />
+          <line x1="50" y1="190" x2="360" y2="190" stroke="currentColor" strokeWidth="1.2" opacity="0.38" />
+          <line x1="120" y1="40" x2="120" y2="205" stroke="currentColor" strokeWidth="1.2" opacity="0.38" />
+          <path d="M 355 186 L 360 190 L 355 194" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.28" />
+          <path d="M 116 45 L 120 40 L 124 45" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.28" />
 
           <path
             data-curve
             d="M 70 190 Q 130 60, 200 190 T 330 190"
             stroke="oklch(0.72 0.11 250)"
-            strokeWidth="2"
+            strokeWidth="2.25"
             fill="none"
             strokeLinecap="round"
           />
 
           <path
             data-fill
-            d="M 70 190 Q 130 65, 200 190 Q 265 65, 330 190 L 330 190 L 70 190 Z"
+            d="M 70 190 Q 130 65, 200 190 L 70 190 Z"
             fill="url(#curve-glow)"
           />
           <defs>
             <linearGradient id="curve-glow" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="oklch(0.72 0.11 250)" stopOpacity="0.06" />
+              <stop offset="0%" stopColor="oklch(0.72 0.11 250)" stopOpacity="0.1" />
               <stop offset="100%" stopColor="oklch(0.72 0.11 250)" stopOpacity="0" />
             </linearGradient>
             <radialGradient id="dot-glow">
@@ -210,13 +210,13 @@ function PreviewCanvas() {
             <animate attributeName="r" values="3;4;3" dur="1s" repeatCount="indefinite" />
           </circle>
 
-          <text x="365" y="194" fill="currentColor" fontSize="9" opacity="0.22" fontFamily="monospace">x</text>
-          <text x="114" y="33" fill="currentColor" fontSize="9" opacity="0.22" fontFamily="monospace">y</text>
-          <text x="194" y="216" fill="currentColor" fontSize="9" opacity="0.18" fontFamily="monospace">f(x)</text>
-          <text x="268" y="56" fill="currentColor" fontSize="12" opacity="0.18" fontFamily="monospace">
+          <text x="365" y="194" fill="currentColor" fontSize="9" opacity="0.3" fontFamily="monospace">x</text>
+          <text x="114" y="33" fill="currentColor" fontSize="9" opacity="0.3" fontFamily="monospace">y</text>
+          <text x="194" y="216" fill="currentColor" fontSize="9" opacity="0.25" fontFamily="monospace">f(x)</text>
+          <text x="268" y="56" fill="currentColor" fontSize="12" opacity="0.25" fontFamily="monospace">
             ∫ f(x)dx = F(x) + C
           </text>
-          <text x="104" y="205" fill="currentColor" fontSize="8" opacity="0.15" fontFamily="monospace">O</text>
+          <text x="104" y="205" fill="currentColor" fontSize="8" opacity="0.22" fontFamily="monospace">O</text>
         </svg>
       </div>
 
@@ -256,16 +256,16 @@ function FlowSteps() {
 
   return (
     <div ref={stepsRef}>
-      <div className="flex items-center justify-center divide-x divide-border text-center">
+      <div className="flex items-center justify-center divide-x divide-white/8 text-center">
         {STEPS.map((step, i) => (
-          <div key={step.label} data-step className="relative px-4 py-1 first:pl-0 last:pr-0 sm:px-5">
+          <div key={step.label} data-step className="relative px-4 py-1.5 first:pl-0 last:pr-0 sm:px-6">
             {i <= activeStep && activeStep >= 0 && (
               <span className="absolute -top-px left-1/2 h-px w-4 -translate-x-1/2 bg-primary/40 rounded-full" />
             )}
-            <p className={`text-sm font-medium transition-colors duration-500 ${i <= activeStep && activeStep >= 0 ? "text-foreground/88" : "text-foreground/78"}`}>
+            <p className={`text-sm font-medium transition-colors duration-500 ${i <= activeStep && activeStep >= 0 ? "text-foreground/90" : "text-foreground/76"}`}>
               {step.label}
             </p>
-            <p className="mt-0.5 text-xs text-foreground/34">{step.desc}</p>
+            <p className="mt-1 text-xs text-foreground/42">{step.desc}</p>
           </div>
         ))}
       </div>
@@ -275,23 +275,21 @@ function FlowSteps() {
 
 export default function HomePage() {
   return (
-    <main className="relative flex min-h-full flex-col items-center justify-center px-4 pb-6 pt-[var(--app-header-height)] sm:px-6 lg:px-8">
+    <main className="relative flex min-h-full flex-col items-center justify-center overflow-hidden px-4 pb-14 pt-[calc(var(--app-header-height)+1rem)] sm:px-6 sm:pb-20 lg:px-8">
+      <div className="pointer-events-none absolute inset-x-0 top-[12%] mx-auto h-[520px] w-[min(780px,92vw)] rounded-full bg-primary/[0.035] blur-3xl" aria-hidden="true" />
+      <div className="pointer-events-none absolute inset-x-0 top-[36%] mx-auto h-px w-[min(720px,84vw)] bg-gradient-to-r from-transparent via-primary/14 to-transparent" aria-hidden="true" />
       <FloatingSymbols />
-      <div className="mx-auto w-full max-w-[680px] space-y-7">
-        <section data-stagger className="space-y-4 text-center pt-2">
-          <p className="text-[11px] uppercase tracking-[0.25em] text-foreground/32">
+      <div className="relative z-10 mx-auto w-full max-w-[720px] -translate-y-3 space-y-9 sm:-translate-y-5 sm:space-y-10">
+        <section data-stagger className="space-y-3 text-center">
+          <p className="text-[11px] uppercase tracking-[0.32em] text-foreground/38">
             Manim Agent
           </p>
-          <h1 className="text-[clamp(1.75rem,4vw,2.5rem)] font-semibold leading-[1.18] tracking-[-0.02em] text-foreground">
+          <h1 className="text-[clamp(2rem,4.2vw,3rem)] font-semibold leading-[1.12] tracking-normal text-foreground">
             用自然语言生成可讲解的数学动画
           </h1>
-          <p className="mx-auto max-w-[420px] text-[0.9rem] leading-relaxed text-foreground/46">
-            描述一个数学概念，系统自动完成理解、规划、渲染和音频编排，
-            输出带旁白讲解的 Manim 动画视频。
-          </p>
         </section>
 
-        <div data-stagger>
+        <div data-stagger className="relative mx-auto max-w-[700px]">
           <PreviewCanvas />
         </div>
 
