@@ -8,49 +8,46 @@ allowed-tools: [Read, Glob, Grep]
 
 # Narration Sync
 
-Use this skill to keep voice-over aligned with what the viewer is seeing now.
+使用此 skill 来保持配音与观众当前所见内容对齐。
 
-## Primary goals
+## 主要目标
 
-- Make narration sound spoken, not like slide bullets.
-- Align narration to beats, not code blocks.
-- Keep narration focused on the current visual action.
-- Cover the full animation flow without collapsing into a one-sentence summary.
+- 让解说听起来像口语，而不是幻灯片要点。
+- 将解说与 beats 对齐，而非代码块。
+- 让解说聚焦于当前视觉动作。
+- 覆盖完整动画流程，而不是压缩成一句话总结。
 
-## Narration rules
+## 解说规则
 
-- Write one or two spoken sentences per beat by default.
-- Describe what is currently appearing, moving, changing, or being compared.
-- Avoid pre-explaining future steps before the visuals arrive.
-- Avoid long stacked clauses when one short sentence would do.
-- If the canvas is already dense, make the narration simpler instead of adding more text.
+- 默认每个 beat 写一到两句口语文本。
+- 描述当前正在出现、移动、变化或被比较的内容。
+- 避免在视觉到达之前预先解释后续步骤。
+- 当一句话就够用时避免长句堆叠。
+- 如果画布已经很密集，让解说更简单而不是添加更多文本。
 
-## Alignment rules
+## 对齐规则
 
-- Each beat should have a corresponding narration segment.
-- Narration should land on the same order as the visual beats.
-- If the scene changes order during implementation, update the narration to match.
-- If a beat is mostly visual, use a shorter narration line instead of filling the silence with extra explanation.
+- 每个 beat 应有对应的解说片段。
+- 解说应按与视觉 beats 相同的顺序排列。
+- 如果场景在实现过程中改变了顺序，更新解说以匹配。
+- 如果某个 beat 主要是视觉的，使用较短的解说行而非用额外解释填充沉默。
 
-## What to avoid
+## 应避免的做法
 
-- One sentence that summarizes the whole animation.
-- Narration that reads like a proof transcript instead of speech.
-- Narration that introduces terms not yet visible on screen.
-- Narration that repeats the exact on-screen text without adding guidance.
+- 一句话总结整个动画。
+- 读起来像证明记录而非口语的解说。
+- 引入屏幕上尚未出现的术语。
+- 逐字重复屏幕文本而不添加引导。
 
-## Review checklist
+## 审查清单
 
-- Can each narration line be mapped to a specific beat?
-- Does the narration describe the current visual state instead of future steps?
-- Is the spoken rhythm short enough to sound natural?
-- Does the narration cover the whole animation from opening to ending?
+- 每行解说能否映射到特定 beat？
+- 解说是否描述当前视觉状态而非未来步骤？
+- 口语节奏是否足够短以听起来自然？
+- 解说是否覆盖从开场到结尾的完整动画？
 
-## Pipeline handoff
+## Pipeline 交接
 
-When this skill is used in the main pipeline, write the final narration in the
-runtime-provided implementation schema. Do not add separate narration mapping
-fields unless the active runtime schema explicitly asks for them.
+当此 skill 在主 pipeline 中使用时，将最终解说写入运行时提供的实现 schema。除非当前运行时 schema 明确要求，否则不要添加单独的解说映射字段。
 
-The pipeline derives beat-to-narration bookkeeping, coverage flags, and duration
-estimates from the approved Phase 1 `build_spec` plus the final narration.
+Pipeline 从已批准的 Phase 1 `build_spec` 加上最终解说推导 beat 到解说的对应关系、覆盖率标志和时长估算。

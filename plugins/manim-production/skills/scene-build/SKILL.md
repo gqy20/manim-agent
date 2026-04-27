@@ -8,79 +8,68 @@ allowed-tools: [Read, Write, Edit, Bash, Glob, Grep]
 
 # Scene Build
 
-Implement Manim code from a scene plan.
+从场景计划实现 Manim 代码。
 
-## Preconditions
+## 前置条件
 
-- Expect a scene plan in the current conversation.
-- If no plan is present, ask for one short planning pass first instead of improvising a complex scene.
+- 预期当前对话中已有场景计划。
+- 如果没有计划存在，先请求一次简短的规划阶段，而不是即兴创建复杂场景。
 
-## Build workflow
+## 构建工作流
 
-If the caller says this is a script draft pass, Phase 2A, or "do not render",
-stop after writing a structurally complete `scene.py`. Do not run Manim, do not
-inspect media files, and do not perform render review in that mode.
+如果调用方说明这是脚本草稿阶段、Phase 2A 或"不要渲染"，
+在编写结构完整的 `scene.py` 后就停止。不要运行 Manim，不要
+检查媒体文件，也不要在该模式下执行渲染审查。
 
-In Phase 2A, do not submit structured output until the draft passes timing self-check:
-each beat method must contain explicit `run_time` and `wait` calls totaling at least
-80% of that beat's target duration, and the whole script must total at least 60% of
-the requested target duration. If the estimate is below either gate, keep editing
-`scene.py`; do not report the shortfall as a deviation or defer it to Phase 2B.
+在 Phase 2A 中，在通过时序自检之前不要提交 structured output：
+每个 beat 方法必须包含显式的 `run_time` 和 `wait` 调用，
+其总时长至少达到该 beat 目标时长的 80%，
+整个脚本的显式时序至少达到所请求目标时长的 60%。
+如果估算值低于任一门控，继续编辑 `scene.py`；
+不要将此不足报告为偏差或推迟到 Phase 2B 处理。
 
-1. Read the provided scene plan.
-2. Preserve the beat order unless render/debug issues require a small change.
-3. Write one main `scene.py` file unless the user explicitly asks for more.
-4. Keep one main `Scene` class unless there is a strong reason to split.
-5. Use `layout-safety` on dense beats as an advisory audit before the final render pass.
-6. In a render implementation pass, render, inspect, and simplify if the result feels crowded.
+1. 读取给定的场景计划。
+2. 保留 beat 顺序，除非渲染/调试问题需要小幅修改。
+3. 编写一个主 `scene.py` 文件，除非用户明确要求更多文件。
+4. 保持一个主 `Scene` 类，除非有充分理由拆分。
+5. 在最终渲染前对密集 beat 使用 `layout-safety` 作为建议性审计。
+6. 在渲染实现阶段，渲染、检查并在结果感觉拥挤时简化。
 
-## Beat-to-code mapping
+## Beat 到代码的映射
 
-- Each beat should correspond to one visible stage in `construct()`.
-- Implement one method per approved beat, using the exact beat id as the method
-  name when it is a valid Python identifier, for example
-  `def beat_001_setup(self): ...`.
-- Keep `construct()` as a thin orchestration method that calls beat methods in
-  approved order. Do not place the full animation directly in `construct()`.
-- Use `self.<descriptive_name>` or `self.scene_state` for mobjects that must
-  persist across beats.
-- Prefer comments that mark beat boundaries inside each beat method.
-- Keep each beat focused on one reveal, transform, or emphasis change.
-- Keep narration aligned to the current beat.
-- Each beat must reach a readable completion frame before the next beat title or
-  next concept appears.
-- Insert a short hold (`self.wait(0.3)` to `self.wait(0.8)`) after each completed
-  beat state so frame review can sample the intended result.
-- Do not change the title early while the previous beat's transformation is still
-  visually incomplete.
+- 每个 beat 应对应 `construct()` 中的一个可见阶段。
+- 为每个已批准的 beat 实现一个方法，当 beat id 是有效的 Python 标识符时使用精确的 beat id 作为方法名，
+  例如 `def beat_001_setup(self): ...`。
+- 将 `construct()` 保持为调用 beat 方法的轻量级编排方法，按已批准顺序调用。不要将完整动画直接放在 `construct()` 中。
+- 对必须跨 beat 持续存在的 mobject 使用 `self.<描述性名称>` 或 `self.scene_state`。
+- 在每个 beat 方法内部使用标记 beat 边界的注释。
+- 让每个 beat 聚焦于一个展示、变换或强调变化。
+- 让解说与当前 beat 对齐。
+- 每个 beat 必须在下一个 beat 标题或下一个概念出现之前达到可读的完成帧状态。
+- 在每个完成的 beat 状态后插入一个短暂停留（`self.wait(0.3)` 到 `self.wait(0.8)`），以便帧审查可以采样预期结果。
+- 不要在前一个 beat 的变换尚未视觉完成时就提前更改标题。
 
-## Quality checks
+## 质量检查
 
-- Confirm the code matches the planned beat order.
-- Confirm labels stay near the objects they describe.
-- Confirm dense beats have been reviewed with the geometry-based layout safety check when the composition is crowded.
-- Confirm there is a clear ending frame.
-- Confirm the final narration covers all beats in order.
+- 确认代码匹配规划的 beat 顺序。
+- 确认标签保持在它们所描述的对象附近。
+- 确认密集 beat 已在构图拥挤时经过基于几何的布局安全检查。
+- 确认有清晰的结束帧。
+- 确认最终解说按顺序覆盖所有 beats。
 
-## Render-stable labels
+## 渲染稳定标签
 
-Math labels must survive the actual Manim/Pango/font environment, not just look
-correct in source code.
+数学标签必须在真实的 Manim/Pango/字体环境中存活，而不仅仅是在源代码中看起来正确。
 
-- Do not put Unicode superscripts or uncommon math glyphs directly in `Text()`,
-  including `²`, `³`, `√`, `≤`, `≥`, or symbolic formulas. They can render as
-  tofu boxes on Windows font fallback.
-- If LaTeX is available and has rendered successfully in this task, use `MathTex`
-  for formulas.
-- If LaTeX is unavailable, compose simple labels from safe glyphs instead of
-  Unicode math glyphs. For example, create `a^2` as a `VGroup` containing
-  `Text("a")` plus a smaller `Text("2")` positioned at the upper right.
-- Use the same safe label helper consistently for titles, object labels, final
-  formulas, and narration-adjacent captions.
-- In a render implementation pass, visually inspect sampled frames for tofu boxes
-  (`□`) before returning structured output.
+- 不要将 Unicode 上标或不常见数学字形直接放入 `Text()`，
+  包括 `²`、`³`、`√`、`≤`、`≥` 或符号公式。它们在 Windows 字体回退下可能渲染为豆腐块（□）。
+- 如果 LaTeX 可用且在此任务中成功渲染过，对公式使用 `MathTex`。
+- 如果 LaTeX 不可用，由安全字形组合简单标签。例如，将 `a^2` 创建为包含
+  `Text("a")` 加上更小的右上角 `Text("2")` 的 `VGroup`。
+- 对标题、对象标签、最终公式和解说相邻字幕一致地使用同一安全标签辅助函数。
+- 在渲染实现阶段，在返回 structured output 之前目视检查采样帧中的豆腐块（`□`）。
 
-Example fallback helper:
+回退辅助函数示例：
 
 ```python
 def safe_power_label(base_text, exponent_text="2", font_size=28, color=WHITE):
@@ -90,172 +79,166 @@ def safe_power_label(base_text, exponent_text="2", font_size=28, color=WHITE):
     return VGroup(base, exp)
 ```
 
-Use `safe_power_label("a")` instead of `Text("a²")` when LaTeX is not available.
+在 LaTeX 不可用时使用 `safe_power_label("a")` 而不是 `Text("a²")`。
 
-## Area-proof layout rules
+## 面积证明布局规则
 
-For Pythagorean, Zhao Shuang, dissection, rearrangement, or similar area proofs:
+对于勾股定理、赵爽弦图、割补、重排或类似面积证明：
 
-- Show a clean completed state for the rearrangement beat before the conclusion.
-- Keep source area, equality marker, and target area in separate screen zones.
-- Final takeaway should be visually equivalent to `c^2 = a^2 + b^2`: left visual,
-  center `=`, right visual sum.
-- Avoid nested or overlapping shapes in the final proof frame unless nesting is
-  the mathematical object being explained.
-- If triangles move to reveal/rebuild squares, the final positions must be tidy
-  enough that the square regions are obvious without relying on narration.
+- 在结论之前展示重排 beat 的干净完成状态。
+- 将源面积、等号标记和目标面积保持在独立的屏幕区域。
+- 最终要点应在视觉上等价于 `c^2 = a^2 + b^2`：左侧视觉、中间 `=`、右侧视觉总和。
+- 避免最终证明帧中出现嵌套或重叠形状，除非嵌套正是被解释的数学对象。
+- 如果三角形移动以揭示/重建正方形，最终位置必须足够整洁，
+  使正方形区域无需依赖解说就能显而易见。
 
-## Animation build rules (how to write play() calls)
+## 动画构建规则（如何编写 play() 调用）
 
-### CJK text rendering — mandatory rules
+### CJK 文本渲染——强制规则
 
-Manim has three text rendering engines with incompatible character support:
+Manim 有三个文本渲染引擎，字符支持互不兼容：
 
-| Engine | Class | CJK support | Use for |
-|--------|-------|------------|--------|
-| Pango | `Text()` | **Native** | All Chinese/Japanese/Korean text |
-| LaTeX | `Tex()` | Needs XeLaTeX config | English text with LaTeX formatting |
-| LaTeX math | `MathTex()` | **No Chinese** | Mathematical formulas only |
+| 引擎 | 类 | CJK 支持 | 用途 |
+|------|-----|----------|------|
+| Pango | `Text()` | **原生** | 所有中文/日文/韩文文本 |
+| LaTeX | `Tex()` | 需要 XeLaTeX 配置 | 带 LaTeX 格式化的英文文本 |
+| LaTeX 数学 | `MathTex()` | **不支持中文** | 仅数学公式 |
 
-**Mandatory rules:**
-- Chinese characters → **always use `Text()`**, never `Tex()` or `MathTex()`.
-- Math formulas → always use `MathTex()`, never mix Chinese into it.
-- Mixed Chinese+math line → combine `Text()` + `MathTex()` in a `VGroup`:
+**强制规则：**
+- 中文字符 → **始终使用 `Text()`**，永远不用 `Tex()` 或 `MathTex()`。
+- 数学公式 → 始终使用 `MathTex()`，永远不要混入中文。
+- 中文+数学混合行 → 将 `Text()` + `MathTex()` 组合到 `VGroup` 中：
   ```python
   VGroup(Text("其中"), MathTex(r"x = \sqrt{2}")).arrange(RIGHT, buff=0.1)
   ```
-- Do not specify custom `font` for `Text()` unless necessary; Pango auto-selects
-  a CJK-capable system font.
+- 除非必要，不要为 `Text()` 指定自定义 `font`；Pango 自动选择支持 CJK 的系统字体。
 
-### Animation duration bounds
+### 动画时长边界
 
-Every `self.play()` call should specify or imply a reasonable duration:
+每个 `self.play()` 调用都应指定或隐含合理的时长：
 
-| Animation type | Min | Recommended | Max |
-|---------------|-----|-----------|-----|
+| 动画类型 | 最小值 | 推荐值 | 最大值 |
+|----------|--------|--------|--------|
 | `FadeIn`, `FadeOut` | 0.3 s | **0.5–0.8 s** | 1.5 s |
-| `Create` (draw shape) | 0.5 s | **1.0–1.5 s** | 3 s |
-| `Write` (write text) | 1.0 s | **1.5–2.0 s** | 4 s |
+| `Create`（绘制形状） | 0.5 s | **1.0–1.5 s** | 3 s |
+| `Write`（书写文本） | 1.0 s | **1.5–2.0 s** | 4 s |
 | `Transform` / `ReplacementTransform` | 1.0 s | **1.5–2.5 s** | 4 s |
 | `GrowFromCenter` / `GrowFromEdge` | 0.4 s | **0.8–1.2 s** | 2 s |
 | `Indicate` / `Flash` / `Circumscribe` | 0.3 s | **0.5–1.0 s** | 1.5 s |
 | `Shift` / `ApplyMethod` | 0.3 s | **0.5–1.0 s** | 2 s |
 | `Wait` | 0.1 s | **0.3–0.8 s** | 1.5 s |
 
-Duration estimation formula:
+时长估算公式：
 ```
-animation_seconds ≈ narration_char_count × 0.15
+动画秒数 ≈ 解说字符数 × 0.15
 ```
-(Chinese: ~15 chars per spoken second in normal pace)
+（中文：正常语速约每秒 15 个字符）
 
-### Animation composition patterns
+### 动画组合模式
 
-How to combine multiple animations in one `play()` call:
+如何在一个 `play()` 调用中组合多个动画：
 
-| Pattern | When to use | Example |
-|---------|-------------|---------|
-| Multiple args to `play()` | 2–3 independent simultaneous changes | `self.play(FadeIn(a), Transform(b, c))` |
-| `AnimationGroup()` | Need explicit control over group timing | `self.play(AnimationGroup(anim1, anim2, lag_ratio=0.1))` |
-| `LaggedStart(*anims, lag_ratio=0.15)` | Cascade reveal of related elements | Labels appearing one by one after a formula |
-| `Succession(anim1, anim2)` | Strict sequential (second starts after first ends) | Step 1 must fully complete before step 2 |
-| Separate `play()` calls | Beats or phases with pauses between | `self.play(step1); self.wait(0.5); self.play(step2)` |
+| 模式 | 适用场景 | 示例 |
+|------|----------|------|
+| `play()` 的多个参数 | 2–3 个独立的同时变化 | `self.play(FadeIn(a), Transform(b, c))` |
+| `AnimationGroup()` | 需要对组时机进行显式控制 | `self.play(AnimationGroup(anim1, anim2, lag_ratio=0.1))` |
+| `LaggedStart(*anims, lag_ratio=0.15)` | 相关元素的级联展示 | 公式后的标签逐个出现 |
+| `Succession(anim1, anim2)` | 严格顺序（第二个在第一个结束后开始） | 步骤 1 必须在步骤 2 之前完全完成 |
+| 分离的 `play()` 调用 | beats 或阶段之间有停顿 | `self.play(step1); self.wait(0.5); self.play(step2)` |
 
-**Rules:**
-- Never nest `AnimationGroup` more than 2 levels deep.
-- Prefer separate `play()` calls over giant `AnimationGroup` for readability.
-- Use `lag_ratio=0.1–0.2` for `LaggedStart`; higher values feel sluggish.
+**规则：**
+- `AnimationGroup` 嵌套深度不要超过 2 层。
+- 为了可读性，优先使用分离的 `play()` 调用而非巨大的 `AnimationGroup`。
+- 对 `LaggedStart` 使用 `lag_ratio=0.1–0.2`；更高的值会显得迟缓。
 
-### Updater usage
+### Updater 使用
 
-Use `add_updater()` only for these scenarios:
+仅在以下场景使用 `add_updater()`：
 
-| Scenario | Example | Do NOT use for |
-|----------|---------|----------------|
-| Label follows a moving point | Dot on curve, label tracks it | Static labels |
-| Real-time value display | Coordinate readout updates each frame | One-time annotations |
-| Proportional resize | Two segments maintain ratio as parent grows | Fixed layouts |
+| 场景 | 示例 | 不用于 |
+|------|------|--------|
+| 标签跟随移动的点 | 曲线上的点，标签跟踪它 | 静态标签 |
+| 实时数值显示 | 坐标读数每帧更新 | 一次性标注 |
+| 比例缩放 | 两段线段随父级增长保持比例 | 固定布局 |
 
-Pattern:
+模式：
 ```python
-# Label that follows a moving dot
+# 跟随移动点的标签
 label = MathTex(r"(x, y)").add_updater(lambda m: m.next_to(dot, UR))
 self.add(label)
-# ... later, when animation moves dot, label follows automatically
+# ... 之后，当动画移动点时，标签自动跟随
 ```
 
-Remove updaters when no longer needed: `label.clear_updaters()`.
+不再需要 updaters 时移除它们：`label.clear_updaters()`。
 
-### Rate function defaults to set
+### Rate function 默认设置
 
-When writing `self.play()`, explicitly set `rate_func` for non-obvious cases:
+编写 `self.play()` 时，对非显而易见的情况显式设置 `rate_func`：
 
 ```python
-# Default (safe) — omit or set rate_func=smooth
+# 默认（安全）——省略或设置 rate_func=smooth
 self.play(Create(circle))
 
-# Reveals — ease out feels natural
+# 揭示 —— ease_out 感觉自然
 self.play(FadeIn(text), run_time=0.6, rate_func=ease_out_cubic)
 
-# Transforms — smooth both ends
+# 变换 —— 两端平滑
 self.play(Transform(a, b), run_time=2.0, rate_func=ease_in_out_sine)
 
-# Emphasis — slight overshoot draws attention
+# 强调 —— 轻微过冲吸引注意力
 self.play(Indicate(term), rate_func=ease_out_back)
 ```
 
-## Component library usage
+## 组件库用法
 
-Prefer component functions over raw Manim API calls. Components handle CJK safety, consistent styling, and correct timing automatically.
+优先使用组件函数而非原始 Manim API 调用。组件自动处理 CJK 安全性、一致样式和正确时长。
 
-### Do / Don't
+### 做 / 不做
 
-| Pattern | Don't (raw API) | Do (component) |
-|---------|-----------------|----------------|
-| Chinese text | `Text("勾股定理").scale(0.6).set_color(WHITE)` | `cjk_title("勾股定理")` |
-| Math formula | `MathTex(r"a^2+b^2").scale(1.0).set_color(BLUE)` | `math_line(r"a^2+b^2")` |
-| Mixed CJK+math | `VGroup(Text("其中"), MathTex(r"x")).arrange(RIGHT)` | `mixed_text("其中", r"x")` |
-| Subtitle | `Text("步骤1", font_size=24).set_color(GRAY)` | `subtitle("步骤1")` |
-| Title card | Manual positioning + Write/FadeIn | `TitleCard.get_title_mobjects(title="...")` |
-| Proof steps | Manual VGroup arrange + label Text objects | `ProofStepStack()` + `.add_step()` + `.build()` |
-| Step labels | `Text("已知")` with manual styling | `StepLabel(StepKind.GIVEN)` → "已知" |
-| Corner annotation | `Text("条件").to_corner(UL)` | `Callout.create("条件", corner=UL)` |
-| Highlight box | `SurroundingRectangle(target, ...)` | `HighlightBox.outline(target)` |
-| Vertex labels | Multiple `MathTex().next_to()` calls | `LabelGroup()` + `.add_vertex("A", pt)` + `.build()` |
-| Animation timing | Guessing `run_time=1.5` | `reveal(obj)`, `write_in(obj)`, `emphasize(obj)` — auto-timed |
-| Buffer values | Hardcoded `buff=0.25` | `BUFFER.MED_SMALL`, `BUFFER.LARGE` etc. |
-| Colors | Hardcoded `color=BLUE` | `COLOR_PALETTE.given`, `COLOR_PALETTE.highlight` etc. |
+| 模式 | 不做（原始 API） | 做（组件） |
+|------|------------------|------------|
+| 中文文本 | `Text("勾股定理").scale(0.6).set_color(WHITE)` | `cjk_title("勾股定理")` |
+| 数学公式 | `MathTex(r"a^2+b^2").scale(1.0).set_color(BLUE)` | `math_line(r"a^2+b^2")` |
+| 混合 CJK+数学 | `VGroup(Text("其中"), MathTex(r"x")).arrange(RIGHT)` | `mixed_text("其中", r"x")` |
+| 字幕 | `Text("步骤1", font_size=24).set_color(GRAY)` | `subtitle("步骤1")` |
+| 标题卡片 | 手动定位 + Write/FadeIn | `TitleCard.get_title_mobjects(title="...")` |
+| 证明步骤 | 手动 VGroup arrange + 标签 Text 对象 | `ProofStepStack()` + `.add_step()` + `.build()` |
+| 步骤标签 | `Text("已知")` 配合手动样式 | `StepLabel(StepKind.GIVEN)` → "已知" |
+| 角标注释 | `Text("条件").to_corner(UL)` | `Callout.create("条件", corner=UL)` |
+| 高亮框 | `SurroundingRectangle(target, ...)` | `HighlightBox.outline(target)` |
+| 顶点标签 | 多个 `MathTex().next_to()` 调用 | `LabelGroup()` + `.add_vertex("A", pt)` + `.build()` |
+| 动画时长 | 猜测 `run_time=1.5` | `reveal(obj)`, `write_in(obj)`, `emphasize(obj)` —— 自动计时 |
+| 缓冲值 | 硬编码 `buff=0.25` | `BUFFER.MED_SMALL`, `BUFFER.LARGE` 等 |
+| 颜色 | 硬编码 `color=BLUE` | `COLOR_PALETTE.given`, `COLOR_PALETTE.highlight` 等 |
 
-### When components don't cover your need
+### 组件未覆盖需求时的处理
 
-For patterns not yet in the component library:
-1. Use raw Manim API but import constants from `components.config` for consistency.
-2. Follow CJK rules from the table above (Chinese → `Text()`, math → `MathTex()`).
-3. Use `BUFFER.*` and `COLOR_PALETTE.*` instead of magic numbers/colors.
+对于组件库中尚未涵盖的模式：
+1. 使用原始 Manim API 但从 `components.config` 导入常量以保持一致性。
+2. 遵循上表中的 CJK 规则（中文 → `Text()`，数学 → `MathTex()`）。
+3. 使用 `BUFFER.*` 和 `COLOR_PALETTE.*` 替代魔法数字/颜色。
 
-## Use references only when needed
+## 仅在需要时使用参考文件
 
-All reference files are under `<plugin_dir>/references/`. Paths below are
-relative to the plugin root directory.
+所有参考文件位于 `<plugin_dir>/references/` 下。以下路径相对于插件根目录：
 
-- For code style and render hygiene, read `references/code-style.md`.
-- For math layout and emphasis, read `references/math-visualization-guidelines.md`.
-- For spatial composition, screen zones, element sizing, color palette, and per-mode layout templates, read `references/spatial-composition.md`.
-- For animation selection, rate functions, timing, composition patterns, and motion craft, read `references/animation-craft.md`.
-- For render quality presets, caching behavior, file size budgeting, performance bottlenecks, and renderer selection, read `references/render-quality.md`.
-- For the 3Blue1Brown visual style profile (exact color hex codes, LaTeX template config, animation speed/easing preferences), read `references/style-3b1b.md`.
-- For common implementation mistakes and error-fix patterns, read `references/build-anti-patterns.md`.
+- 代码风格和渲染规范，读取 `references/code-style.md`。
+- 数学布局和强调，读取 `references/math-visualization-guidelines.md`。
+- 空间 composition、屏幕区域、元素尺寸、调色板和按模式布局模板，读取 `references/spatial-composition.md`。
+- 动画选择、rate functions、时序、组合模式和运动技巧，读取 `references/animation-craft.md`。
+- 渲染质量预设、缓存行为、文件大小预算、性能瓶颈和渲染器选择，读取 `references/render-quality.md`。
+- 3Blue1Brown 视觉风格配置文件（精确颜色十六进制码、LaTeX 模板配置、动画速度/easing 偏好），读取 `references/style-3b1b.md`。
+- 常见实现错误和错误修复模式，读取 `references/build-anti-patterns.md`。
 
-## Implementation handoff
+## 实现交接
 
-When used inside the main pipeline, return implementation facts through the
-runtime-provided structured output schema. Do not redefine the schema in this
-skill.
+在主 pipeline 内部使用时，通过运行时提供的 structured output schema 返回实现事实。不要在此 skill 中重新定义 schema。
 
-The handoff should make these facts clear:
+交接应明确以下事实：
 
-- What was built.
-- Whether the render succeeded.
-- Any deviation from the original scene plan.
-- The final scene class name.
-- Which planned beats were actually implemented, in order.
-- A short build summary.
+- 构建了什么。
+- 渲染是否成功。
+- 与原始场景计划的任何偏差。
+- 最终 Scene 类名。
+- 实际实现了哪些规划的 beats，按顺序排列。
+- 简要构建摘要。

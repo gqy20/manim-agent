@@ -5,37 +5,37 @@ description: Produce, review, or refactor Manim scenes for educational videos wi
 
 # Manim Production
 
-Use this as the umbrella workflow router for Manim tasks.
+将此作为 Manim 任务的总工作流路由器。
 
-## Primary job
+## 主要职责
 
-- Route the task through the correct Manim production stages.
-- Keep the stages in order: visible plan, build, narration alignment, render review.
-- Use the specialized skills for the detailed rules instead of repeating them here.
+- 将任务路由到正确的 Manim 生产阶段。
+- 保持阶段顺序：可见规划 → 构建 → 解说对齐 → 渲染审查。
+- 使用各专用 skill 的详细规则，而非在此重复。
 
-## Required stage order
+## 必需的阶段顺序
 
-1. Use `scene-plan` first and emit a visible plan before coding.
-2. Use `scene-build` only after that plan exists.
-3. Apply `scene-direction` during planning and implementation to keep each beat visually strong.
-4. Apply `layout-safety` on dense beats as an advisory audit before accepting the implementation.
-5. Apply `narration-sync` before finalizing narration.
-6. Use `render-review` after rendering and before reporting success.
-7. Apply `intro-outro` after render-review when branded packaging is requested (optional).
+1. 首先使用 `scene-plan` 并在编码前发出可见计划。
+2. 仅在该计划存在后使用 `scene-build`。
+3. 在规划和实现期间应用 `scene-direction` 以保持每个 beat 视觉强劲。
+4. 在接受实现前对密集 beat 应用 `layout-safety` 作为建议性审计。
+5. 在最终确定解说前应用 `narration-sync`。
+6. 渲染后在报告成功前使用 `render-review`。
+7. 当请求品牌化包装时（可选）在 render-review 之后应用 `intro-outro`。
 
-## Skill routing
+## Skill 路由
 
-- `scene-plan`: beat structure, learning sequence, narration outline, build handoff
-- `scene-build`: plan-to-code execution, render/debug loop, implementation refinement
-- `scene-direction`: opening hook, focal hierarchy, motion-led explanation, ending payoff
-- `layout-safety`: geometry-based advisory audits for overlap and frame-safety during implementation
-- `narration-sync`: spoken pacing, beat-by-beat narration alignment, narration density control
-- `render-review`: sampled-frame quality review and blocking issue detection
-- `intro-outro`: branded intro/outro design, Revideo or Manim fallback, video concatenation contract
+- `scene-plan`：beat 结构、学习序列、解说大纲、构建交接
+- `scene-build`：从计划到代码执行、渲染/调试循环、实现优化
+- `scene-direction`：开场吸引、焦点层级、运动引导讲解、结尾收获
+- `layout-safety`：基于几何的建议性审计，用于实现阶段的重叠和帧安全检查
+- `narration-sync`：口语节奏、逐 beat 解说对齐、解说密度控制
+- `render-review`：采样帧质量审查和阻塞性问题检测
+- `intro-outro`：品牌化片头/片尾设计、Revideo 或 Manim 回退、视频拼接约定
 
-## Task classification
+## 任务分类
 
-Choose one primary mode before building:
+在构建前选择一种主要模式：
 
 - `quick-demo`
 - `concept-explainer`
@@ -43,19 +43,19 @@ Choose one primary mode before building:
 - `function-visualization`
 - `geometry-construction`
 
-## Minimal checks
+## 最小检查项
 
-- Do not start `scene.py` before the visible plan exists.
-- Do not skip the specialized skills when their phase is active.
-- Prefer one `scene.py` file and one main `Scene` class unless the task truly needs more.
-- If the first render fails, fix implementation problems before redesigning the lesson.
-- If intro-outro is requested, emit `intro_spec` and/or `outro_spec` in structured output before finishing.
+- 不要在可见计划存在前开始 `scene.py`。
+- 当某阶段活跃时不要跳过对应的专用 skill。
+- 优先使用一个 `scene.py` 文件和一个主 `Scene` 类，除非任务确实需要更多。
+- 如果第一次渲染失败，在重新设计课程之前修复实现问题。
+- 如果请求了 intro-outro，在完成前在 structured output 中输出 `intro_spec` 和/或 `outro_spec`。
 
-## Component Library
+## 组件库
 
-Reusable Python components in `components/` that encapsulate documented patterns into LLM-friendly APIs.
+`components/` 中的可复用 Python 组件，将文档化的模式封装为 LLM 友好的 API。
 
-### Import pattern
+### 导入模式
 
 ```python
 from components import (
@@ -70,43 +70,42 @@ from components import (
 )
 ```
 
-Or import individually: `from components.text_helpers import cjk_text`
+或单独导入：`from components.text_helpers import cjk_text`
 
-### Component quick reference
+### 组件快速参考
 
-| What you need | Use this | Module |
+| 你需要什么 | 使用这个 | 模块 |
 |---------------|----------|--------|
-| Style constants (buffers, colors, sizes) | `BUFFER.SMALL`, `COLOR_PALETTE.given`, `TEXT_SIZES.title` | `config.py` |
-| Chinese text | `cjk_text("文本")`, `cjk_title("标题")` | `text_helpers.py` |
-| Math formula | `math_line(r"a^2+b^2")` | `text_helpers.py` |
-| Mixed CJK+math | `mixed_text("其中", r"x=2")` | `text_helpers.py` |
-| Subtitle/caption | `subtitle("注释")` | `text_helpers.py` |
-| Title card | `TitleCard.get_title_mobjects(title="...")` | `titles.py` |
-| Ending card | `EndingCard.get_ending_mobjects(message="...")` | `titles.py` |
-| Proof step stack | `ProofStepStack()` + `.add_step()` + `.build()` | `formula_display.py` |
-| Formula transform | `FormulaTransform(original, target_latex)` | `formula_display.py` |
-| Step labels | `StepLabel(StepKind.GIVEN)`, `StepLabel(StepKind.STEP, 1)` | `formula_display.py` |
-| Corner callout | `Callout.create("已知", corner=UL)` | `annotations.py` |
-| Highlight box | `HighlightBox.outline(target)`, `HighlightBox.filled(target)` | `annotations.py` |
-| Vertex/angle/length labels | `LabelGroup()` + `.add_vertex()` + `.build()` | `annotations.py` |
-| Zone-based layout | `ZoneLayout()` + `.set_title()` + `.build()` | `layouts.py` |
-| Mode-based layout | `ModeLayout(SceneMode.PROOF_WALKTHROUGH)` | `layouts.py` |
-| Semantic animations | `reveal()`, `write_in()`, `emphasize()`, `transform_step()` | `animation_helpers.py` |
-| Shrink-to-corner | `shrink_to_corner(obj)` | `animation_helpers.py` |
-| Teaching scene base class | `class MyScene(TeachingScene): ...` | `scene_templates.py` |
+| 样式常量（缓冲区、颜色、尺寸） | `BUFFER.SMALL`, `COLOR_PALETTE.given`, `TEXT_SIZES.title` | `config.py` |
+| 中文文本 | `cjk_text("文本")`, `cjk_title("标题")` | `text_helpers.py` |
+| 数学公式 | `math_line(r"a^2+b^2")` | `text_helpers.py` |
+| 混合 CJK+数学 | `mixed_text("其中", r"x=2")` | `text_helpers.py` |
+| 字幕/注释 | `subtitle("注释")` | `text_helpers.py` |
+| 标题卡片 | `TitleCard.get_title_mobjects(title="...")` | `titles.py` |
+| 结尾卡片 | `EndingCard.get_ending_mobjects(message="...")` | `titles.py` |
+| 证明步骤栈 | `ProofStepStack()` + `.add_step()` + `.build()` | `formula_display.py` |
+| 公式变换 | `FormulaTransform(original, target_latex)` | `formula_display.py` |
+| 步骤标签 | `StepLabel(StepKind.GIVEN)`, `StepLabel(StepKind.STEP, 1)` | `formula_display.py` |
+| 角标注释 | `Callout.create("已知", corner=UL)` | `annotations.py` |
+| 高亮框 | `HighlightBox.outline(target)`, `HighlightBox.filled(target)` | `annotations.py` |
+| 顶点/角度/长度标签 | `LabelGroup()` + `.add_vertex()` + `.build()` | `annotations.py` |
+| 基于区域的布局 | `ZoneLayout()` + `.set_title()` + `.build()` | `layouts.py` |
+| 基于模式的布局 | `ModeLayout(SceneMode.PROOF_WALKTHROUGH)` | `layouts.py` |
+| 语义动画 | `reveal()`, `write_in()`, `emphasize()`, `transform_step()` | `animation_helpers.py` |
+| 缩小到角落 | `shrink_to_corner(obj)` | `animation_helpers.py` |
+| 教学 Scene 基类 | `class MyScene(TeachingScene): ...` | `scene_templates.py` |
 
-**Rule:** Always prefer component functions over raw Manim API calls for common patterns. Components enforce consistent styling, correct CJK handling, and proper animation timing automatically.
+**规则：** 对常见模式始终优先使用组件函数而非原始 Manim API 调用。组件自动强制一致的样式、正确的 CJK 处理和适当的动画时长。
 
-## References
+## 参考
 
-All reference files are under `<plugin_dir>/references/`. Paths below are
-relative to the plugin root directory.
+所有参考文件位于 `<plugin_dir>/references/` 下。以下路径相对于插件根目录：
 
-- For scene flow, read `references/scene-patterns.md`.
-- For narration quality, read `references/narration-guidelines.md`.
-- For spatial composition (screen zones, sizing, color, per-mode layouts), read `references/spatial-composition.md`.
-- For animation craft (motion selection, rate functions, timing, composition), read `references/animation-craft.md`.
-- For render quality (presets, caching, performance, file size), read `references/render-quality.md`.
-- For the 3Blue1Brown visual style profile (colors, typography, animation pacing, compositional patterns), read `references/style-3b1b.md`.
-- For layout or failure patterns, read only the specific reference you need.
-- For intro/outro templates and video assembly, read `/intro-outro` skill.
+- 场景流程，读取 `references/scene-patterns.md`。
+- 解说质量，读取 `references/narration-guidelines.md`。
+- 空间 composition（屏幕区域、尺寸、颜色、按模式布局），读取 `references/spatial-composition.md`。
+- 动画技巧（运动选择、rate functions、时序、组合），读取 `references/animation-craft.md`。
+- 渲染质量（预设、缓存、性能、文件大小），读取 `references/render-quality.md`。
+- 3Blue1Brown 视觉风格配置文件（颜色、排版、动画节奏、组合模式），读取 `references/style-3b1b.md`。
+- 布局或失败模式，仅按需读取你需要的特定参考。
+- 片头/片尾模板和视频组装，读取 `/intro-outro` skill。
