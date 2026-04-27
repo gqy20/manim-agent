@@ -7,6 +7,8 @@ BE_PORT ?= 8471
 FE_PORT ?= 3147
 # Backend reloader default is off for stability.
 RELOAD ?= false
+# Set PROMPT_DEBUG=1 when you want task prompt artifacts and the debug UI enabled.
+PROMPT_DEBUG ?= 0
 
 # ── Help ──────────────────────────────────────────────────
 help: ## Show available targets
@@ -31,15 +33,15 @@ dev: ## Start both backend and frontend in development mode (auto-kills old proc
 
 dev-backend: ## Start FastAPI backend with stable settings (reload disabled by default)
 	@$(call kill-port,$(BE_PORT))
-	RELOAD=$(RELOAD) $(PYTHON) backend/_dev.py
+	ENABLE_PROMPT_DEBUG=$(PROMPT_DEBUG) RELOAD=$(RELOAD) $(PYTHON) backend/_dev.py
 
 dev-backend-reload: ## Start FastAPI backend with reload enabled (for short config/code checks)
 	@$(call kill-port,$(BE_PORT))
-	RELOAD=true $(PYTHON) backend/_dev.py
+	ENABLE_PROMPT_DEBUG=$(PROMPT_DEBUG) RELOAD=true $(PYTHON) backend/_dev.py
 
 dev-frontend: ## Start Next.js frontend dev server
 	@$(call kill-port,$(FE_PORT))
-	cd frontend && API_URL=http://$(BE_HOST):$(BE_PORT) NEXT_PUBLIC_API_URL=http://$(BE_HOST):$(BE_PORT) npm run dev -- --port $(FE_PORT)
+	cd frontend && API_URL=http://$(BE_HOST):$(BE_PORT) NEXT_PUBLIC_API_URL=http://$(BE_HOST):$(BE_PORT) NEXT_PUBLIC_ENABLE_PROMPT_DEBUG=$(PROMPT_DEBUG) npm run dev -- --port $(FE_PORT)
 
 stop-backend: ## Stop backend processes bound to BE_PORT
 	@$(call kill-port,$(BE_PORT))
