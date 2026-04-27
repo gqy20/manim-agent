@@ -120,13 +120,17 @@ function Switch({
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-5 w-9 shrink-0 rounded-full border transition disabled:pointer-events-none disabled:opacity-45 ${
-        checked ? "border-primary/35 bg-primary/18" : "border-white/10 bg-black/24"
+      className={`relative h-5 w-9 shrink-0 rounded-full border transition-[background-color,border-color,box-shadow] duration-300 disabled:pointer-events-none disabled:opacity-45 ${
+        checked
+          ? "border-primary/45 bg-primary/20 shadow-[0_0_18px_-8px_oklch(0.72_0.11_250/0.85)]"
+          : "border-white/12 bg-black/22"
       }`}
     >
       <span
-        className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition ${
-          checked ? "left-[1.15rem] bg-primary" : "left-0.5 bg-foreground/34"
+        className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-[left,background-color,box-shadow] duration-300 ${
+          checked
+            ? "left-[1.15rem] bg-primary shadow-[0_0_12px_oklch(0.72_0.11_250/0.65)]"
+            : "left-0.5 bg-foreground/38"
         }`}
       />
     </button>
@@ -339,10 +343,11 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
     <form
       ref={formRef}
       onSubmit={handleSubmit}
-      className="grid min-h-[calc(var(--app-content-height)-10.5rem)] gap-5 lg:grid-cols-[minmax(0,1fr)_390px]"
+      className="grid min-h-[calc(var(--app-content-height)-10.5rem)] gap-6 lg:grid-cols-[minmax(0,1fr)_390px]"
     >
-      <section className="relative flex min-h-[600px] overflow-hidden rounded-lg border border-white/14 bg-[linear-gradient(145deg,oklch(0.185_0.009_250/0.86),oklch(0.13_0.007_250/0.96))] p-4 shadow-[0_32px_100px_-72px_oklch(0.72_0.11_250/0.7),inset_0_1px_0_oklch(1_0_0/0.07)] sm:p-5 lg:p-6">
-        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,oklch(1_0_0/0.05)_1px,transparent_1px),linear-gradient(180deg,oklch(1_0_0/0.035)_1px,transparent_1px)] bg-[size:56px_56px] opacity-[0.12]" />
+      <section className="relative flex min-h-[600px] overflow-hidden rounded-lg border border-white/12 bg-[linear-gradient(145deg,oklch(0.19_0.01_245/0.88),oklch(0.128_0.008_250/0.97))] p-4 shadow-[0_36px_110px_-78px_oklch(0.72_0.11_250/0.72),0_0_0_1px_oklch(1_0_0/0.015),inset_0_1px_0_oklch(1_0_0/0.075)] transition-[border-color,box-shadow,transform] duration-500 hover:border-white/16 hover:shadow-[0_40px_120px_-78px_oklch(0.72_0.11_250/0.84),0_0_0_1px_oklch(1_0_0/0.025),inset_0_1px_0_oklch(1_0_0/0.085)] sm:p-5 lg:p-6">
+        <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,oklch(1_0_0/0.04)_1px,transparent_1px),linear-gradient(180deg,oklch(1_0_0/0.028)_1px,transparent_1px)] bg-[size:64px_64px] opacity-[0.1]" />
+        <div className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-primary/28 to-transparent" />
         <div className="relative flex min-h-0 w-full flex-col space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-foreground/56">描述概念、受众和你希望动画突出的直觉。</p>
@@ -361,7 +366,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
             }}
             rows={10}
             disabled={submitting}
-            className="min-h-[340px] flex-1 resize-none rounded-lg border-white/14 bg-black/18 px-5 py-4 text-[15px] leading-7 text-foreground/90 shadow-[inset_0_1px_0_oklch(1_0_0/0.045)] placeholder:text-muted-foreground/58 focus-visible:border-primary/42 focus-visible:ring-primary/16 sm:min-h-[390px] lg:min-h-0"
+            className="min-h-[340px] flex-1 resize-none rounded-lg border-white/12 bg-[oklch(0.095_0.006_250/0.34)] px-5 py-4 text-[15px] leading-7 text-foreground/90 shadow-[inset_0_1px_0_oklch(1_0_0/0.05),inset_0_0_0_1px_oklch(1_0_0/0.01)] placeholder:text-muted-foreground/58 transition-[border-color,box-shadow,background-color] duration-300 focus-visible:border-primary/46 focus-visible:bg-[oklch(0.105_0.008_250/0.42)] focus-visible:ring-primary/16 sm:min-h-[390px] lg:min-h-0"
           />
 
           <div className="flex flex-wrap gap-2">
@@ -371,7 +376,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 type="button"
                 onClick={() => handleTemplate(template)}
                 disabled={submitting || clarifying}
-                className="rounded-lg border border-white/12 bg-white/[0.035] px-3 py-2 text-xs text-foreground/68 transition hover:border-primary/28 hover:bg-primary/[0.06] hover:text-foreground/88 disabled:pointer-events-none disabled:opacity-50"
+                className="rounded-lg border border-white/10 bg-white/[0.026] px-3 py-2 text-xs text-foreground/68 transition-[border-color,background-color,color,transform] duration-200 hover:-translate-y-0.5 hover:border-primary/26 hover:bg-primary/[0.055] hover:text-foreground/88 disabled:pointer-events-none disabled:opacity-50"
               >
                 {template}
               </button>
@@ -465,7 +470,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
       </section>
 
       <aside className="flex min-h-[600px] flex-col gap-4">
-        <section className="flex flex-1 flex-col rounded-lg border border-white/14 bg-[linear-gradient(180deg,oklch(0.18_0.009_250/0.84),oklch(0.135_0.007_250/0.96))] p-4 shadow-[inset_0_1px_0_oklch(1_0_0/0.065)]">
+        <section className="flex flex-1 flex-col rounded-lg border border-white/12 bg-[linear-gradient(180deg,oklch(0.178_0.01_245/0.82),oklch(0.132_0.008_250/0.965))] p-4 shadow-[0_34px_90px_-78px_oklch(0.7_0.1_250/0.58),inset_0_1px_0_oklch(1_0_0/0.07)] transition-[border-color,box-shadow] duration-500 hover:border-white/16 hover:shadow-[0_38px_100px_-78px_oklch(0.7_0.1_250/0.68),inset_0_1px_0_oklch(1_0_0/0.08)]">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground/84">
               <SlidersHorizontal className="h-4 w-4 text-primary/70" />
@@ -487,7 +492,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 }}
                 disabled={submitting}
               >
-                <SelectTrigger className="h-10 w-full rounded-lg border-white/10 bg-black/22 text-[13px]">
+                <SelectTrigger className="h-10 w-full rounded-lg border-white/10 bg-black/18 text-[13px] transition-[border-color,background-color,box-shadow] duration-200 hover:border-white/16 hover:bg-white/[0.035] focus:border-primary/35 focus:ring-primary/12">
                   <SelectValue>{getLabel(VOICES, voiceId)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent className="border-white/10 bg-popover">
@@ -511,7 +516,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                   }}
                   disabled={submitting}
                 >
-                  <SelectTrigger className="h-10 w-full rounded-lg border-white/10 bg-black/22 text-[13px]">
+                  <SelectTrigger className="h-10 w-full rounded-lg border-white/10 bg-black/18 text-[13px] transition-[border-color,background-color,box-shadow] duration-200 hover:border-white/16 hover:bg-white/[0.035] focus:border-primary/35 focus:ring-primary/12">
                     <SelectValue>{getLabel(QUALITIES, quality)}</SelectValue>
                   </SelectTrigger>
                   <SelectContent className="border-white/10 bg-popover">
@@ -534,7 +539,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                   }}
                   disabled={submitting}
                 >
-                  <SelectTrigger className="h-10 w-full rounded-lg border-white/10 bg-black/22 text-[13px]">
+                  <SelectTrigger className="h-10 w-full rounded-lg border-white/10 bg-black/18 text-[13px] transition-[border-color,background-color,box-shadow] duration-200 hover:border-white/16 hover:bg-white/[0.035] focus:border-primary/35 focus:ring-primary/12">
                     <SelectValue>{getLabel(DURATIONS, String(targetDurationSeconds))}</SelectValue>
                   </SelectTrigger>
                   <SelectContent className="border-white/10 bg-popover">
@@ -560,7 +565,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 }
                 disabled={submitting}
               >
-                <SelectTrigger className="h-10 w-full rounded-lg border-white/10 bg-black/22 text-[13px]">
+                <SelectTrigger className="h-10 w-full rounded-lg border-white/10 bg-black/18 text-[13px] transition-[border-color,background-color,box-shadow] duration-200 hover:border-white/16 hover:bg-white/[0.035] focus:border-primary/35 focus:ring-primary/12">
                   <SelectValue>{getLabel(PRESETS, preset)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent className="border-white/10 bg-popover">
@@ -654,7 +659,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                     type="button"
                     onClick={() => setBgmTuningOpen((value) => !value)}
                     disabled={submitting}
-                    className="rounded-md px-2 py-1 text-xs text-primary/82 transition hover:bg-primary/[0.08] hover:text-primary disabled:pointer-events-none disabled:opacity-45"
+                  className="rounded-md px-2 py-1 text-xs text-primary/82 transition-[background-color,color,transform] duration-200 hover:-translate-y-px hover:bg-primary/[0.08] hover:text-primary disabled:pointer-events-none disabled:opacity-45"
                   >
                     调校
                   </button>
@@ -743,7 +748,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
             type="button"
             disabled={!text.trim() || submitting}
             onClick={handleSaveDraft}
-            className="mt-auto flex items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm text-foreground/52 transition hover:bg-white/[0.035] hover:text-foreground/76 disabled:pointer-events-none disabled:opacity-35"
+            className="mt-auto flex items-center justify-center gap-2 rounded-md px-3 py-2.5 text-sm text-foreground/52 transition-[background-color,color,transform] duration-200 hover:-translate-y-px hover:bg-white/[0.035] hover:text-foreground/76 disabled:pointer-events-none disabled:opacity-35"
           >
             {draftSaved ? <Check className="h-4 w-4 text-primary/70" /> : <Save className="h-4 w-4" />}
             {draftSaved ? "已保存草稿" : "保存草稿"}

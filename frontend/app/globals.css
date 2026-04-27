@@ -63,13 +63,13 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --app-content-height: calc(100dvh - var(--app-header-height) - var(--safe-top));
-  --background: oklch(0.13 0.006 250);
-  --foreground: oklch(0.92 0.004 250);
-  --card: oklch(0.16 0.008 250);
+  --background: oklch(0.118 0.007 250);
+  --foreground: oklch(0.93 0.004 250);
+  --card: oklch(0.165 0.009 250);
   --card-foreground: oklch(0.92 0.004 250);
   --popover: oklch(0.18 0.01 250);
   --popover-foreground: oklch(0.92 0.004 250);
-  --primary: oklch(0.72 0.11 250);
+  --primary: oklch(0.73 0.1 240);
   --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.2 0.012 250);
   --secondary-foreground: oklch(0.88 0.004 250);
@@ -80,8 +80,8 @@
   --destructive: oklch(0.65 0.2 25);
   --border: oklch(1 0 0 / 8%);
   --input: oklch(1 0 0 / 10%);
-  --ring: oklch(0.72 0.11 250);
-  --chart-1: oklch(0.72 0.11 250);
+  --ring: oklch(0.73 0.1 240);
+  --chart-1: oklch(0.73 0.1 240);
   --chart-2: oklch(0.65 0.2 180);
   --chart-3: oklch(0.7 0.15 300);
   --chart-4: oklch(0.75 0.18 60);
@@ -97,10 +97,10 @@
   --sidebar-ring: oklch(0.72 0.11 250);
 
   /* Custom tokens */
-  --glow: oklch(0.72 0.11 250);
-  --glow-subtle: oklch(0.72 0.1 250 / 16%);
-  --surface: oklch(0.14 0.007 250);
-  --surface-elevated: oklch(0.18 0.01 250);
+  --glow: oklch(0.73 0.1 240);
+  --glow-subtle: oklch(0.73 0.1 240 / 16%);
+  --surface: oklch(0.135 0.008 250);
+  --surface-elevated: oklch(0.185 0.011 245);
 }
 
 /* ── Light Theme (fallback) ──────────────────────── */
@@ -156,9 +156,10 @@
 .bg-mesh {
   background-color: var(--background);
   background-image:
-    radial-gradient(ellipse 70% 50% at 25% 45%, oklch(0.72 0.11 250 / 2.5%) 0%, transparent 70%),
-    radial-gradient(ellipse 50% 40% at 75% 25%, oklch(0.68 0.12 260 / 2%) 0%, transparent 70%);
-  animation: meshDrift 30s ease-in-out infinite alternate;
+    radial-gradient(ellipse 70% 45% at 24% 42%, oklch(0.73 0.1 240 / 4.2%) 0%, transparent 72%),
+    radial-gradient(ellipse 42% 35% at 78% 76%, oklch(0.78 0.12 78 / 2.8%) 0%, transparent 72%),
+    linear-gradient(180deg, oklch(0.15 0.008 250 / 38%) 0%, transparent 34%);
+  animation: meshDrift 38s ease-in-out infinite alternate;
 }
 
 @keyframes meshDrift {
@@ -220,9 +221,9 @@
 
 /* ── Gradient Button ────────────────────────────── */
 .btn-glow {
-  background: linear-gradient(135deg, oklch(0.68 0.11 250), oklch(0.64 0.12 255));
+  background: linear-gradient(135deg, oklch(0.72 0.105 240), oklch(0.66 0.11 252));
   color: oklch(0.985 0 0);
-  box-shadow: 0 0 20px -4px oklch(0.72 0.11 250 / 28%);
+  box-shadow: 0 12px 28px -18px oklch(0.73 0.1 240 / 72%), 0 0 0 1px oklch(1 0 0 / 5%) inset;
   transition:
     transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
     box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1),
@@ -246,7 +247,7 @@
 }
 
 .btn-glow:hover:not(:disabled) {
-  box-shadow: 0 0 28px -2px oklch(0.72 0.11 250 / 40%), 0 0 50px -10px oklch(0.68 0.1 255 / 14%);
+  box-shadow: 0 16px 34px -18px oklch(0.73 0.1 240 / 86%), 0 0 42px -16px oklch(0.68 0.1 255 / 32%), 0 0 0 1px oklch(1 0 0 / 8%) inset;
   transform: translateY(-1px);
 }
 
