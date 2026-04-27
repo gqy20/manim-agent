@@ -350,6 +350,8 @@ class _MessageDispatcher:
             "run_duration_ms": getattr(self, "partial_run_duration_ms", None),
             "run_cost_usd": getattr(self, "partial_run_cost_usd", None),
             "run_cost_cny": getattr(self, "partial_run_cost_cny", None),
+            "run_model_name": getattr(self, "partial_run_model_name", None),
+            "run_pricing_model": getattr(self, "partial_run_pricing_model", None),
             "target_duration_seconds": getattr(self, "partial_target_duration_seconds", None),
             "plan_text": getattr(self, "partial_plan_text", None),
             "review_summary": getattr(self, "partial_review_summary", None),
@@ -832,6 +834,8 @@ class _MessageDispatcher:
         current.run_cost_cny = (
             incoming.run_cost_cny if incoming.run_cost_cny is not None else current.run_cost_cny
         )
+        current.run_model_name = incoming.run_model_name or current.run_model_name
+        current.run_pricing_model = incoming.run_pricing_model or current.run_pricing_model
         current.target_duration_seconds = (
             incoming.target_duration_seconds
             if incoming.target_duration_seconds is not None

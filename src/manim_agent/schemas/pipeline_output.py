@@ -197,6 +197,14 @@ class PipelineOutput(BaseModel):
         description="Estimated total Claude Agent SDK token cost in CNY.",
         ge=0,
     )
+    run_model_name: str | None = Field(
+        default=None,
+        description="Model name reported by the Claude Agent SDK for the run.",
+    )
+    run_pricing_model: str | None = Field(
+        default=None,
+        description="Local pricing model used to estimate the token cost.",
+    )
     target_duration_seconds: int | None = Field(
         default=None,
         description="Requested target runtime for the final video in seconds.",

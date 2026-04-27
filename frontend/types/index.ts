@@ -75,6 +75,8 @@ export interface PipelineOutputData {
   run_duration_ms: number | null;
   run_cost_usd: number | null;
   run_cost_cny: number | null;
+  run_model_name?: string | null;
+  run_pricing_model?: string | null;
   target_duration_seconds: number | null;
   plan_text: string | null;
   mode?: string | null;

@@ -883,6 +883,9 @@ export default function TaskDetailClient() {
   const musicSummary = task.options.bgm_enabled ? "BGM on" : "No BGM";
   const pipelineProfile = `${voiceSummary} / ${musicSummary} / Target ${task.options.target_duration_seconds}s`;
   const finalAgentCostCny = task.pipeline_output?.run_cost_cny ?? null;
+  const finalAgentTurns = task.pipeline_output?.run_turns ?? null;
+  const finalAgentModel =
+    task.pipeline_output?.run_pricing_model ?? task.pipeline_output?.run_model_name ?? null;
 
   return (
     <main
@@ -948,6 +951,22 @@ export default function TaskDetailClient() {
                 className="inline-flex h-7 items-center rounded-full border border-emerald-500/20 bg-emerald-500/[0.07] px-3 font-mono text-[10px] font-semibold uppercase tracking-wider text-emerald-300/90"
               >
                 {formatCnyCost(finalAgentCostCny)}
+              </span>
+            )}
+            {finalAgentTurns != null && (
+              <span
+                title="Final Claude Agent SDK turn count across all SDK phases"
+                className="inline-flex h-7 items-center rounded-full border border-cyan-500/18 bg-cyan-500/[0.06] px-3 font-mono text-[10px] font-semibold uppercase tracking-wider text-cyan-300/85"
+              >
+                Turns {finalAgentTurns.toLocaleString()}
+              </span>
+            )}
+            {finalAgentModel && (
+              <span
+                title="Claude Agent SDK model used for final token-cost accounting"
+                className="inline-flex h-7 max-w-[13rem] items-center rounded-full border border-violet-500/18 bg-violet-500/[0.055] px-3 font-mono text-[10px] font-semibold uppercase tracking-wider text-violet-200/80"
+              >
+                <span className="truncate">Model {finalAgentModel}</span>
               </span>
             )}
             {PROMPT_DEBUG_ENABLED && (

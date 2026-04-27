@@ -108,6 +108,8 @@ def _cleanup_output_dir(output_dir: Path, *, keep_mp4: bool = True) -> None:
             if child.is_file() and child.suffix not in extensions_to_keep:
                 child.unlink()
             elif child.is_dir():
+                if child.name == "debug":
+                    continue
                 import shutil
 
                 shutil.rmtree(child, ignore_errors=True)

@@ -482,6 +482,12 @@ async def run_phase3_render(
                 dispatcher.partial_run_cost_cny = (
                     result_summary.get("cost_cny") if result_summary else None
                 )
+                dispatcher.partial_run_model_name = (
+                    result_summary.get("model_name") if result_summary else None
+                )
+                dispatcher.partial_run_pricing_model = (
+                    result_summary.get("pricing_model") if result_summary else None
+                )
                 dispatcher.partial_render_review_result_summary = review_result_summary
                 if po is not None:
                     po.run_turns = result_summary.get("turns") if result_summary else None
@@ -490,6 +496,12 @@ async def run_phase3_render(
                     )
                     po.run_cost_usd = result_summary.get("cost_usd") if result_summary else None
                     po.run_cost_cny = result_summary.get("cost_cny") if result_summary else None
+                    po.run_model_name = (
+                        result_summary.get("model_name") if result_summary else None
+                    )
+                    po.run_pricing_model = (
+                        result_summary.get("pricing_model") if result_summary else None
+                    )
         except RuntimeError as exc:
             if "structured verdict" not in str(exc):
                 raise
@@ -921,6 +933,8 @@ def _populate_po_metadata(
         po.run_duration_ms = result_summary.get("duration_ms")
         po.run_cost_usd = result_summary.get("cost_usd")
         po.run_cost_cny = result_summary.get("cost_cny")
+        po.run_model_name = result_summary.get("model_name")
+        po.run_pricing_model = result_summary.get("pricing_model")
     po.run_tool_use_count = dispatcher.tool_use_count
     po.run_tool_stats = dict(dispatcher.tool_stats)
     po.target_duration_seconds = target_duration_seconds

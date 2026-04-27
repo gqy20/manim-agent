@@ -172,6 +172,8 @@ class PipelineOutputData(BaseModel):
     run_duration_ms: int | None = None
     run_cost_usd: float | None = None
     run_cost_cny: float | None = None
+    run_model_name: str | None = None
+    run_pricing_model: str | None = None
     target_duration_seconds: int | None = None
     plan_text: str | None = None
     mode: str | None = None

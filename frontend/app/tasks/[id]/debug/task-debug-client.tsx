@@ -35,21 +35,48 @@ type PromptTab = "system" | "user" | "inputs" | "options" | "output";
 type OutputView = "readable" | "json";
 
 const ISSUE_TYPES = [
-  "prompt",
-  "schema",
-  "script_structure",
-  "render",
-  "visual_quality",
-  "narration",
-  "tts",
-  "audio_mux",
-  "infra",
-  "frontend",
-  "product",
-  "other",
+  { value: "提示词", label: "提示词" },
+  { value: "结构化输出", label: "结构化输出" },
+  { value: "脚本结构", label: "脚本结构" },
+  { value: "渲染执行", label: "渲染执行" },
+  { value: "视觉质量", label: "视觉质量" },
+  { value: "解说文案", label: "解说文案" },
+  { value: "语音合成", label: "语音合成" },
+  { value: "音视频合成", label: "音视频合成" },
+  { value: "基础设施", label: "基础设施" },
+  { value: "前端界面", label: "前端界面" },
+  { value: "产品体验", label: "产品体验" },
+  { value: "其他", label: "其他" },
 ];
 
-const SEVERITIES = ["low", "medium", "high", "blocker"];
+const LEGACY_ISSUE_TYPE_LABELS: Record<string, string> = {
+  prompt: "提示词",
+  schema: "结构化输出",
+  script_structure: "脚本结构",
+  render: "渲染执行",
+  visual_quality: "视觉质量",
+  narration: "解说文案",
+  tts: "语音合成",
+  audio_mux: "音视频合成",
+  infra: "基础设施",
+  frontend: "前端界面",
+  product: "产品体验",
+  other: "其他",
+};
+
+const SEVERITIES = [
+  { value: "low", label: "低" },
+  { value: "medium", label: "中" },
+  { value: "high", label: "高" },
+  { value: "blocker", label: "阻塞" },
+];
+
+const SEVERITY_LABELS: Record<string, string> = {
+  low: "低",
+  medium: "中",
+  high: "高",
+  blocker: "阻塞",
+};
 const PHASE_ORDER: Record<string, number> = {
   phase1: 10,
   phase2a: 20,
@@ -117,6 +144,14 @@ function phaseStatusLabel(status: string) {
   if (status === "completed") return "completed";
   if (status === "failed") return "failed";
   return "waiting";
+}
+
+function issueTypeLabel(type: string) {
+  return LEGACY_ISSUE_TYPE_LABELS[type] ?? type;
+}
+
+function severityLabel(value: string) {
+  return SEVERITY_LABELS[value] ?? value;
 }
 
 function highlightText(value: string, query: string) {
@@ -430,6 +465,47 @@ function ReadableOutput({
   return <GenericReadable snapshot={snapshot} />;
 }
 
+function buildTaskResultPhase(task: Task): DebugPromptPhaseSummary {
+  return {
+    phase_id: "pipeline_output",
+    phase_name: "Task Result Snapshot",
+    created_at: task.completed_at ?? task.created_at,
+    artifact_path: "task.pipeline_output",
+    metrics: {
+      system_prompt_chars: 0,
+      user_prompt_chars: 0,
+      approx_tokens: 0,
+    },
+    error: task.error,
+    status: task.error ? "failed" : "completed",
+  };
+}
+
+function buildTaskResultArtifact(task: Task): DebugPromptArtifact {
+  return {
+    task_id: task.id,
+    phase_id: "pipeline_output",
+    phase_name: "Task Result Snapshot",
+    created_at: task.completed_at ?? task.created_at,
+    inputs: {
+      user_text: task.user_text,
+      options: task.options,
+    },
+    system_prompt: "",
+    user_prompt: "",
+    options: asRecord(task.options),
+    referenced_artifacts: {},
+    output_snapshot: asRecord(task.pipeline_output),
+    error: task.error,
+    status: task.error ? "failed" : "completed",
+    metrics: {
+      system_prompt_chars: 0,
+      user_prompt_chars: 0,
+      approx_tokens: 0,
+    },
+  };
+}
+
 export default function TaskDebugClient() {
   const params = useParams();
   const taskId = params.id as string;
@@ -442,9 +518,10 @@ export default function TaskDebugClient() {
   const [loading, setLoading] = useState(true);
   const [artifactLoading, setArtifactLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugNotice, setDebugNotice] = useState<string | null>(null);
   const [savingIssue, setSavingIssue] = useState(false);
   const [issueTitle, setIssueTitle] = useState("");
-  const [issueType, setIssueType] = useState("prompt");
+  const [issueType, setIssueType] = useState("提示词");
   const [severity, setSeverity] = useState("medium");
   const [description, setDescription] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -472,16 +549,33 @@ export default function TaskDebugClient() {
   const loadDebug = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setDebugNotice(null);
     try {
-      const [taskData, promptIndex, issueData] = await Promise.all([
+      const [taskData, issueData] = await Promise.all([
         getTask(taskId),
-        getDebugPromptIndex(taskId),
         listDebugIssues(taskId),
       ]);
+      let promptPhases: DebugPromptPhaseSummary[] = [];
+      try {
+        const promptIndex = await getDebugPromptIndex(taskId);
+        promptPhases = promptIndex.phases;
+      } catch (promptErr) {
+        if (!taskData.pipeline_output) {
+          throw promptErr;
+        }
+        promptPhases = [buildTaskResultPhase(taskData)];
+        setDebugNotice(
+          "Prompt artifacts are missing for this task. Showing the persisted task result snapshot instead.",
+        );
+      }
       setTask(taskData);
-      setPhases(promptIndex.phases);
+      setPhases(promptPhases);
       setIssues(issueData);
-      setSelectedPhaseId((current) => current ?? promptIndex.phases[0]?.phase_id ?? null);
+      setSelectedPhaseId((current) =>
+        promptPhases.some((phase) => phase.phase_id === current)
+          ? current
+          : (promptPhases[0]?.phase_id ?? null),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load debug data.");
     } finally {
@@ -499,12 +593,17 @@ export default function TaskDebugClient() {
       setArtifact(null);
       return;
     }
+    if (selectedPhaseId === "pipeline_output" && task?.pipeline_output) {
+      setArtifactLoading(false);
+      setArtifact(buildTaskResultArtifact(task));
+      return;
+    }
     setArtifactLoading(true);
     getDebugPromptArtifact(taskId, selectedPhaseId)
       .then((data) => setArtifact(data))
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load artifact."))
       .finally(() => setArtifactLoading(false));
-  }, [selectedPhaseId, taskId]);
+  }, [selectedPhaseId, task, taskId]);
 
   useEffect(() => {
     setSearchQuery("");
@@ -641,6 +740,11 @@ export default function TaskDebugClient() {
         {error && (
           <div className="shrink-0 rounded-xl border border-red-500/20 bg-red-500/[0.05] px-4 py-3 text-sm text-red-200/80">
             {error}
+          </div>
+        )}
+        {debugNotice && (
+          <div className="shrink-0 rounded-xl border border-amber-400/18 bg-amber-400/[0.045] px-4 py-3 text-sm text-amber-100/72">
+            {debugNotice}
           </div>
         )}
 
@@ -798,14 +902,14 @@ export default function TaskDebugClient() {
               <div className="shrink-0 border-b border-white/8 px-4 py-3">
                 <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-white/45">
                   <MessageSquarePlus className="h-3.5 w-3.5" />
-                  Issues
+                  问题池
                 </div>
               </div>
               <div className="shrink-0 space-y-3 border-b border-white/8 p-4">
                 <input
                   value={issueTitle}
                   onChange={(event) => setIssueTitle(event.target.value)}
-                  placeholder="Issue title"
+                  placeholder="问题标题"
                   className="h-9 w-full rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white/80 outline-none focus:border-cyan-400/35"
                 />
                 <div className="grid grid-cols-2 gap-2">
@@ -815,8 +919,8 @@ export default function TaskDebugClient() {
                     className="h-9 rounded-lg border border-white/10 bg-black/30 px-2 text-xs text-white/75 outline-none"
                   >
                     {ISSUE_TYPES.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
+                      <option key={item.value} value={item.value}>
+                        {item.label}
                       </option>
                     ))}
                   </select>
@@ -826,8 +930,8 @@ export default function TaskDebugClient() {
                     className="h-9 rounded-lg border border-white/10 bg-black/30 px-2 text-xs text-white/75 outline-none"
                   >
                     {SEVERITIES.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
+                      <option key={item.value} value={item.value}>
+                        {item.label}
                       </option>
                     ))}
                   </select>
@@ -835,13 +939,13 @@ export default function TaskDebugClient() {
                 <textarea
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
-                  placeholder="What happened, why it matters, and a possible fix."
+                  placeholder="描述现象、影响范围、可能原因，以及建议的修复方向。"
                   className="min-h-28 w-full resize-none rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/75 outline-none focus:border-cyan-400/35"
                 />
                 {selectedText && (
                   <div className="rounded-lg border border-cyan-400/15 bg-cyan-500/[0.04] px-3 py-2">
                     <div className="font-mono text-[9px] uppercase tracking-widest text-cyan-300/55">
-                      Selected {tab}
+                      已选中 {tab}
                     </div>
                     <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-white/45">
                       {selectedText}
@@ -859,7 +963,7 @@ export default function TaskDebugClient() {
                   ) : (
                     <Database className="mr-2 h-3.5 w-3.5" />
                   )}
-                  Save Issue
+                  保存问题
                 </Button>
               </div>
               <div className="min-h-0 flex-1 overflow-auto p-3 custom-scrollbar">
@@ -882,14 +986,14 @@ export default function TaskDebugClient() {
                         <div className="flex items-start justify-between gap-2">
                           <h3 className="text-sm font-medium text-white/82">{issue.title}</h3>
                           <span className="rounded border border-white/8 px-1.5 py-0.5 font-mono text-[9px] uppercase text-white/42">
-                            {issue.severity}
+                            {severityLabel(issue.severity)}
                           </span>
                         </div>
                         <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-white/48">
                           {issue.description}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-1.5 font-mono text-[9px] uppercase tracking-wider text-white/34">
-                          <span>{issue.issue_type}</span>
+                          <span>{issueTypeLabel(issue.issue_type)}</span>
                           <span>/</span>
                           <span>{issue.status}</span>
                           {issue.phase_id && (
@@ -906,25 +1010,25 @@ export default function TaskDebugClient() {
                             {issue.description}
                           </p>
                           <div className="grid gap-x-3 gap-y-2 font-mono text-[10px] text-white/42 sm:grid-cols-2">
-                            <div>task: {issue.task_id}</div>
-                            <div>phase: {issue.phase_id ?? "none"}</div>
-                            <div>type: {issue.issue_type}</div>
-                            <div>status: {issue.status}</div>
-                            <div>source: {issue.source}</div>
-                            <div>created: {new Date(issue.created_at).toLocaleString()}</div>
+                            <div>任务: {issue.task_id}</div>
+                            <div>阶段: {issue.phase_id ?? "无"}</div>
+                            <div>分类: {issueTypeLabel(issue.issue_type)}</div>
+                            <div>状态: {issue.status}</div>
+                            <div>来源: {issue.source}</div>
+                            <div>创建: {new Date(issue.created_at).toLocaleString()}</div>
                             <div className="break-all sm:col-span-2">id: {issue.id}</div>
                             <div className="break-all sm:col-span-2">
-                              prompt: {issue.prompt_artifact_path ?? "not linked"}
+                              提示词: {issue.prompt_artifact_path ?? "未关联"}
                             </div>
                             {issue.related_artifact_path && (
                               <div className="break-all sm:col-span-2">
-                                related: {issue.related_artifact_path}
+                                相关产物: {issue.related_artifact_path}
                               </div>
                             )}
                           </div>
                           <div>
                             <div className="mb-1 font-mono text-[9px] uppercase tracking-widest text-white/30">
-                              Metadata
+                              元数据
                             </div>
                             {Object.keys(issue.metadata ?? {}).length > 0 && (
                               <pre className="max-h-36 overflow-auto whitespace-pre-wrap rounded border border-white/8 bg-black/25 p-2 text-[10px] leading-relaxed text-white/45 custom-scrollbar">
@@ -933,7 +1037,7 @@ export default function TaskDebugClient() {
                             )}
                             {Object.keys(issue.metadata ?? {}).length === 0 && (
                               <div className="rounded border border-white/8 bg-black/20 p-2 text-xs text-white/35">
-                                No metadata captured.
+                                没有记录元数据。
                               </div>
                             )}
                           </div>
@@ -948,7 +1052,7 @@ export default function TaskDebugClient() {
                             ) : (
                               <Trash2 className="h-3.5 w-3.5" />
                             )}
-                            Delete
+                            删除
                           </button>
                         </div>
                       )}
@@ -959,7 +1063,7 @@ export default function TaskDebugClient() {
                   <div className="flex h-full items-center justify-center text-center">
                     <div className="space-y-2 text-white/32">
                       <FileText className="mx-auto h-5 w-5" />
-                      <p className="font-mono text-[10px] uppercase tracking-widest">No issues yet</p>
+                      <p className="font-mono text-[10px] uppercase tracking-widest">暂无问题</p>
                     </div>
                   </div>
                 )}

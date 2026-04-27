@@ -116,6 +116,10 @@ def test_cleanup_output_dir_keeps_phase2_top_level_artifacts(tmp_path):
     (task_dir / "phase2_video.mp4").write_bytes(b"video")
     (task_dir / "phase2_implementation.json").write_text("{}", encoding="utf-8")
     (task_dir / "scratch.tmp").write_text("temp", encoding="utf-8")
+    debug_dir = task_dir / "debug"
+    debug_dir.mkdir()
+    (debug_dir / "prompt_index.json").write_text("{}", encoding="utf-8")
+    (debug_dir / "phase1.prompt.json").write_text("{}", encoding="utf-8")
     media_dir = task_dir / "media"
     media_dir.mkdir()
     (media_dir / "cache.mp4").write_bytes(b"cache")
@@ -125,5 +129,7 @@ def test_cleanup_output_dir_keeps_phase2_top_level_artifacts(tmp_path):
     assert (task_dir / "phase2_scene.py").exists()
     assert (task_dir / "phase2_video.mp4").exists()
     assert (task_dir / "phase2_implementation.json").exists()
+    assert (debug_dir / "prompt_index.json").exists()
+    assert (debug_dir / "phase1.prompt.json").exists()
     assert not (task_dir / "scratch.tmp").exists()
     assert not media_dir.exists()

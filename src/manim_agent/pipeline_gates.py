@@ -41,6 +41,8 @@ def merge_result_summaries(*summaries: dict | None) -> dict | None:
         "cache_read_tokens": 0,
         "cache_write_tokens": 0,
         "total_tokens": 0,
+        "model_name": None,
+        "pricing_model": None,
     }
     saw_cost = False
     saw_cost_cny = False
@@ -74,6 +76,8 @@ def merge_result_summaries(*summaries: dict | None) -> dict | None:
                 saw_tokens[key] = True
         merged["is_error"] = merged["is_error"] or bool(summary.get("is_error"))
         merged["stop_reason"] = summary.get("stop_reason") or merged["stop_reason"]
+        merged["model_name"] = summary.get("model_name") or merged["model_name"]
+        merged["pricing_model"] = summary.get("pricing_model") or merged["pricing_model"]
         errors = summary.get("errors") or []
         if isinstance(errors, list):
             merged["errors"].extend(errors)

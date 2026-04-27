@@ -588,6 +588,8 @@ async def run_pipeline(
             dispatcher.partial_run_duration_ms = result_summary.get("duration_ms")
             dispatcher.partial_run_cost_usd = result_summary.get("cost_usd")
             dispatcher.partial_run_cost_cny = result_summary.get("cost_cny")
+            dispatcher.partial_run_model_name = result_summary.get("model_name")
+            dispatcher.partial_run_pricing_model = result_summary.get("pricing_model")
         dispatcher.partial_run_tool_use_count = dispatcher.tool_use_count
         dispatcher.partial_run_tool_stats = dict(dispatcher.tool_stats)
 
@@ -721,6 +723,8 @@ async def run_pipeline(
             po.run_duration_ms = result_summary.get("duration_ms")
             po.run_cost_usd = result_summary.get("cost_usd")
             po.run_cost_cny = result_summary.get("cost_cny")
+            po.run_model_name = result_summary.get("model_name")
+            po.run_pricing_model = result_summary.get("pricing_model")
 
         # ════════════════════════════════════════════
         # Phase 4+5/5: TTS Synthesis + Video Mux

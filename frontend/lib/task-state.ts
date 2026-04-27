@@ -108,6 +108,8 @@ function mergePipelineOutput(
     run_duration_ms: mergeNullableValue(prev.run_duration_ms, next.run_duration_ms),
     run_cost_usd: mergeNullableValue(prev.run_cost_usd, next.run_cost_usd),
     run_cost_cny: mergeNullableValue(prev.run_cost_cny, next.run_cost_cny),
+    run_model_name: mergeNullableValue(prev.run_model_name, next.run_model_name),
+    run_pricing_model: mergeNullableValue(prev.run_pricing_model, next.run_pricing_model),
     target_duration_seconds: mergeNullableValue(
       prev.target_duration_seconds,
       next.target_duration_seconds,

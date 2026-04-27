@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import json
 
-from backend.routes import _format_exception_message, _task_update_kwargs
+from backend.routes import _cleanup_output_dir, _format_exception_message, _task_update_kwargs
 from backend.sse_manager import SSESubscriptionManager
 from backend.task_store import TaskStore
 
@@ -96,6 +96,31 @@ class TestTaskUpdateKwargs:
             "video_path": "/out.mp4",
             "pipeline_output": pipeline_output,
         }
+
+
+class TestRoutesCleanup:
+    def test_cleanup_output_dir_preserves_debug_artifacts(self, tmp_path):
+        task_dir = tmp_path / "task"
+        task_dir.mkdir()
+        (task_dir / "phase2_implementation.json").write_text("{}", encoding="utf-8")
+        (task_dir / "scratch.bin").write_bytes(b"temp")
+
+        debug_dir = task_dir / "debug"
+        debug_dir.mkdir()
+        (debug_dir / "prompt_index.json").write_text("{}", encoding="utf-8")
+        (debug_dir / "phase2b.prompt.json").write_text("{}", encoding="utf-8")
+
+        media_dir = task_dir / "media"
+        media_dir.mkdir()
+        (media_dir / "cache.dat").write_text("cache", encoding="utf-8")
+
+        _cleanup_output_dir(task_dir, keep_mp4=False)
+
+        assert (task_dir / "phase2_implementation.json").exists()
+        assert (debug_dir / "prompt_index.json").exists()
+        assert (debug_dir / "phase2b.prompt.json").exists()
+        assert not (task_dir / "scratch.bin").exists()
+        assert not media_dir.exists()
 
 
 class TestSSEManager:
