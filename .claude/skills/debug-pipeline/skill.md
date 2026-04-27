@@ -86,8 +86,10 @@ Issue 存储在 PostgreSQL `debug_issues` 表（[task_store.py:219](backend/task
 
 ### 写入 API
 
+> **Windows 中文兼容提示**: 以下 curl 示例仅适用于纯英文内容。如果 title/description 包含中文，**必须使用 Step 4c 中的 Python urllib 模板**（带 UTF-8 wrapper），否则会因 GBK 编码或 JSON 解析失败。
+
 ```bash
-# 创建 Issue（POST，返回 201）
+# 创建 Issue（POST，返回 201）— 仅英文内容时可用 curl
 curl -s -X POST http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues \
   -H "Content-Type: application/json" \
   -d '{
@@ -101,7 +103,7 @@ curl -s -X POST http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues \
     "metadata": { ... }
   }'
 
-# 列出单任务 Issues
+# 列出单任务 Issues（GET，无中文 body，curl 安全）
 curl -s http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues
 
 # ═══ 全局 Issues 列表（跨任务）═══
@@ -227,24 +229,85 @@ curl -s -X DELETE http://127.0.0.1:8471/api/tasks/debug/issues/<issue_id>
 
 ### Step 1: 环境检查
 
-```bash
-# 检查后端
-curl -s http://127.0.0.1:8471/api/tasks?limit=1
+#### 1a. 后端健康检查（重要：Windows 编码兼容）
 
-# 检查前端
-curl -s -o /dev/null -w "%{http_code}" http://localhost:3147
+**不要用裸 curl 检查后端！** Windows 下 curl 返回的中文内容可能导致 JSON 解析失败。
+使用以下 Python 脚本统一检查：
+
+```python
+# health_check.py — 复制到 Bash 中执行
+import urllib.request, json, sys, io, socket
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+def check_backend():
+    try:
+        req = urllib.request.Request('http://127.0.0.1:8471/api/tasks?limit=1', method='GET')
+        resp = urllib.request.urlopen(req, timeout=10)
+        d = json.loads(resp.read())
+        print(f'BACKEND_OK tasks={len(d.get("tasks",[]))}')
+        return True
+    except urllib.error.HTTPError as e:
+        if e.code == 502:
+            # 502 可能是后端启动中或根路由未定义，进一步确认
+            print('BACKEND_502_MAYBE_STARTING')
+            return False
+        print(f'BACKEND_ERROR code={e.code} {e.reason[:80]}')
+        return False
+    except Exception as e:
+        print(f'BACKEND_UNREACHABLE {type(e).__name__}: {str(e)[:80]}')
+        return False
+
+def check_frontend():
+    try:
+        req = urllib.request.Request('http://localhost:3147', method='GET')
+        resp = urllib.request.urlopen(req, timeout=5)
+        print(f'FRONTEND_OK status={resp.status}')
+        return True
+    except Exception as e:
+        print(f'FRONTEND_ERROR {str(e)[:80]}')
+        return False
+
+def check_port(port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    result = s.connect_ex(('127.0.0.1', port))
+    s.close()
+    return result == 0
+
+check_frontend()
+if not check_backend():
+    if check_port(8471):
+        print('PORT_8471_OCCUPIED — 后端进程存在但可能僵死，需手动检查/重启')
+    else:
+        print('PORT_8471_FREE — 后端未运行')
 ```
 
-未运行则提示启动：
+> **关键经验**：
+> - 后端根路径 `/` 返回 **502 是正常的**（无定义路由），不代表后端异常
+> - 用 `netstat -ano | grep 8471` 或上面 Python 的 `check_port()` 判断端口是否被占用
+> - 如果端口被占用但 API 无响应，说明是**僵死进程**，需要用户手动终止后重启
+> - Windows 终端默认 GBK 编码，Python 输出中文必须加 `io.TextIOWrapper` 包装
+
+#### 1b. 未运行时启动命令
+
 - 后端：`cd backend && uv run uvicorn main:app --port 8471 --reload`
 - 前端：`cd frontend && npm run dev`
 
-**额外检查**: 是否启用了 ENABLE_PROMPT_DEBUG（影响 issue 写入能力）
-```bash
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8471/api/tasks/nonexistent/debug/prompts
-# 返回 404(正常，因为 task 不存在) 而非 "Prompt debug is disabled"
-# 如果返回 {"detail":"Prompt debug is disabled"} 则说明未启用
+#### 1c. 检查 ENABLE_PROMPT_DEBUG
+
+```python
+# 在上面的 health_check.py 中追加：
+try:
+    req = urllib.request.Request(
+        'http://127.0.0.1:8471/api/tasks/nonexistent/debug/prompts', method='GET')
+    resp = urllib.request.urlopen(req, timeout=5)
+except urllib.error.HTTPError as e:
+    body = e.read().decode('utf-8','ignore')
+    if 'disabled' in body.lower():
+        print('PROMPT_DEBUG_DISABLED')
+    elif e.code == 404:
+        print('PROMPT_DEBUG_ENABLED')  # 404 = 正常（task 不存在），说明 debug 路由已注册
 ```
+
 如果未启用，提示用户：issue 写入功能不可用，但调试仍可继续（仅读模式）。
 
 ### Step 2: 收集任务参数
@@ -267,23 +330,41 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8471/api/tasks/nonexiste
 
 ### Step 3: 创建任务
 
-调用 `POST /api/tasks` ([routes.py:409](backend/routes.py#L409))：
+**必须使用 Python urllib 创建任务！** curl 在 Windows 下处理中文 user_text 会失败（`error parsing body`）。
 
-```bash
-curl -s -X POST http://127.0.0.1:8471/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{
-    "user_text": "<user_text>",
-    "voice_id": "<voice_id>",
-    "model": "speech-2.8-hd",
-    "quality": "<quality>",
-    "preset": "<preset>",
-    "no_tts": <no_tts>,
-    "bgm_enabled": false,
-    "bgm_volume": 0.12,
-    "target_duration_seconds": <duration>
-  }'
+```python
+# create_task.py — 复制到 Bash 中执行
+import urllib.request, json, sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+data = json.dumps({
+    'user_text': '<user_text>',           # 中文内容直接写，无需转义
+    'voice_id': '<voice_id>',
+    'model': 'speech-2.8-hd',
+    'quality': '<quality>',
+    'preset': '<preset>',
+    'no_tts': <no_tts>,
+    'bgm_enabled': False,
+    'bgm_volume': 0.12,
+    'target_duration_seconds': <duration>
+}).encode('utf-8')
+
+req = urllib.request.Request(
+    'http://127.0.0.1:8471/api/tasks',
+    data=data,
+    headers={'Content-Type': 'application/json; charset=utf-8'},
+    method='POST'
+)
+resp = urllib.request.urlopen(req, timeout=15)
+result = json.loads(resp.read())
+print(f'TASK_CREATED id={result["id"]} status={result["status"]}')
+print(f'DEBUG_URL=http://localhost:3147/tasks/{result["id"]}/debug')
 ```
+
+> **关键经验**：
+> - **不要用 curl 创建任务** — Windows curl 对中文 JSON body 解析会失败，即使加了 `charset=utf-8`
+> - **不要重复提交** — 如果第一次创建失败（如超时），先检查是否已部分创建了任务（查询 `/api/tasks?limit=5`），避免重复任务抢占资源
+> - 所有后续 API 调用（轮询、issue 写入等）也建议统一使用 Python urllib + UTF-8 wrapper
 
 记录返回的 `task_id`。输出链接：
 ```
@@ -303,41 +384,100 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8471/api/tasks/<task_id>
 
 #### 4b. 监控方式
 
-**主方式: 轮询 GET /api/tasks/{task_id}**（每 10-15 秒）
+**主方式: Python 轮询 GET /api/tasks/{task_id}**（每 12-15 秒）
 
-```bash
-curl -s http://127.0.0.1:8471/api/tasks/<task_id> | python -c "
-import sys, json
-d = json.load(sys.stdin)
-print(f'status={d[\"status\"]}')
-po = d.get('pipeline_output') or {}
-for k in ['plan_text','scene_file','video_output','final_video_output','source_code',
-           'narration','audio_path','error','review_summary']:
-    v = po.get(k)
-    if v: print(f'  {k} = {str(v)[:120]}')
-"
+**不要用 curl + python pipe！** Windows 下中文内容会导致 JSON 解析错误。
+使用统一的 Python 轮询脚本：
+
+```python
+# poll_task.py — 复制到 Bash 中执行
+import urllib.request, json, sys, io, time
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+TASK_ID = '<task_id>'
+PHASE_KEYS = {
+    'plan_text': 'P1', 'scene_file': 'P2A', 'scene_class': 'P2A',
+    'source_code': 'P2B', 'video_output': 'P3',
+    'narration': 'P3.5', 'audio_path': 'P4', 'final_video_output': 'P5',
+    'review_approved': 'review', 'tts_duration_ms': 'P4_ms',
+    'duration_seconds': 'P5_s', 'error': 'ERR'
+}
+
+for i in range(60):  # 最多轮询 60 次（约 12-15 分钟）
+    try:
+        resp = urllib.request.urlopen(
+            f'http://127.0.0.1:8471/api/tasks/{TASK_ID}', timeout=10)
+        d = json.loads(resp.read())
+    except Exception as e:
+        print(f'[{i+1:2d}] POLL_ERROR {e}')
+        time.sleep(15)
+        continue
+
+    status = d['status']
+    po = d.get('pipeline_output') or {}
+    info = f'status={status}'
+    for k, label in PHASE_KEYS.items():
+        v = po.get(k)
+        if v:
+            if k == 'plan_text': info += f' | P1({len(str(v))}c)'
+            elif k == 'source_code': info += f' | P2B({len(str(v))}c)'
+            elif k == 'narration': info += f' | P3.5'
+            elif k in ('audio_path',): info += f' | P4({po.get("tts_duration_ms","?")}ms)'
+            elif k in ('final_video_output',): info += f' | P5({po.get("duration_seconds","?")}s)'
+            elif k == 'scene_file': info += f' | scene={v.split("/")[-1] if "/" in str(v) else v}'
+            elif k == 'scene_class': info += f' | class={v}'
+            elif k == 'review_approved': info += f' | approved={v}'
+            elif k == 'error': info += f' | ERR={str(v)[:100]}'
+            else: info += f' | {label}={str(v)[:60]}'
+    print(f'[{i+1:2d}] {info}')
+
+    if status in ('completed', 'failed', 'stopped'):
+        break
+    time.sleep(15)
+else:
+    print('TIMEOUT — 任务仍在运行，建议检查 SSE 或后端日志')
 ```
 
-**辅助: SSE 事件流**（[routes.py:929](backend/routes.py#L929)）
+**辅助: SSE 事件流**（用于实时追踪 SDK 工具调用进度，特别适合 Phase 2B 长等待期）
 
-```bash
-timeout 600 curl -s -N http://127.0.0.1:8471/api/tasks/<task_id>/events 2>/dev/null
+```python
+# sse_monitor.py — 在另一个终端或后台运行
+import urllib.request, sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+req = urllib.request.Request(
+    'http://127.0.0.1:8471/api/tasks/<task_id>/events',
+    method='GET'
+)
+resp = urllib.request.urlopen(req, timeout=600)
+for line in resp:
+    line = line.decode('utf-8','ignore').strip()
+    if line.startswith('data:'):
+        print(line)  # 实时输出 SSE 事件
 ```
 
 SSE 事件类型: `log` / `status` / `error` / `tool_start` / `tool_result` / `thinking` / `progress`
-status phase 序列: `init → planning → scene → script_draft → scene(render) → render → narration → tts → mux → done`
+status phase 序列: `init → planning → scene → script_draft → scene(render) → render → narration → tts → mux -> done`
+
+> **Phase 2B/Phase 3 长时间等待策略**：
+> - P2B（SDK 代码生成）通常需要 **5-15 分钟**，期间 pipeline_output 不会更新是正常的
+> - 如果 P2B 超过 **10 分钟**无进展：启动 SSE 监控查看是否有 tool_start/tool_result 活动；查看后端日志确认 SDK 进程是否存活
+> - 后端日志位置: `backend/logs/manim-agent-<PID>.log`（PID 可通过 `netstat -ano | grep 8471` 获取）
 
 #### 4c. 各阶段核对 + Issue 写入
 
 对每个阶段，按核对清单逐项检查。**每发现一个异常，立即调用以下命令写入 issue**：
 
-```bash
+```python
 # ════════════════════════════════════════════════
 # ISSUE 写入模板（每个异常填入具体值）
 # ════════════════════════════════════════════════
-curl -s -X POST http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues \
-  -H "Content-Type: application/json" \
-  -d '{
+import urllib.request, json, sys, io
+from datetime import datetime, timezone
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
+TASK_ID = '<task_id>'
+issue = {
     "phase_id": "<当前阶段ID>",
     "title": "<按上面规则表生成标题>",
     "description": "<详细描述: 观察到的实际值 vs 预期值, 可能原因, 影响>",
@@ -346,13 +486,28 @@ curl -s -X POST http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues \
     "source": "auto-debug",
     "prompt_artifact_path": "<有artifact的阶段填 debug/phaseX.prompt.json>",
     "metadata": {
-      "detected_at": "<ISO时间戳>",
-      "field": "<异常字段名>",
-      "actual_value": "<实际观察到的值>",
-      "expected": "<预期值",
-      "task_status": "<当时任务状态>"
+        "detected_at": datetime.now(timezone.utc).isoformat(),
+        "field": "<异常字段名>",
+        "actual_value": "<实际观察到的值>",
+        "expected": "<预期值",
+        "task_status": "<当时任务状态>"
     }
-  }'
+}
+data = json.dumps(issue).encode('utf-8')
+req = urllib.request.Request(
+    f'http://127.0.0.1:8471/api/tasks/{TASK_ID}/debug/issues',
+    data=data,
+    headers={'Content-Type': 'application/json; charset=utf-8'},
+    method='POST'
+)
+try:
+    resp = urllib.request.urlopen(req, timeout=10)
+    result = json.loads(resp.read())
+    print(f'ISSUE_CREATED id={result.get("id")} title={issue["title"]}')
+except urllib.error.HTTPError as e:
+    body = e.read().decode('utf-8','ignore')[:200]
+    print(f'ISSUE_WRITE_FAILED code={e.code} body={body}')
+    # 不抛出异常，继续调试流程
 ```
 
 ##### Phase 1 — Scene Planning (`phase1`)
@@ -432,62 +587,62 @@ curl -s -X POST http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues \
 
 ### Step 5: 收集 Debug 产物 + 汇总 Issues
 
-```bash
-# ═══ TaskResponse ═══
-curl -s http://127.0.0.1:8471/api/tasks/<task_id> | python -m json.tool
+```python
+# collect_results.py — 复制到 Bash 中执行
+import urllib.request, json, sys, io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
-# ═══ Prompt Debug Index（如启用）═══
-curl -s http://127.0.0.1:8471/api/tasks/<task_id>/debug/prompts | python -m json.tool
+TASK_ID = '<task_id>'
+BASE = f'http://127.0.0.1:8471/api/tasks/{TASK_ID}'
 
-# ═══ 各阶段 Artifact（如启用）═══
-curl -s http://127.0.0.1:8471/api/tasks/<task_id>/debug/prompts/phase1 | python -m json.tool
-curl -s http://127.0.0.1:8471/api/tasks/<task_id>/debug/prompts/phase2a | python -m json.tool
-curl -s http://127.0.0.1:8471/api/tasks/<task_id>/debug/prompts/phase2b | python -m json.tool
+def get(url):
+    return json.loads(urllib.request.urlopen(url, timeout=10).read())
 
-# ═══ 单任务 ISSUES（本次调试自动创建的 + 可能已有的）═══
-curl -s http://127.0.0.1:8471/api/tasks/<task_id>/debug/issues | python -c "
-import sys, json
-data = json.load(sys.stdin)
-issues = data.get('issues', [])
-print(f'Total issues: {data.get(\"total\", len(issues))}')
-for i in issues:
-    sev = i.get('severity','?')
-    t = i.get('issue_type','?')
-    print(f'  [{sev:>8}] [{t:>6}] {i[\"title\"]}  (phase={i.get(\"phase_id\",\"-\")})')
-"
+# TaskResponse
+d = get(BASE)
+print('=== TASK ===')
+print(json.dumps(d, ensure_ascii=False, indent=2))
 
-# ═══ 全局 ISSUES（跨任务视角，用于发现重复问题模式）═══
-# 查看当前任务在全局中的位置
-curl -s "http://127.0.0.1:8471/api/tasks/debug/issues?task_id=<task_id>&limit=200" | python -c "
-import sys, json
-data = json.load(sys.stdin)
-issues = data.get('issues', [])
-print(f'Global view for this task: {len(issues)} issues')
-"
+# Prompt Artifacts
+try:
+    prompts = get(f'{BASE}/debug/prompts')
+    print(f'\n=== PROMPTS ({len(prompts.get("phases",[]))} phases) ===')
+    for p in prompts.get('phases', []):
+        print(f'  {p["phase_id"]}: artifact={p.get("has_artifact",False)} '
+              f'size={p.get("size_bytes",0)}')
+except Exception as e:
+    print(f'\n=== PROMPTS: unavailable ({e}) ===')
 
-# 查看所有 open 的 blocker/high 问题（跨任务）
-curl -s "http://127.0.0.1:8471/api/tasks/debug/issues?status=open&severity=blocker&limit=50" | python -c "
-import sys, json
-data = json.load(sys.stdin)
-issues = data.get('issues', [])
-print(f'Open blockers across all tasks: {len(issues)}')
-for i in issues[:10]:
-    print(f'  [{i[\"severity\"]}] {i[\"title\"]} (task={i[\"task_id\"]}, phase={i.get(\"phase_id\",\"-\")})')
-if len(issues) > 10: print(f'  ... and {len(issues)-10} more')
-"
+# Single-task Issues
+try:
+    issues_data = get(f'{BASE}/debug/issues')
+    issues = issues_data.get('issues', [])
+    print(f'\n=== ISSUES (total={issues_data.get("total", len(issues))}) ===')
+    for i in issues:
+        sev = i.get('severity','?')
+        t = i.get('issue_type','?')
+        print(f'  [{sev:>8}] [{t:>6}] {i["title"]}  (phase={i.get("phase_id","-")})')
+except Exception as e:
+    print(f'\n=== ISSUES: unavailable ({e}) ===')
 
-# 按关键词搜索同类问题（例如搜索 TTS 相关）
-curl -s "http://127.0.0.1:8471/api/tasks/debug/issues?search=TTS&limit=100" | python -c "
-import sys, json
-data = json.load(sys.stdin)
-issues = data.get('issues', [])
-print(f'Issues matching \"TTS\": {len(issues)}')
-for i in issues[:10]:
-    print(f'  [{i[\"severity\"]}] {i[\"title\"]} (task={i[\"task_id\"]})')
-"
+# Global Issues (cross-task view for this task)
+try:
+    global_issues = get(
+        f'http://127.0.0.1:8471/api/tasks/debug/issues?task_id={TASK_ID}&limit=200')
+    print(f'\n=== GLOBAL VIEW: {len(global_issues.get("issues",[]))} issues for this task ===')
+except Exception as e:
+    print(f'\n=== GLOBAL VIEW: unavailable ({e}) ===')
 
-# ═══ 本地文件 ═══
-ls -la backend/output/<task_id>/debug/
+# Local files
+import os
+debug_dir = f'backend/output/{TASK_ID}/debug'
+if os.path.exists(debug_dir):
+    print(f'\n=== LOCAL FILES ({debug_dir}) ===')
+    for f in sorted(os.listdir(debug_dir)):
+        fp = os.path.join(debug_dir, f)
+        print(f'  {f} ({os.path.getsize(fp)} bytes)')
+else:
+    print(f'\n=== LOCAL FILES: {debug_dir} not found ===')
 ```
 
 ### Step 6: 生成调试报告
@@ -542,14 +697,18 @@ ls -la backend/output/<task_id>/debug/
 
 | 场景 | 处理方式 | 是否写 issue |
 |------|---------|-------------|
-| 后端未连接 | 提示启动命令 | 否 |
-| 任务创建失败 | 显示 API detail | 否 |
+| 后端未连接 / 502 | 先检查端口占用（netstat / Python socket），区分「未启动」vs「僵死进程」 | 否 |
+| 后端端口被占用但无响应 | 提示用户检查 PID、终止僵死进程后重启 | 否 |
+| curl 中文编码错误 | 切换到 Python urllib（所有 API 调用统一用 Python） | 否 |
+| 任务创建失败 (400/500) | 显示 API detail；**先查询已有任务确认是否部分创建成功**，避免重复提交 | 否 |
 | **阶段异常/失败** | **标注 ✗ + 立即写 issue** | **是** (按规则表) |
-| 阶段超时 (>10min) | 标记 TIMEOUT，继续监控 | 是 (type=基础设施 sev=medium) |
+| 阶段超时 (>10min 无进展) | 标记 TIMEOUT + 写 issue；启动 SSE 追踪 SDK 活动；查看后端日志 | 是 (type=基础设施 sev=medium) |
 | 任务 status=failed | 提取 error + 写全局 issue | 是 (type=基础设施 sev=blocker) |
 | Debug Prompts 404 | 切换 Fallback 模式 | 否 (API 不可用) |
 | **Issue 写入失败** (404/500) | **打印警告但继续调试** | 跳过该条，不影响流程 |
 | SSE 断连 | 回退到轮询 | 是 (type=前端界面 sev=high) |
+| Windows GBK 编码错误 | 所有 Python 脚本加 `sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')` | 否 |
+| 重复任务运行 | 检查 `/api/tasks?limit=5` 确认是否有同 user_text 的并行任务，提示用户停止多余任务 | 否 |
 
 ## 注意事项
 
@@ -561,3 +720,6 @@ ls -la backend/output/<task_id>/debug/
 6. **source 字段区分来源**: skill 自动写入的 issue 用 `source="auto-debug"`，用户手动在 Debug 页面创建的用 `source="manual"`
 7. **全局 Issues API (`GET /debug/issues`)**: 支持跨任务筛选（status/severity/issue_type/task_id/search），用于发现重复问题模式和系统性风险。前端入口 `/debug/issues`
 8. **Issue 标题和描述统一使用中文**: 方便在 Debug 页面的问题池中快速浏览和分类
+9. **Windows 编码兼容（重要）**: 所有涉及中文输出的 Python 脚本必须加 UTF-8 stdout wrapper；**不要用 curl 发送包含中文的请求体**，统一使用 Python urllib + `charset=utf-8`
+10. **Phase 2B 正常耗时较长**: P2B（SDK 代码生成）通常需要 5-15 分钟，期间 pipeline_output 不更新是正常的。超过 10 分钟无进展时应通过 SSE 或后端日志排查，而非立即判定为失败
+11. **避免重复创建任务**: 创建任务前先检查是否有相同 user_text 的 running 任务；curl 失败不代表一定没创建成功，需验证后再重试

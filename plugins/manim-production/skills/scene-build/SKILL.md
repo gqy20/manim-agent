@@ -218,6 +218,88 @@ self.play(Indicate(term), rate_func=ease_out_back)
 2. 遵循上表中的 CJK 规则（中文 → `Text()`，数学 → `MathTex()`）。
 3. 使用 `BUFFER.*` 和 `COLOR_PALETTE.*` 替代魔法数字/颜色。
 
+## 排版 Typography 规范
+
+### 字体选择优先级
+
+| 优先级 | 方式 | 说明 |
+|--------|------|------|
+| 1 | 指定 `font` 参数 | 显式控制，推荐用于生产场景 |
+| 2 | Pango 自动选择 | 不指定 font 时，Pango 根据系统字体配置选择 |
+| 3 | 回退到默认 | 如果 Pango 找不到合适字体会回退 |
+
+**强制规则：**
+- 中文字体必须用 `Text()`（Pango 渲染），永远不用 `Tex()` / `MathTex()`
+- 数学公式必须用 `MathTex()`（LaTeX 渲染），永远不要混入中文
+- 组件函数（`cjk_text`、`cjk_title` 等）默认使用 `FONT_CONFIG.cn_font`（Microsoft YaHei）
+
+### 字重使用规则
+
+| 元素类型 | 推荐字重 | 常量 | 示例 |
+|----------|----------|------|------|
+| 场景标题 / beat 标题 | **粗体** | `FONT_WEIGHTS.BOLD` | `cjk_title("勾股定理")` 自动 BOLD |
+| 正文解说 | **常规** | `FONT_WEIGHTS.NORMAL` | `cjk_text("...")` 默认 NORMAL |
+| 注释 / 标签 / 脚注 | **细体** | `FONT_WEIGHTS.LIGHT` | `subtitle("步骤1")` 自动 LIGHT |
+| 强调关键词 | **粗体 + 高亮色** | `FONT_WEIGHTS.BOLD` + accent color | `cjk_text("关键", weight=BOLD, color=YELLOW_C)` |
+| 变量标签 | **常规 + 中性色** | `FONT_WEIGHTS.NORMAL` + neutral | `cjk_text("x", color=GRAY_C)` |
+
+### 斜体使用场景
+
+| 场景 | 实现方式 | 示例 |
+|------|----------|------|
+| 变量名 / 外语术语 | `Text(..., slant="ITALIC")` | `cjk_text("slope", slant=ITALIC)` |
+| 公式中的修饰词 | MathTex LaTeX `\textit{}` 或 `\mathit{}` | `math_line(r"\textit{where}")` |
+| 引用文本 | `slant=ITALIC` | `cjk_text('"重要"', slant=ITALIC)` |
+
+**注意：** 中文斜体在大多数中文字体下视觉效果不明显，谨慎使用。
+
+### 行距控制
+
+- `Text()` 的 `line_spacing` 参数控制行距，默认由 Pango 自动计算
+- 密集文本（如多行解说）可手动设置 `line_spacing=0.85–0.95` 收紧
+- 稀疏文本（如独立标题）可设 `line_spacing=1.1–1.2` 放松
+- 多行公式用 `MathTex` 的 `alignment` 参数对齐，不用 line_spacing
+
+## 配色使用规范
+
+### 颜色数量限制
+
+- 单个场景最多使用 **4–5 种独立颜色** + 白 / 灰 / 黑
+- 同一变量或概念在整个场景中始终使用同一颜色
+- 新引入颜色时必须有明确的语义目的
+
+### 语义色映射表
+
+| 语义角色 | 推荐色 | Manim 常量 | 典型用途 |
+|----------|--------|------------|----------|
+| 已知条件 / 输入值 | 蓝色 | `BLUE_C` (#58C4DD) | 给定数据、原始状态 |
+| 高亮强调 | 金黄色 | `YELLOW_C` (#F7D96F) | 关键结果、焦点对象 |
+| 结论 / 正确答案 | 绿色 | `GREEN_C` (#83C167) | 最终状态、正确输出 |
+| 变换 / 错误 / 警告 | 红色 | `RED_C` (#FC6255) | 变化过程、错误提示 |
+| 中性文字 | 白色 | `WHITE` (#FFFFFF) | 默认正文、标签 |
+| 弱化信息 | 灰色 | `GRAY_C` (#888888) | 次要信息、淡化元素 |
+
+### 色阶使用指南
+
+Manim 每种基础色提供 5 级渐变（`_A` 最亮 → `_E` 最暗），通过 `COLOR_SHADES` 访问：
+
+| 用途 | 推荐色阶 | 说明 |
+|------|----------|------|
+| 主内容元素 | **_C（中间档）** | 如 `BLUE_C`、`GREEN_C` — 默认推荐 |
+| 高亮 / 发光效果 | **_A / _B（亮）** | 如 `BLUE_A`、`YELLOW_B` — 用于 glow、强调边框 |
+| 背景 / 暗区域 | **_D / _E（暗）** | 如 `GRAY_D`、`BLUE_E` — 用于背景矩形、暗淡元素 |
+| 渐变过渡 | **相邻色阶** | 如 `BLUE_B → BLUE_D` — 用于渐变动画 |
+
+```python
+from components.config import COLOR_SHADES
+
+# 获取蓝色完整色板
+shades = COLOR_SHADES.blue  # (BLUE_A, BLUE_B, BLUE_C, BLUE_D, BLUE_E)
+light_blue = COLOR_SHADES.light(shades)   # BLUE_A
+default_blue = COLOR_SHADES.default(shades)  # BLUE_C
+dark_blue = COLOR_SHADES.dark(shades)    # BLUE_E
+```
+
 ## 仅在需要时使用参考文件
 
 所有参考文件位于 `<plugin_dir>/references/` 下。以下路径相对于插件根目录：

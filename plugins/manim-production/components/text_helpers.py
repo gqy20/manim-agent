@@ -17,7 +17,12 @@ from __future__ import annotations
 
 from manim import DOWN, MathTex, RIGHT, Text, VGroup
 
-from .config import COLOR_PALETTE, TEXT_SIZES
+from .config import (
+    COLOR_PALETTE,
+    FONT_CONFIG,
+    FONT_WEIGHTS,
+    TEXT_SIZES,
+)
 
 
 def cjk_text(
@@ -25,7 +30,9 @@ def cjk_text(
     *,
     scale: float | None = None,
     color=None,
-    font: str = "",
+    font: str | None = None,
+    weight: str | None = None,
+    slant: str | None = None,
     **kwargs,
 ) -> Text:
     """Create Chinese / Japanese / Korean text using Pango renderer.
@@ -37,13 +44,25 @@ def cjk_text(
         content: The text string (may contain CJK characters).
         scale: Optional scale factor. Defaults to TEXT_SIZES.body.
         color: Text color. Defaults to COLOR_PALETTE.neutral.
-        font: Custom font name. Default empty lets Pango auto-select.
+        font: Custom font name. None uses FONT_CONFIG.cn_font.
+        weight: Pango font weight (e.g., "BOLD", "LIGHT"). None uses default.
+        slant: Pango font slant (e.g., "ITALIC"). None uses default.
         **kwargs: Additional arguments passed to Text().
 
     Returns:
         A Text mobject ready for positioning and animation.
     """
-    mob = Text(content, **({} if not font else {"font": font}), **kwargs)
+    resolved_font = font if font is not None else FONT_CONFIG.cn_font
+    text_kwargs: dict = {}
+    if resolved_font:
+        text_kwargs["font"] = resolved_font
+    if weight is not None:
+        text_kwargs["weight"] = weight
+    if slant is not None:
+        text_kwargs["slant"] = slant
+    text_kwargs.update(kwargs)
+
+    mob = Text(content, **text_kwargs)
     if color is not None:
         mob.set_color(color)
     else:
@@ -57,14 +76,16 @@ def cjk_title(
     *,
     scale: float | None = None,
     color=None,
+    weight: str | None = None,
     **kwargs,
 ) -> Text:
-    """Create a CJK title using larger default scale.
+    """Create a CJK title using larger default scale and BOLD weight.
 
     Args:
         content: Title text string.
-        scale: Scale factor. Defaults to TEXT_SIZES.title (1.0).
+        scale: Scale factor. Defaults to TEXT_SIZES.heading_2 (1.0).
         color: Title color. Defaults to neutral.
+        weight: Font weight. Defaults to BOLD.
         **kwargs: Additional arguments passed to Text().
 
     Returns:
@@ -72,8 +93,9 @@ def cjk_title(
     """
     return cjk_text(
         content,
-        scale=scale if scale is not None else TEXT_SIZES.title,
+        scale=scale if scale is not None else TEXT_SIZES.heading_2,
         color=color,
+        weight=weight if weight is not None else FONT_WEIGHTS.BOLD,
         **kwargs,
     )
 
@@ -116,6 +138,8 @@ def mixed_text(
     buff=0.1,
     chinese_scale=None,
     math_scale=None,
+    weight=None,
+    slant=None,
     **kwargs,
 ) -> VGroup:
     """Combine CJK text and math formula into a horizontal group.
@@ -130,12 +154,14 @@ def mixed_text(
         buff: Spacing between parts. Default 0.1 (SMALL_BUFF).
         chinese_scale: Override scale for Chinese part.
         math_scale: Override scale for math part.
+        weight: Font weight for the Chinese part.
+        slant: Font slant for the Chinese part.
         **kwargs: Additional arrangement keyword arguments.
 
     Returns:
         A VGroup containing both parts, arranged horizontally.
     """
-    cn = cjk_text(chinese_part, scale=chinese_scale)
+    cn = cjk_text(chinese_part, scale=chinese_scale, weight=weight, slant=slant)
     mt = math_line(math_part, scale=math_scale)
     return VGroup(cn, mt).arrange(direction, buff=buff, **kwargs)
 
@@ -145,14 +171,16 @@ def subtitle(
     *,
     scale: float | None = None,
     color=None,
+    weight: str | None = None,
     **kwargs,
 ) -> Text:
-    """Create a subtitle / caption text at annotation size.
+    """Create a subtitle / caption text at annotation size with LIGHT weight.
 
     Args:
         content: Subtitle text (may contain CJK).
         scale: Scale factor. Defaults to TEXT_SIZES.annotation (0.45).
         color: Text color. Defaults to de-emphasized gray.
+        weight: Font weight. Defaults to LIGHT.
         **kwargs: Additional arguments passed to Text().
 
     Returns:
@@ -162,5 +190,6 @@ def subtitle(
         content,
         scale=scale if scale is not None else TEXT_SIZES.annotation,
         color=color if color is not None else COLOR_PALETTE.de_emphasized,
+        weight=weight if weight is not None else FONT_WEIGHTS.LIGHT,
         **kwargs,
     )

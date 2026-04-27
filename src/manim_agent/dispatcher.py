@@ -360,6 +360,11 @@ class _MessageDispatcher:
             "review_blocking_issues": list(getattr(self, "partial_review_blocking_issues", [])),
             "review_suggested_edits": list(getattr(self, "partial_review_suggested_edits", [])),
             "review_frame_paths": list(getattr(self, "partial_review_frame_paths", [])),
+            "layout_audit": (
+                getattr(self.pipeline_output, "layout_audit", None)
+                if self.pipeline_output is not None
+                else None
+            ),
             "phase1_planning": None,
         }
 

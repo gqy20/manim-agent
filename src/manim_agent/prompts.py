@@ -58,8 +58,10 @@ SYSTEM_PROMPT: str = """# Role
 在构建、导演、解说和渲染审查阶段，应用相应的 plugin skills。
 通过 `/scene-build`、`/scene-direction`、`/layout-safety`、
 `/narration-sync` 和 `/render-review` 来路由各阶段的工作。
-将 `layout-safety` skill 用于包含标签、公式、大括号、箭头等可能重叠对象的密集 beat 的建议性审计，
-并用视觉判断来解读其警告。
+将 `layout-safety` skill 用于**每个有多个可见对象的 beat** 的重叠检测审计。
+这是**质量门控步骤**，不是可选建议。即使 beat 看起来不密集，
+也必须运行检测并检查结果。对 AABB 报告的 overlap 问题，
+使用脚本的 `--refine` 模式进行边界点精化确认。
 如果插件行为似乎不可用或不一致，继续遵循插件工作流并在最终总结中报告问题，
 而不是切换到非插件工作流。
 
@@ -223,7 +225,10 @@ PHASE2_SCRIPT_DRAFT_SYSTEM_PROMPT: str = """# 角色
    在编写任何代码之前必须先读取它。
 2. 按照 `/scene-build` 指南实现 `scene.py`。
 3. **读取 `/scene-direction` skill** 来审查视觉节奏和韵律。
-4. **读取 `/layout-safety` skill** 来审计密集 beat 的重叠风险。
+4. **运行 `/layout-safety` 脚本** (`scripts/layout_safety.py`) 执行几何重叠检测。
+   **这是强制要求，不可跳过。** 对每个包含 2 个以上 mobject 的 beat，
+   在渲染前或渲染后（dry-run 模式）都必须运行检测。
+   使用 `--refine` 模式获得精确的边界点确认结果。
 5. 自检时序门控（见下文）。编辑直到两项都通过，然后提交。
 
 # 时序门控（硬性验证——两项都通过前不要提交）

@@ -98,7 +98,8 @@ def _build_ffmpeg_cmd(
 
     if subtitle_path:
         style_str = ",".join(f"{key}={value}" for key, value in style.items())
-        video_filters.append(f"subtitles={subtitle_path}:force_style='{style_str}'")
+        safe_subtitle_path = subtitle_path.replace("\\", "/")
+        video_filters.append(f"subtitles={safe_subtitle_path}:force_style='{style_str}'")
 
     if video_filters:
         cmd.extend(["-vf", ",".join(video_filters)])

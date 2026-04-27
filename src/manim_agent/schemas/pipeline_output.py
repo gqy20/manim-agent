@@ -275,6 +275,14 @@ class PipelineOutput(BaseModel):
         default=None,
         description="Backend used for intro/outro generation: 'revideo' or 'manim'.",
     )
+    layout_audit: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Layout safety audit result from automatic post-Phase2B check. "
+            "Contains ran, exit_code, checked_count, issue_count, issues, "
+            "summary, blocking, artifact_path."
+        ),
+    )
 
     phase1_planning: Phase1PlanningOutput | None = Field(
         default=None,

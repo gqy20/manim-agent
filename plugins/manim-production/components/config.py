@@ -5,7 +5,10 @@ and scene-direction SKILL.md reference documents.
 Import these instead of hard-coding magic numbers in scene code.
 
 Usage:
-    from components.config import BUFFER, COLOR_PALETTE, TEXT_SIZES
+    from components.config import (
+        BUFFER, COLOR_PALETTE, TEXT_SIZES, FONT_CONFIG,
+        FONT_WEIGHTS, FONT_FAMILIES, COLOR_SHADES,
+    )
     obj.next_to(ref, buff=BUFFER.MED_SMALL)
     text.set_color(COLOR_PALETTE.given)
 """
@@ -16,16 +19,37 @@ from typing import Final
 
 from manim import (
     BLUE,
+    BLUE_A,
     BLUE_B,
     BLUE_C,
     BLUE_D,
     BLUE_E,
     GOLD,
+    GOLD_A,
+    GOLD_B,
+    GOLD_C,
+    GOLD_D,
     GRAY,
+    GRAY_A,
+    GRAY_B,
+    GRAY_C,
+    GRAY_D,
     GREEN,
+    GREEN_A,
+    GREEN_B,
+    GREEN_C,
+    GREEN_D,
     RED,
+    RED_A,
+    RED_B,
+    RED_C,
+    RED_D,
     WHITE,
     YELLOW,
+    YELLOW_A,
+    YELLOW_B,
+    YELLOW_C,
+    YELLOW_D,
 )
 
 
@@ -54,6 +78,81 @@ class BUFFER:
     LARGE: float = _MANIM_LARGE_BUFF  # Section separation
 
 
+# ── Font Weight Constants ───────────────────────────────────────
+# Pango weight names (from manim/constants.py, passed to Text())
+
+
+@dataclass(frozen=True)
+class FontWeights:
+    """Pango font weight constants for Text() rendering."""
+
+    NORMAL: str = "NORMAL"
+    BOLD: str = "BOLD"
+    THIN: str = "THIN"
+    ULTRALIGHT: str = "ULTRALIGHT"
+    LIGHT: str = "LIGHT"
+    SEMILIGHT: str = "SEMILIGHT"
+    BOOK: str = "BOOK"
+    MEDIUM: str = "MEDIUM"
+    SEMIBOLD: str = "SEMIBOLD"
+    ULTRABOLD: str = "ULTRABOLD"
+    HEAVY: str = "HEAVY"
+    ULTRAHEAVY: str = "ULTRAHEAVY"
+
+
+FONT_WEIGHTS: Final[FontWeights] = FontWeights()
+
+
+# ── Font Family Recommendations ─────────────────────────────────
+# Platform-safe CJK font names for Pango renderer
+
+
+@dataclass(frozen=True)
+class FontFamilies:
+    """Recommended font family names by language/script category.
+
+    These are Pango font family names (not file paths).
+    Pango resolves them to actual installed fonts at runtime.
+    """
+
+    # CJK fonts — ordered by preference on Windows
+    cn_primary: str = "Microsoft YaHei"       # 微软雅黑（Windows 默认 CJK）
+    cn_fallback: str = "SimHei"               # 黑体（更粗，备选）
+    cn_ui: str = "Microsoft YaHei UI"         # 界面字体（更清晰小字）
+    cn_open_source: str = "Source Han Sans SC"  # 思源黑体（跨平台开源）
+    # Latin / UI
+    en_ui: str = "Segoe UI"                   # Windows 系统默认
+    # Monospace
+    mono: str = "Consolas"                    # Windows 等宽默认
+
+
+FONT_FAMILIES: Final[FontFamilies] = FontFamilies()
+
+
+# ── Font Configuration ─────────────────────────────────────────
+# CJK-safe defaults for Pango renderer
+
+
+@dataclass(frozen=True)
+class FontConfig:
+    """Font settings optimized for Chinese / Japanese / Korean text rendering."""
+
+    default_font: str = ""  # Legacy: empty = let Pango auto-select
+    math_font_size: int = 48  # Base font size for MathTex
+    text_font_size: int = 36  # Base font size for Text()
+    # Recommended font names (use these in new code)
+    cn_font: str = FONT_FAMILIES.cn_primary   # 推荐中文字体
+    en_font: str = FONT_FAMILIES.en_ui        # 推荐英文字体
+    mono_font: str = FONT_FAMILIES.mono       # 推荐等宽字体
+    # Default weights by element role
+    title_weight: str = FONT_WEIGHTS.BOLD     # 标题字重
+    body_weight: str = FONT_WEIGHTS.NORMAL    # 正文字重
+    annotation_weight: str = FONT_WEIGHTS.LIGHT  # 注释/标签字重
+
+
+FONT_CONFIG: Final[FontConfig] = FontConfig()
+
+
 # ── Color Palette ─────────────────────────────────────────────────
 # From spatial-composition.md "Color Palette for Educational Content"
 
@@ -75,38 +174,84 @@ COLOR_PALETTE: Final[ColorPalette] = ColorPalette()
 
 # ── Text Size Scale ───────────────────────────────────────────────
 # From spatial-composition.md "Text and Formula Sizes" table
+# Expanded to 9 levels for complete typography hierarchy
 
 
 @dataclass(frozen=True)
 class TextSizes:
-    """Recommended scale factors by element role."""
+    """Recommended scale factors by element role (9-level hierarchy).
 
-    title: float = 1.0  # Text() title; range 0.8-1.2
-    body: float = 0.6  # Text() body; range 0.45-0.7
-    annotation: float = 0.45  # Side annotations; range 0.35-0.6
-    math_main: float = 1.0  # MathTex() main formula; range 0.8-1.5
-    math_inline: float = 0.6  # MathTex() inline / side; range 0.45-0.7
-    label: float = 0.5  # Axis labels, legends; range 0.35-0.6
-    readability_floor: float = 0.35  # Minimum scale at 1080p
+    Base size for Text() is text_font_size (default 36).
+    Scale multiplies this base to get final font_size.
+    """
+
+    # ── Display / Title tier ──
+    display: float = 1.4       # 大标题（片头主标题）1.2–1.6
+    heading_1: float = 1.15    # 一级标题（场景标题）1.0–1.3
+    heading_2: float = 1.0     # 二级标题（beat 标题）0.9–1.15
+    heading_3: float = 0.85    # 三级标题（子节标题）0.75–1.0
+
+    # ── Body tier ──
+    title: float = 1.0         # 兼容旧名 = heading_2
+    body_large: float = 0.7    # 大正文（解说主体）0.6–0.85
+    body: float = 0.6          # 正文（默认正文）0.45–0.7
+    body_small: float = 0.5    # 小正文（次要说明）0.4–0.6
+
+    # ── Annotation tier ──
+    annotation: float = 0.45   # 注释/标签 0.35–0.6
+    caption: float = 0.4       # 说明文字 0.3–0.5
+    caption_small: float = 0.35  # 小说明/脚注 0.25–0.4
+    fine_print: float = 0.3    # 脚注/极小文字 ≥0.25
+
+    # ── Math formula sizes ──
+    math_main: float = 1.0     # MathTex() 主公式 0.8–1.5
+    math_inline: float = 0.6   # MathTex() 行内公式 0.45–0.7
+    label: float = 0.5         # 坐标轴标签、图例 0.35–0.6
+
+    # ── Safety floor ──
+    readability_floor: float = 0.25  # 1080p 最小可读 scale
 
 
 TEXT_SIZES: Final[TextSizes] = TextSizes()
 
 
-# ── Font Configuration ─────────────────────────────────────────────
-# CJK-safe defaults for Pango renderer
+# ── Color Shades ─────────────────────────────────────────────────
+# Full 5-level shade references from manim_colors.py
+# Each color has _A (lightest) through _E (darkest)
 
 
 @dataclass(frozen=True)
-class FontConfig:
-    """Font settings optimized for Chinese / Japanese / Korean text rendering."""
+class ColorShades:
+    """Complete 5-level shade tuples for each Manim base color.
 
-    default_font: str = ""  # Empty = let Pango auto-select CJK font
-    math_font_size: int = 48  # Base font size for MathTex
-    text_font_size: int = 36  # Base font size for Text()
+    Usage: BLUE_SHADES[0] = BLUE_A (lightest), BLUE_SHADES[4] = BLUE_E (darkest)
+    Or use named access via the tuple fields.
+    """
+
+    blue: tuple = (BLUE_A, BLUE_B, BLUE_C, BLUE_D, BLUE_E)
+    green: tuple = (GREEN_A, GREEN_B, GREEN_C, GREEN_D)
+    yellow: tuple = (YELLOW_A, YELLOW_B, YELLOW_C, YELLOW_D)
+    gold: tuple = (GOLD_A, GOLD_B, GOLD_C, GOLD_D)
+    red: tuple = (RED_A, RED_B, RED_C, RED_D)
+    gray: tuple = (GRAY_A, GRAY_B, GRAY_C, GRAY_D)
+
+    @staticmethod
+    def light(color_tuple: tuple) -> object:
+        """Return _A (lightest) shade."""
+        return color_tuple[0]
+
+    @staticmethod
+    def default(color_tuple: tuple) -> object:
+        """Return _C (middle) shade — recommended default."""
+        return color_tuple[2] if len(color_tuple) > 2 else color_tuple[1]
+
+    @staticmethod
+    def dark(color_tuple: tuple) -> object:
+        """Return _D or _E (dark) shade for backgrounds."""
+        return color_tuple[-1]
 
 
-FONT_CONFIG: Final[FontConfig] = FontConfig()
+COLOR_SHADES: Final[ColorShades] = ColorShades()
 
 
 # ── Screen Zones ───────────────────────────────────────────────────
