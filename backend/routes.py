@@ -878,6 +878,30 @@ async def get_task_debug_prompt_artifact(
     return DebugPromptArtifactResponse(**data)
 
 
+@router.get("/debug/issues", response_model=DebugIssueListResponse)
+async def list_all_debug_issues(
+    limit: int = Query(default=100, ge=1, le=500),
+    status: str | None = None,
+    severity: str | None = None,
+    issue_type: str | None = None,
+    task_id: str | None = None,
+    search: str | None = None,
+) -> DebugIssueListResponse:
+    _require_prompt_debug_enabled()
+    issues = await _store.list_debug_issues(
+        task_id=task_id,
+        limit=limit,
+        status=status,
+        severity=severity,
+        issue_type=issue_type,
+        search=search,
+    )
+    return DebugIssueListResponse(
+        issues=[DebugIssueResponse(**issue) for issue in issues],
+        total=len(issues),
+    )
+
+
 @router.get("/{task_id}/debug/issues", response_model=DebugIssueListResponse)
 async def list_task_debug_issues(task_id: str) -> DebugIssueListResponse:
     _require_prompt_debug_enabled()

@@ -6,6 +6,7 @@ import {
   getTask,
   terminateTask,
   getVideoUrl,
+  listAllDebugIssues,
   listTasks,
 } from "./api";
 import type {
@@ -178,6 +179,50 @@ describe("api client", () => {
     const result = await listTasks(10);
     expect(result).toEqual(response);
     expect(fetch).toHaveBeenCalledWith("/api/tasks?limit=10");
+  });
+
+  it("returns filtered global debug issues", async () => {
+    const response = {
+      issues: [
+        {
+          id: "issue-1",
+          task_id: "task-1",
+          phase_id: "phase2b",
+          title: "Render mismatch",
+          description: "Output drifted from the plan",
+          issue_type: "render",
+          severity: "high",
+          status: "open",
+          source: "manual",
+          prompt_artifact_path: null,
+          related_artifact_path: null,
+          created_at: "2026-04-27T00:00:00Z",
+          updated_at: "2026-04-27T00:00:00Z",
+          fixed_at: null,
+          metadata: {},
+        },
+      ],
+      total: 1,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(response),
+      }),
+    );
+
+    const result = await listAllDebugIssues({
+      limit: 25,
+      status: "open",
+      severity: "high",
+      search: "render",
+    });
+
+    expect(result).toEqual(response);
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/tasks/debug/issues?limit=25&status=open&severity=high&search=render",
+    );
   });
 
   it("builds video URL from path type", () => {

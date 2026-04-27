@@ -390,15 +390,48 @@ class TaskStore:
             )
         return _debug_issue_row_to_dict(row)
 
-    async def list_debug_issues(self, task_id: str) -> list[dict[str, Any]]:
+    async def list_debug_issues(
+        self,
+        task_id: str | None = None,
+        *,
+        limit: int = 100,
+        status: str | None = None,
+        severity: str | None = None,
+        issue_type: str | None = None,
+        search: str | None = None,
+    ) -> list[dict[str, Any]]:
+        where: list[str] = []
+        args: list[Any] = []
+
+        def add_arg(value: Any) -> str:
+            args.append(value)
+            return f"${len(args)}"
+
+        if task_id:
+            where.append(f"task_id = {add_arg(task_id)}")
+        if status:
+            where.append(f"status = {add_arg(status)}")
+        if severity:
+            where.append(f"severity = {add_arg(severity)}")
+        if issue_type:
+            where.append(f"issue_type = {add_arg(issue_type)}")
+        if search:
+            term = f"%{search}%"
+            title_arg = add_arg(term)
+            desc_arg = add_arg(term)
+            where.append(f"(title ILIKE {title_arg} OR description ILIKE {desc_arg})")
+
+        limit_arg = add_arg(limit)
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                """
+                f"""
                 SELECT * FROM debug_issues
-                WHERE task_id = $1
+                {where_sql}
                 ORDER BY created_at DESC
+                LIMIT {limit_arg}
                 """,
-                task_id,
+                *args,
             )
         return [_debug_issue_row_to_dict(row) for row in rows]
 

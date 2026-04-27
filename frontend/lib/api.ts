@@ -120,6 +120,32 @@ export async function listDebugIssues(taskId: string): Promise<DebugIssue[]> {
   return data.issues;
 }
 
+export interface DebugIssueFilters {
+  limit?: number;
+  status?: string;
+  severity?: string;
+  issue_type?: string;
+  task_id?: string;
+  search?: string;
+}
+
+export async function listAllDebugIssues(
+  filters: DebugIssueFilters = {},
+): Promise<{ issues: DebugIssue[]; total: number }> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && String(value).trim()) {
+      params.set(key, String(value).trim());
+    }
+  }
+  const query = params.toString();
+  const res = await fetch(`${API_BASE}/api/tasks/debug/issues${query ? `?${query}` : ""}`);
+  if (!res.ok) {
+    throw new Error(await readApiError(res, "Failed to fetch global debug issues"));
+  }
+  return res.json();
+}
+
 export async function createDebugIssue(
   taskId: string,
   payload: DebugIssueCreatePayload,
