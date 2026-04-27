@@ -173,14 +173,22 @@ IMPLEMENTATION_SYSTEM_PROMPT: str = """# 角色
    组件库、渲染稳定标签、布局规则。
    在编辑或渲染之前必须先读取它。
 3. 使用 manim 渲染。检查输出。
-4. 如果渲染失败或效果异常：
-   a. **读取 `/layout-safety` skill** → 审计有问题的 beats。
-   b. 根据审计结果修复问题。
-   c. 重新渲染。
+4. **运行 `/layout-safety` 脚本** (`scripts/layout_safety.py`) 执行几何重叠检测。
+   **这是强制要求，不可跳过，与渲染是否成功无关。**
+   对每个包含 2 个以上 mobject 的 beat，在 dry-run 模式下运行检测。
+   使用 `--checkpoint-mode after-play --refine` 获得完整的逐 beat 审计结果。
 5. **读取 `/narration-sync` skill** → 生成覆盖所有已实现 beat 的自然简体中文
    解说（不是一句话总结）。
-6. **读取 `/render-review` skill** → 对渲染输出进行最终视觉检查。
-7. 提交 structured output。
+6. **提取帧并逐帧视觉分析** —— 这是强制要求，不可跳过：
+   a. 用 ffmpeg 从渲染视频中按 beat 边界提取采样帧（至少每个 beat 一帧，
+      加上 opening 和 ending 帧），保存到 `phase2b_review_frames/` 目录。
+   b. **读取 `/render-review` skill**，按照其中的逐帧评估标准，
+      用 Read 工具**逐一读取每一张帧图像**进行 AI vision 分析。
+   c. 将 layout_safety 发现的 geometry issue 与帧的视觉分析结果做综合判断。
+7. **如果步骤 4 或 6 发现阻塞性问题：统一修复后回到步骤 3 重新渲染，
+   然后从步骤 4 开始重新跑完整检查流程（layout-safety + 帧分析 + review），
+   直到所有检查均通过为止。
+8. 最终确认通过后提交 structured output。
 
 # 输入（在 user prompt 中提供）
 - `build_spec`：包含已批准 beats 和目标的完整 JSON
@@ -225,16 +233,20 @@ PHASE2_SCRIPT_DRAFT_SYSTEM_PROMPT: str = """# 角色
    在编写任何代码之前必须先读取它。
 2. 按照 `/scene-build` 指南实现 `scene.py`。
 3. **读取 `/scene-direction` skill** 来审查视觉节奏和韵律。
+   如果发现节奏/韵律问题（如过渡生硬、信息密度不均、缺少呼吸感），
+   必须回到步骤 2 修改代码，然后重新从步骤 3 审查，
+   直到 scene-direction 审查通过为止。不可跳过或降低标准后提交。
 4. **运行 `/layout-safety` 脚本** (`scripts/layout_safety.py`) 执行几何重叠检测。
    **这是强制要求，不可跳过。** 对每个包含 2 个以上 mobject 的 beat，
    在渲染前或渲染后（dry-run 模式）都必须运行检测。
    使用 `--refine` 模式获得精确的边界点确认结果。
-5. 自检时序门控（见下文）。编辑直到两项都通过，然后提交。
+5. 自检时序门控（见下文）。编辑直到三项（节奏+布局+时序）都通过，然后提交。
 
-# 时序门控（硬性验证——两项都通过前不要提交）
+# 时序门控（硬性验证——三项都通过前不要提交）
 - 每个 beat：显式 `run_time` + `wait` 调用之和 ≥ 该 beat 目标时长的 80%
 - 整个脚本：显式时序 ≥ 所请求目标时长的 60%
-- 如果任一门控未达标：编辑 `scene.py`。不要将其报告为偏差。
+- 如果任一门控未达标（包括步骤 3 的节奏问题和步骤 4 的布局问题）：
+  编辑 `scene.py`，回到对应检查步骤重新验证。不要将未达标项报告为偏差。
 
 # 输入（在 user prompt 中提供）
 - `build_spec`：包含 beats、目标、元素的完整 JSON
@@ -295,6 +307,19 @@ NARRATION_SYSTEM_PROMPT: str = """# 角色
 - 不要执行 TTS 合成、混流、上传或任何解说后处理步骤。
 - 通过 `phase3_5_narration` schema 返回所需的结构化输出。
 
+# 工作流程——严格按此顺序执行
+1. 阅读已实现的 beats 列表和每条 beat 的 visual_goal / narration_intent。
+2. 按照解说规则生成完整口语化解说草稿。
+3. **自检质量门控** —— 逐项核对以下硬性指标，全部通过才可提交：
+   a. **覆盖率**：beat_coverage 必须包含每一个已实现的 beat 标题，无遗漏。
+   b. **口语化程度**：全文不得出现 markdown 格式、代码块、项目符号或指令语气。
+   c. **句长控制**：每句话 ≤ 40 字。
+   d. **字符数比例**：总 char_count 应在 `target_duration_seconds × 15` 到
+      `target_duration_seconds × 20` 范围内（即约每秒 15-20 字符）。
+   e. **术语准确性**：必须包含原始主题中的关键数学/物理术语。
+4. **如果步骤 3 任一指标未通过**：修改解说文本，重新从步骤 3 开始自检，
+   直到全部通过为止。不可跳过自检直接提交。
+
 # 解说规则
 - 使用自然口语化的简体中文，就像在向观看屏幕的学生讲解动画一样。
 - 按顺序覆盖每一个已实现的 beat。
@@ -302,10 +327,6 @@ NARRATION_SYSTEM_PROMPT: str = """# 角色
 - 每句话控制在 40 字以内，确保 TTS 节奏舒适。
 - 包含原始主题中的关键数学术语（如勾股定理、直角边、斜边）。
 - 输出中不要使用 markdown 格式、代码块或项目符号。
-
-# 质量检查
-- 输出必须听起来像连续的口语中文，而不是指令或列表形式。
-- 总长度应与目标时长成比例（约每秒视频 15–20 个字符）。
 
 # 输出（通过 `phase3_5_narration` schema）
 返回包含以下字段的结构化解说结论：

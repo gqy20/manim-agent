@@ -96,7 +96,7 @@ async def run_pipeline(
     target_duration_seconds: int = 60,
     cwd: str = ".",
     prompt_file: str | None = None,
-    max_turns: int = 50,
+    max_turns: int = 200,
     log_callback: Callable[[str], None] | None = None,
     preset: str = "default",
     render_mode: str = "full",
@@ -678,38 +678,6 @@ async def run_pipeline(
             ),
             beats_count=len(phase2_po.implemented_beats) if phase2_po else None,
         )
-        # ══════════════════════════════════════════════
-        # Layout Safety Audit (automatic quality gate)
-        # ══════════════════════════════════════════════
-        from .pipeline_layout_audit import run_layout_audit_pipeline
-
-        layout_audit_result = run_layout_audit_pipeline(
-            scene_file=getattr(phase2_po, "scene_file", None),
-            scene_class=getattr(phase2_po, "scene_class", None),
-            output_dir=resolved_cwd,
-            log_callback=log_callback,
-        )
-        if layout_audit_result.ran:
-            status_icon = _EMOJI["check"] if layout_audit_result.exit_code == 0 else _EMOJI["cross"]
-            dispatcher._print(
-                f"  {status_icon} Layout audit: {layout_audit_result.summary}"
-            )
-            if po is not None:
-                po.layout_audit = {
-                    "ran": True,
-                    "exit_code": layout_audit_result.exit_code,
-                    "checked_count": layout_audit_result.checked_mobject_count,
-                    "issue_count": len(layout_audit_result.issues),
-                    "issues": layout_audit_result.issues,
-                    "summary": layout_audit_result.summary,
-                    "blocking": layout_audit_result.blocking,
-                    "artifact_path": layout_audit_result.artifact_path,
-                }
-            if layout_audit_result.blocking:
-                dispatcher._print("  [BUILD][WARN] Blocking layout issues detected!")
-                for issue in layout_audit_result.issues:
-                    dispatcher._print(f"  [BUILD][WARN]   - {issue['message']}")
-
         _emit_phase_enter(
             event_callback,
             phase_id="phase3",
