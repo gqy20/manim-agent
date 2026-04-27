@@ -433,6 +433,22 @@ async def run_pipeline(
                 resolved_cwd,
                 render_mode=render_mode,
             )
+            repair_opts = _build_options(
+                cwd=resolved_cwd,
+                system_prompt=script_draft_system_prompt,
+                max_turns=max_turns,
+                prompt_file=prompt_file,
+                quality=quality,
+                log_callback=log_callback,
+                output_format=PhaseSchemaRegistry.output_format_schema("phase2_script_draft"),
+                use_default_output_format=False,
+                allowed_tools=["Read", "Write", "Edit", "Glob", "Grep"],
+                disallowed_tools=["Bash"],
+            )
+            repair_opts.stderr = lambda line: _counting_log_callback(line)
+            hook_state.allowed_tools = (
+                set(repair_opts.allowed_tools) if repair_opts.allowed_tools is not None else None
+            )
             write_prompt_artifact(
                 output_dir=resolved_cwd,
                 phase_id="phase2a-repair",
@@ -444,19 +460,32 @@ async def run_pipeline(
                     "build_spec": _debug_dump(build_spec),
                     "failed_analysis": draft_analysis.model_dump(),
                 },
-                options=script_draft_opts,
+                options=repair_opts,
                 options_summary={"output_schema": "phase2_script_draft"},
                 referenced_artifacts={
                     "phase1_planning": "phase1_planning.json",
                     "failed_analysis": "phase2_script_draft_analysis.json",
                 },
             )
-            repair_result_summary = await run_phase2_script_draft(
-                script_draft_prompt=repair_prompt,
-                script_draft_options_instance=script_draft_opts,
-                dispatcher=dispatcher,
-                resolved_cwd=resolved_cwd,
-            )
+            try:
+                repair_result_summary = await run_phase2_script_draft(
+                    script_draft_prompt=repair_prompt,
+                    script_draft_options_instance=repair_opts,
+                    dispatcher=dispatcher,
+                    resolved_cwd=resolved_cwd,
+                )
+            except Exception as exc:
+                repair_error = f"{type(exc).__name__}: {str(exc).strip() or repr(exc)}"
+                update_prompt_artifact(
+                    output_dir=resolved_cwd,
+                    phase_id="phase2a-repair",
+                    output_snapshot={
+                        "failed_analysis": draft_analysis.model_dump(),
+                        "cli_stderr_tail": _cli_stderr_lines[-20:],
+                    },
+                    error=repair_error,
+                )
+                raise
             script_draft_result_summary = (
                 merge_result_summaries(script_draft_result_summary, repair_result_summary)
                 or script_draft_result_summary

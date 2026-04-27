@@ -9,7 +9,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-StaticValue = float | int | str | list[Any] | tuple[Any, ...]
+StaticValue = float | int | str | bool | None | list[Any] | tuple[Any, ...]
+_UNRESOLVED = object()
 
 UNSTABLE_TEXT_GLYPHS = ("²", "³", "√", "≤", "≥")
 RANDOM_REARRANGE_PATTERNS = (
@@ -360,14 +361,14 @@ def _estimate_stmt_duration_seconds(
 ) -> float:
     if isinstance(stmt, ast.Assign):
         value = _static_value(stmt.value, env)
-        if value is not None:
+        if value is not _UNRESOLVED:
             for target in stmt.targets:
                 if isinstance(target, ast.Name):
                     env[target.id] = value
         return 0.0
     if isinstance(stmt, ast.AnnAssign):
-        value = _static_value(stmt.value, env) if stmt.value is not None else None
-        if value is not None and isinstance(stmt.target, ast.Name):
+        value = _static_value(stmt.value, env)
+        if value is not _UNRESOLVED and isinstance(stmt.target, ast.Name):
             env[stmt.target.id] = value
         return 0.0
     if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
@@ -394,6 +395,29 @@ def _estimate_stmt_duration_seconds(
                 )
         return total
     if isinstance(stmt, ast.If):
+        condition = _static_truth(stmt.test, env)
+        if condition is True:
+            branch_env = dict(env)
+            return sum(
+                _estimate_stmt_duration_seconds(
+                    child,
+                    method_nodes=method_nodes,
+                    env=branch_env,
+                    call_stack=call_stack,
+                )
+                for child in stmt.body
+            )
+        if condition is False:
+            branch_env = dict(env)
+            return sum(
+                _estimate_stmt_duration_seconds(
+                    child,
+                    method_nodes=method_nodes,
+                    env=branch_env,
+                    call_stack=call_stack,
+                )
+                for child in stmt.orelse
+            )
         body_env = dict(env)
         body_total = sum(
             _estimate_stmt_duration_seconds(
@@ -448,19 +472,19 @@ def _estimate_call_duration_seconds(
         default_params = params[-len(defaults) :]
         for param, default in zip(default_params, defaults, strict=False):
             value = _static_value(default, env)
-            if value is not None:
+            if value is not _UNRESOLVED:
                 helper_env[param] = value
     for index, arg_node in enumerate(node.args):
         if index >= len(params):
             break
         value = _static_value(arg_node, env)
-        if value is not None:
+        if value is not _UNRESOLVED:
             helper_env[params[index]] = value
     for keyword in node.keywords:
         if keyword.arg is None:
             continue
         value = _static_value(keyword.value, env)
-        if value is not None:
+        if value is not _UNRESOLVED:
             helper_env[keyword.arg] = value
 
     return _estimate_method_duration_seconds(
@@ -525,7 +549,8 @@ def _static_iterable(node: ast.AST, env: dict[str, StaticValue]) -> StaticValue 
             int_values = [int(value) for value in values if value is not None]
             return list(range(*int_values))
         return None
-    return _static_value(node, env)
+    value = _static_value(node, env)
+    return value if value is not _UNRESOLVED else None
 
 
 def _bind_loop_target(
@@ -543,30 +568,66 @@ def _bind_loop_target(
 
 def _static_number(node: ast.AST, env: dict[str, StaticValue]) -> float | None:
     value = _static_value(node, env)
-    if isinstance(value, (int, float)):
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None
 
 
-def _static_value(node: ast.AST | None, env: dict[str, StaticValue]) -> StaticValue | None:
+def _static_value(node: ast.AST | None, env: dict[str, StaticValue]) -> StaticValue | object:
     if node is None:
-        return None
-    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float, str)):
+        return _UNRESOLVED
+    if isinstance(node, ast.Constant) and (
+        isinstance(node.value, (int, float, str, bool)) or node.value is None
+    ):
         return node.value
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         value = _static_number(node.operand, env)
-        return -value if value is not None else None
+        return -value if value is not None else _UNRESOLVED
+    if isinstance(node, ast.IfExp):
+        condition = _static_truth(node.test, env)
+        if condition is True:
+            return _static_value(node.body, env)
+        if condition is False:
+            return _static_value(node.orelse, env)
+        return _UNRESOLVED
     if isinstance(node, ast.Name):
-        return env.get(node.id)
+        return env.get(node.id, _UNRESOLVED)
     if isinstance(node, ast.List):
         values = [_static_value(item, env) for item in node.elts]
-        if all(value is not None for value in values):
+        if all(value is not _UNRESOLVED for value in values):
             return values
     if isinstance(node, ast.Tuple):
         values = tuple(_static_value(item, env) for item in node.elts)
-        if all(value is not None for value in values):
+        if all(value is not _UNRESOLVED for value in values):
             return values
-    return None
+    return _UNRESOLVED
+
+
+def _static_truth(node: ast.AST, env: dict[str, StaticValue]) -> bool | None:
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        value = _static_truth(node.operand, env)
+        return None if value is None else not value
+    if isinstance(node, ast.Name):
+        value = env.get(node.id, _UNRESOLVED)
+        return None if value is _UNRESOLVED else bool(value)
+    if isinstance(node, ast.Constant):
+        return bool(node.value)
+    if isinstance(node, ast.Compare) and len(node.ops) == 1 and len(node.comparators) == 1:
+        left = _static_value(node.left, env)
+        right = _static_value(node.comparators[0], env)
+        if left is _UNRESOLVED or right is _UNRESOLVED:
+            return None
+        op = node.ops[0]
+        if isinstance(op, ast.Is):
+            return left is right
+        if isinstance(op, ast.IsNot):
+            return left is not right
+        if isinstance(op, ast.Eq):
+            return left == right
+        if isinstance(op, ast.NotEq):
+            return left != right
+    value = _static_value(node, env)
+    return None if value is _UNRESOLVED else bool(value)
 
 
 def _unstable_text_glyph_issues(tree: ast.AST) -> list[str]:

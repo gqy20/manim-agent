@@ -104,6 +104,51 @@ class GeneratedScene(Scene):
     assert analysis.estimated_duration_seconds == 5.1
 
 
+def test_analyzer_estimates_tuple_loops_with_none_bool_and_conditionals(tmp_path: Path):
+    script = tmp_path / "scene.py"
+    script.write_text(
+        """
+from manim import *
+
+class GeneratedScene(Scene):
+    def construct(self):
+        self.beat_001_setup()
+
+    def _flash(self, name, run_time=0.5):
+        self.play(FadeIn(Square()), run_time=run_time)
+
+    def beat_001_setup(self):
+        moves = [
+            (None, 1, False, True),
+            (1, 2, False, True),
+            (2, 1, True, False),
+        ]
+        for from_n, to_n, backtrack, should_visit in moves:
+            if from_n is not None:
+                rt = 0.50 if not backtrack else 0.42
+                self.play(FadeIn(Circle()), run_time=rt)
+                self.wait(0.12)
+            if should_visit:
+                self._flash(to_n, run_time=0.45)
+                self.wait(0.18)
+        self.wait(0.4)
+""",
+        encoding="utf-8",
+    )
+
+    analysis = analyze_phase2_script(
+        scene_file=str(script),
+        scene_class="GeneratedScene",
+        build_spec={"beats": [{"id": "beat_001_setup"}]},
+        target_duration_seconds=1,
+        output_dir=str(tmp_path),
+    )
+
+    assert analysis.accepted
+    assert analysis.beat_duration_seconds == {"beat_001_setup": 2.82}
+    assert analysis.estimated_duration_seconds == 2.82
+
+
 def test_analyzer_rejects_missing_beat_methods(tmp_path: Path):
     script = tmp_path / "scene.py"
     script.write_text(

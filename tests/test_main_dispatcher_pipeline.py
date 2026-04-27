@@ -1,9 +1,9 @@
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from manim_agent.__main__ import main
 from manim_agent.repo_paths import resolve_plugin_dir
 
 from ._test_main_dispatcher_helpers import (
@@ -79,8 +79,7 @@ def _make_staged_query(build_messages):
         elif call_count["value"] == 2:
             options = kwargs.get("options") if kwargs else None
             cwd = Path(getattr(options, "cwd", "."))
-            (cwd / "scene.py").write_text(
-                """
+            source_code = """
 from manim import *
 
 class GeneratedScene(Scene):
@@ -95,7 +94,9 @@ class GeneratedScene(Scene):
     def beat_002_transform_square(self):
         self.play(FadeIn(Square()), run_time=20)
         self.wait(1)
-""",
+"""
+            (cwd / "scene.py").write_text(
+                source_code,
                 encoding="utf-8",
             )
             messages = [
@@ -116,6 +117,7 @@ class GeneratedScene(Scene):
                         },
                         "estimated_duration_seconds": 42.0,
                         "deviations_from_plan": [],
+                        "source_code": source_code,
                     },
                 )
             ]
@@ -156,6 +158,88 @@ def _approved_review_result():
 
 
 class TestRunPipeline:
+    @pytest.mark.asyncio
+    async def test_phase2a_repair_uses_fresh_session_and_marks_debug_failure(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.delenv("ENABLE_PROMPT_DEBUG", raising=False)
+        sessions = []
+        call_count = {"value": 0}
+
+        async def _query(*args, **kwargs):
+            call_count["value"] += 1
+            options = kwargs.get("options") if kwargs else None
+            sessions.append(getattr(options, "session_id", None))
+            cwd = Path(getattr(options, "cwd", tmp_path))
+            if call_count["value"] == 1:
+                messages = _planning_messages()
+            elif call_count["value"] == 2:
+                (cwd / "scene.py").write_text(
+                    short_source := """
+from manim import *
+
+class GeneratedScene(Scene):
+    def construct(self):
+        self.beat_001_intro_circle()
+        self.beat_002_transform_square()
+
+    def beat_001_intro_circle(self):
+        self.wait(1)
+
+    def beat_002_transform_square(self):
+        self.wait(1)
+""",
+                    encoding="utf-8",
+                )
+                messages = [
+                    _make_result_message(
+                        num_turns=1,
+                        structured_output={
+                            "scene_file": "scene.py",
+                            "scene_class": "GeneratedScene",
+                            "implemented_beats": [
+                                "Introduce the circle",
+                                "Transform into a square",
+                            ],
+                            "build_summary": "Draft is intentionally too short.",
+                            "beat_timing_seconds": {
+                                "beat_001_intro_circle": 1.0,
+                                "beat_002_transform_square": 1.0,
+                            },
+                            "estimated_duration_seconds": 2.0,
+                            "deviations_from_plan": [],
+                            "source_code": short_source,
+                        },
+                    )
+                ]
+            elif call_count["value"] == 3:
+                raise RuntimeError("repair boom")
+            else:
+                messages = []
+            for msg in messages:
+                yield msg
+
+        with (
+            patch("manim_agent.pipeline.query", side_effect=_query),
+            pytest.raises(RuntimeError, match="repair boom"),
+        ):
+            await main_module.run_pipeline(
+                user_text="test",
+                output_path="output/out.mp4",
+                no_tts=True,
+                cwd=str(tmp_path),
+            )
+
+        repair_artifact = json.loads(
+            (tmp_path / "debug" / "phase2a-repair.prompt.json").read_text(encoding="utf-8")
+        )
+        assert len(sessions) >= 3
+        assert sessions[1] != sessions[2]
+        assert repair_artifact["options"]["session_id"] == sessions[2]
+        assert repair_artifact["status"] == "failed"
+        assert "RuntimeError: repair boom" in repair_artifact["error"]
+        assert "failed_analysis" in repair_artifact["output_snapshot"]
+
     @pytest.mark.asyncio
     async def test_phase2_rejects_missing_build_bookkeeping_before_phase3(self, tmp_path):
         mock_messages = [
