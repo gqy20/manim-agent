@@ -109,16 +109,19 @@ function Switch({
   checked,
   onChange,
   disabled,
+  ariaLabel,
 }: {
   checked: boolean;
   onChange: (value: boolean) => void;
   disabled?: boolean;
+  ariaLabel: string;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={ariaLabel}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`relative h-5 w-9 shrink-0 rounded-full border transition-[background-color,border-color,box-shadow] duration-300 disabled:pointer-events-none disabled:opacity-45 ${
@@ -359,7 +362,10 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
 
           <Textarea
             id="prompt"
+            name="prompt"
             aria-label="讲解主题"
+            autoComplete="off"
+            spellCheck={false}
             placeholder="例如：用频域直觉解释傅里叶变换，并展示信号如何分解为不同频率"
             value={text}
             onChange={(e) => {
@@ -394,6 +400,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 exit={{ opacity: 0, y: 10 }}
                 transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
                 className="rounded-lg border border-primary/18 bg-primary/[0.045] p-4"
+                aria-live="polite"
               >
                 <div className="flex items-start gap-3">
                   <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-primary/24 bg-primary/10 text-primary">
@@ -417,6 +424,8 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -6 }}
                 className="rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
+                role="alert"
+                aria-live="polite"
               >
                 {error}
               </motion.p>
@@ -603,6 +612,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 </div>
                 <Switch
                   checked={!noTts}
+                  ariaLabel="启用配音"
                   onChange={(checked) => {
                     setNoTts(!checked);
                     setDraftSaved(false);
@@ -629,6 +639,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 </div>
                 <Switch
                   checked={bgmEnabled && !noTts}
+                  ariaLabel="启用背景音乐"
                   onChange={(checked) => {
                     setBgmEnabled(checked);
                     if (!checked) setBgmTuningOpen(false);
@@ -714,6 +725,8 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                         <Volume2 className="h-4 w-4 shrink-0 text-primary/60" />
                         <input
                           type="range"
+                          name="bgmVolume"
+                          aria-label="背景音乐音量"
                           min="0.05"
                           max="0.3"
                           step="0.01"
@@ -731,6 +744,9 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                       </label>
 
                       <input
+                        name="bgmPrompt"
+                        aria-label="自定义音乐描述"
+                        autoComplete="off"
                         value={bgmPrompt}
                         onChange={(e) => {
                           setBgmPrompt(e.target.value);

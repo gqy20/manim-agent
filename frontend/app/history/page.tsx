@@ -107,7 +107,7 @@ export default function HistoryPage() {
             </div>
             <Link
               href="/create"
-              className="group inline-flex items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.08] px-5 py-2.5 text-sm text-primary transition-all duration-200 hover:border-primary/25 hover:bg-primary/12"
+              className="group inline-flex items-center gap-2 rounded-xl border border-primary/15 bg-primary/[0.08] px-5 py-2.5 text-sm text-primary transition-[border-color,background-color,color] duration-200 hover:border-primary/25 hover:bg-primary/12"
             >
               <Sparkles className="h-3.5 w-3.5" />
               去创建动画
@@ -118,11 +118,11 @@ export default function HistoryPage() {
 
         {!loading && tasks.length > 0 && (
           <div className="grid gap-4 pb-8 sm:grid-cols-2 lg:grid-cols-3">
-            {tasks.map((task, index) => (
-            <div
-              key={task.id}
-              style={{ animationDelay: `${Math.min(index * 0.06, 0.5)}s` }}
-            >
+            {tasks.map((task) => (
+              <div
+                key={task.id}
+                className="[content-visibility:auto] [contain-intrinsic-size:180px]"
+              >
                 <TaskCard
                   task={task}
                   deleting={deletingTaskId === task.id}
