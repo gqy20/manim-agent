@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, type ElementType, type ReactNode } from "react";
+import { Fragment, useRef, type ElementType, type ReactNode } from "react";
 import {
   AlertTriangle,
   BookOpen,
@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 
 import type { FrameAnalysisOutput, PipelineOutputData } from "@/types";
+import { gsap, useGSAP } from "@/lib/gsap";
+import { usePrefersReducedMotion } from "@/lib/motion";
 
 interface PipelinePhaseCardsProps {
   pipelineOutput: PipelineOutputData | null;
@@ -71,7 +73,7 @@ function PhaseShell({
 }) {
   if (surface === "panel") {
     return (
-      <section className="border-t border-white/[0.055] py-3 first:border-t-0 first:pt-0 last:pb-0">
+      <section data-pipeline-phase className="border-t border-white/[0.055] py-3 first:border-t-0 first:pt-0 last:pb-0">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
             <Icon className="h-3.5 w-3.5 shrink-0 text-cyan-400/42" />
@@ -87,7 +89,7 @@ function PhaseShell({
   }
 
   return (
-    <section className="rounded-lg border border-white/[0.06] bg-white/[0.025] overflow-hidden">
+    <section data-pipeline-phase className="rounded-lg border border-white/[0.06] bg-white/[0.025] overflow-hidden">
       <div className={`h-px bg-gradient-to-r ${tone}`} />
       <div className="flex items-center justify-between gap-3 border-b border-white/[0.04] px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
@@ -455,6 +457,32 @@ function MuxSection({ d, surface = "embedded" }: { d: PipelineOutputData; surfac
 }
 
 export function PipelinePhaseCards({ pipelineOutput, variant = "panel" }: PipelinePhaseCardsProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = usePrefersReducedMotion();
+
+  useGSAP(() => {
+    if (!rootRef.current) return;
+
+    const phases = rootRef.current.querySelectorAll<HTMLElement>("[data-pipeline-phase]");
+    if (reduceMotion) {
+      gsap.set(phases, { opacity: 1, y: 0, filter: "none" });
+      return;
+    }
+
+    gsap.fromTo(
+      phases,
+      { opacity: 0, y: 12, filter: "blur(6px)" },
+      {
+        opacity: 1,
+        y: 0,
+        filter: "blur(0px)",
+        duration: 0.46,
+        ease: "power3.out",
+        stagger: 0.07,
+      },
+    );
+  }, { scope: rootRef, dependencies: [pipelineOutput, variant, reduceMotion] });
+
   if (!pipelineOutput) return null;
 
   const sections = [
@@ -474,14 +502,14 @@ export function PipelinePhaseCards({ pipelineOutput, variant = "panel" }: Pipeli
 
   if (variant === "embedded") {
     return (
-      <div className="space-y-3">
+      <div ref={rootRef} className="space-y-3">
         {renderedSections}
       </div>
     );
   }
 
   return (
-    <div className="gsap-plan-card flex aspect-video w-full flex-col overflow-hidden rounded-lg bg-black/18 xl:aspect-auto xl:min-h-0 xl:flex-1">
+    <div ref={rootRef} className="gsap-plan-card flex aspect-video w-full flex-col overflow-hidden rounded-lg bg-black/18 xl:aspect-auto xl:min-h-0 xl:flex-1">
       <div className="flex shrink-0 items-center justify-between border-b border-white/[0.045] px-1 pb-2">
         <div className="flex items-center gap-2 text-cyan-400/58">
           <ListVideo className="h-4 w-4" />

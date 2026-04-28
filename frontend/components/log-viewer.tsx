@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type {
@@ -18,6 +18,7 @@ import {
   isToolStart,
 } from "@/types";
 import { getLatestStructuredStatus, normalizeVisualPhase } from "@/lib/pipeline-phase";
+import { usePrefersReducedMotion } from "@/lib/motion";
 
 import { PipelineProgress } from "./pipeline-progress";
 
@@ -36,6 +37,7 @@ interface PhaseMarker {
 
 const TIMESTAMP_COL_CLASS =
   "w-[5.25rem] shrink-0 pt-[2px] text-[10px] font-mono text-white/20 tabular-nums whitespace-nowrap";
+const RECENT_ANIMATED_EVENT_COUNT = 14;
 
 function formatEventTime(timestamp: string): string {
   const date = new Date(timestamp);
@@ -472,8 +474,13 @@ function EventRenderer({ event }: { event: SSEEvent }) {
   return <LogLine text={JSON.stringify(event.data)} timestamp={event.timestamp} />;
 }
 
+const StaticEventRow = memo(function StaticEventRow({ event }: { event: SSEEvent }) {
+  return <EventRenderer event={event} />;
+});
+
 export function LogViewer({ events, isRunning, taskStatus }: LogViewerProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     if (bottomRef.current) {
@@ -530,28 +537,40 @@ export function LogViewer({ events, isRunning, taskStatus }: LogViewerProps) {
           )}
           {events.map((event, index) => {
             const nodes: ReactNode[] = [];
+            const animateEvent = !reduceMotion && index >= events.length - RECENT_ANIMATED_EVENT_COUNT;
             if (phaseIndexSet.has(index)) {
+              const phaseDivider = <PhaseDivider marker={phaseMap.get(index)!} />;
               nodes.push(
-                <motion.div
-                  key={`phase-${index}`}
-                  initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <PhaseDivider marker={phaseMap.get(index)!} />
-                </motion.div>
+                animateEvent ? (
+                  <motion.div
+                    key={`phase-${index}`}
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                  >
+                    {phaseDivider}
+                  </motion.div>
+                ) : (
+                  <div key={`phase-${index}`}>{phaseDivider}</div>
+                )
               );
             }
             nodes.push(
-              <motion.div
-                key={`event-${index}`}
-                initial={{ opacity: 0, x: -10, filter: "blur(4px)" }}
-                animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
-                className="will-change-transform"
-              >
-                <EventRenderer event={event} />
-              </motion.div>
+              animateEvent ? (
+                <motion.div
+                  key={`event-${index}`}
+                  initial={{ opacity: 0, x: -10, filter: "blur(4px)" }}
+                  animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                  transition={{ duration: 0.3, ease: "easeOut" }}
+                  className="will-change-transform"
+                >
+                  <EventRenderer event={event} />
+                </motion.div>
+              ) : (
+                <div key={`event-${index}`}>
+                  <StaticEventRow event={event} />
+                </div>
+              )
             );
             return nodes;
           })}

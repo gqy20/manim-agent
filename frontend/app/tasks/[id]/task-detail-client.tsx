@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import gsap from "gsap";
-import { useGSAP } from "@gsap/react";
 import Link from "next/link";
 import { ArrowLeft, Bug, Check, Copy, Expand, FileCode2, Film, Loader2, Play, Terminal, Trash2, X, XCircle } from "lucide-react";
 
@@ -13,7 +11,9 @@ import { VideoPlayer } from "@/components/video-player";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { deleteTask, getTask, getVideoUrl, terminateTask } from "@/lib/api";
+import { gsap, useGSAP } from "@/lib/gsap";
 import { logger } from "@/lib/logger";
+import { usePrefersReducedMotion } from "@/lib/motion";
 import { getDisplayPhaseForTask } from "@/lib/pipeline-phase";
 import { connectTaskEvents } from "@/lib/sse-client";
 import { mergeTaskState } from "@/lib/task-state";
@@ -277,9 +277,13 @@ function VideoPipelinePlaceholder({
   }
 
   return (
-    <div className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-cyan-500/10 bg-black/40 shadow-2xl ring-1 ring-cyan-500/10 backdrop-blur-xl transition-all duration-300 xl:aspect-auto xl:min-h-0 xl:flex-1">
+    <div
+      data-video-phase={phase}
+      className="gsap-video-placeholder group relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-xl border border-cyan-500/10 bg-black/40 shadow-2xl ring-1 ring-cyan-500/10 backdrop-blur-xl transition-all duration-300 xl:aspect-auto xl:min-h-0 xl:flex-1"
+    >
       <div className={`absolute inset-0 bg-gradient-to-br ${currentPhase.accent}`} />
       <div className="video-grid-sweep absolute inset-0" />
+      <div className="phase-scanline pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-cyan-300/[0.09] to-transparent opacity-0 blur-sm" />
       <svg className="absolute inset-0 h-full w-full opacity-[0.05]" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <pattern id="detail-grid-active" width="28" height="28" patternUnits="userSpaceOnUse">
@@ -288,7 +292,34 @@ function VideoPipelinePlaceholder({
         </defs>
         <rect width="100%" height="100%" fill="url(#detail-grid-active)" />
       </svg>
+      <svg
+        className="pointer-events-none absolute inset-0 h-full w-full text-cyan-200/70"
+        viewBox="0 0 400 260"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path className="phase-draft-path" d="M74 168 C118 88 172 88 216 168 S302 198 336 100" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity="0" />
+        <path className="phase-draft-path" d="M92 192 L338 192" stroke="currentColor" strokeWidth="0.8" strokeLinecap="round" opacity="0" />
+        <path className="phase-draft-path" d="M112 206 L112 58" stroke="currentColor" strokeWidth="0.8" strokeLinecap="round" opacity="0" />
+      </svg>
       <div className="video-grid-radar absolute left-1/2 top-1/2 h-[38vmin] w-[38vmin] -translate-x-1/2 -translate-y-1/2 rounded-full" />
+      <div className="pointer-events-none absolute left-1/2 top-1/2 flex h-24 w-36 -translate-x-1/2 -translate-y-1/2 items-end justify-center gap-1.5">
+        {[0, 1, 2, 3, 4, 5, 6].map((bar) => (
+          <span
+            key={bar}
+            className="phase-wave-bar h-10 w-1 rounded-full bg-orange-300/60 opacity-0 shadow-[0_0_10px_rgba(251,146,60,0.22)]"
+            style={{ height: `${18 + (bar % 4) * 7}px` }}
+          />
+        ))}
+      </div>
+      <div className="pointer-events-none absolute left-1/2 top-1/2 grid h-28 w-28 -translate-x-1/2 -translate-y-1/2 grid-cols-3 place-items-center">
+        {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((node) => (
+          <span
+            key={node}
+            className="phase-assembly-node h-2 w-2 rounded-full border border-sky-200/35 bg-sky-300/25 opacity-0 shadow-[0_0_10px_rgba(125,211,252,0.2)]"
+          />
+        ))}
+      </div>
       <div className="pointer-events-none absolute inset-x-8 top-8 flex justify-between opacity-50">
         <span className="h-3 w-8 rounded-full border border-cyan-500/20" />
         <span className="h-3 w-14 rounded-full border border-cyan-500/15" />
@@ -306,7 +337,7 @@ function VideoPipelinePlaceholder({
           <div className="video-orb-pulse" />
         </div>
         <div className="flex flex-col items-center space-y-2 text-center">
-          <div className="rounded-full border border-cyan-400/15 bg-cyan-500/5 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-200/80 shadow-[0_0_18px_rgba(34,211,238,0.08)]">
+          <div className="phase-glyph rounded-full border border-cyan-400/15 bg-cyan-500/5 px-3 py-1 font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-200/80 shadow-[0_0_18px_rgba(34,211,238,0.08)]">
             Run Time {elapsedLabel}
           </div>
           {phase === "tts" && ttsTransportMode && (
@@ -663,6 +694,11 @@ export default function TaskDetailClient() {
   const [sourceOpen, setSourceOpen] = useState(false);
   const containerRef = useRef<HTMLElement>(null);
   const refreshInFlightRef = useRef(false);
+  const reduceMotion = usePrefersReducedMotion();
+  const activePlaceholderPhase = useMemo<VideoPlaceholderPhase>(
+    () => (task ? detectVideoPlaceholderPhase(logs, task.status) : "init"),
+    [logs, task],
+  );
 
   const [activeTab, setActiveTab] = useState<"logs" | "script">("logs");
 
@@ -827,18 +863,116 @@ export default function TaskDetailClient() {
     if (!videoPlaceholder) return;
 
     gsap.killTweensOf(videoPlaceholder);
+    const orbParts = videoPlaceholder.querySelectorAll(".video-orb-core, .video-orb-ring, .video-orb-pulse");
+    const scanline = videoPlaceholder.querySelector(".phase-scanline");
+    const draftPaths = videoPlaceholder.querySelectorAll<SVGPathElement>(".phase-draft-path");
+    const waveBars = videoPlaceholder.querySelectorAll(".phase-wave-bar");
+    const assemblyNodes = videoPlaceholder.querySelectorAll(".phase-assembly-node");
+    const phaseGlyph = videoPlaceholder.querySelector(".phase-glyph");
+    gsap.killTweensOf(orbParts);
+    gsap.killTweensOf([scanline, phaseGlyph, ...draftPaths, ...waveBars, ...assemblyNodes]);
+
+    if (reduceMotion) {
+      gsap.set(videoPlaceholder, { clearProps: "borderColor,boxShadow,scale" });
+      gsap.set(orbParts, { clearProps: "filter,opacity,scale" });
+      gsap.set([scanline, phaseGlyph, ...draftPaths, ...waveBars, ...assemblyNodes], {
+        clearProps: "all",
+      });
+      return;
+    }
 
     if (task.status === "running" || task.status === "pending") {
+      const tl = gsap.timeline({ repeat: -1, yoyo: true });
+      tl
+        .to(videoPlaceholder, {
+          borderColor: "rgba(6, 182, 212, 0.3)",
+          boxShadow: "0 0 30px rgba(6, 182, 212, 0.15)",
+          scale: 1.002,
+          duration: 2,
+          ease: "sine.inOut",
+        }, 0)
+        .to(orbParts, {
+          filter: "brightness(1.18)",
+          opacity: 0.92,
+          scale: 1.015,
+          duration: 2,
+          ease: "sine.inOut",
+          stagger: 0.04,
+        }, 0);
+
+      if (phaseGlyph) {
+        tl.fromTo(
+          phaseGlyph,
+          { opacity: 0.45, scale: 0.98 },
+          { opacity: 0.9, scale: 1.02, duration: 1.2, ease: "sine.inOut" },
+          0,
+        );
+      }
+
+      if (activePlaceholderPhase === "scene" && draftPaths.length > 0) {
+        draftPaths.forEach((path) => {
+          const length = typeof path.getTotalLength === "function" ? path.getTotalLength() + 8 : 180;
+          gsap.set(path, { strokeDasharray: length, strokeDashoffset: length, opacity: 0.2 });
+        });
+        tl.to(draftPaths, {
+          strokeDashoffset: 0,
+          opacity: 0.48,
+          duration: 1.4,
+          ease: "power2.inOut",
+          stagger: 0.14,
+        }, 0.12);
+      }
+
+      if (activePlaceholderPhase === "render" && scanline) {
+        gsap.set(scanline, { xPercent: -110, opacity: 0 });
+        tl.to(scanline, {
+          xPercent: 110,
+          opacity: 0.55,
+          duration: 1.05,
+          ease: "none",
+        }, 0);
+      }
+
+      if (activePlaceholderPhase === "tts" && waveBars.length > 0) {
+        gsap.set(waveBars, { transformOrigin: "50% 100%" });
+        tl.fromTo(
+          waveBars,
+          { scaleY: 0.28, opacity: 0.35 },
+          {
+            scaleY: 1.35,
+            opacity: 0.85,
+            duration: 0.48,
+            ease: "sine.inOut",
+            stagger: { each: 0.06, from: "center" },
+          },
+          0,
+        );
+      }
+
+      if ((activePlaceholderPhase === "mux" || activePlaceholderPhase === "done") && assemblyNodes.length > 0) {
+        tl.fromTo(
+          assemblyNodes,
+          { opacity: 0.2, scale: 0.78 },
+          {
+            opacity: 0.85,
+            scale: 1.08,
+            duration: 0.8,
+            ease: "power2.inOut",
+            stagger: { each: 0.08, from: "edges" },
+          },
+          0,
+        );
+      }
+    } else {
       gsap.to(videoPlaceholder, {
-        borderColor: "rgba(6, 182, 212, 0.3)",
-        boxShadow: "0 0 30px rgba(6, 182, 212, 0.15)",
-        duration: 2,
-        ease: "sine.inOut",
-        repeat: -1,
-        yoyo: true,
+        borderColor: "rgba(255, 255, 255, 0.08)",
+        boxShadow: "0 0 0 rgba(6, 182, 212, 0)",
+        scale: 1,
+        duration: 0.35,
+        ease: "power2.out",
       });
     }
-  }, [task, loading]);
+  }, { scope: containerRef, dependencies: [task?.status, loading, activePlaceholderPhase, stableVideoSrc, reduceMotion] });
 
   if (loading) {
     return (

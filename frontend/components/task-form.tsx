@@ -4,7 +4,6 @@ import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import gsap from "gsap";
 import {
   BrainCircuit,
   Check,
@@ -31,7 +30,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { clarifyContent, createTask } from "@/lib/api";
+import { gsap } from "@/lib/gsap";
 import { logger } from "@/lib/logger";
+import { usePrefersReducedMotion } from "@/lib/motion";
 import type { ContentClarifyData, TaskDurationSeconds } from "@/types";
 
 const VOICES = [
@@ -140,6 +141,7 @@ function Switch({
 export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const reduceMotion = usePrefersReducedMotion();
 
   const [text, setText] = useState(initialPrompt);
   const [voiceId, setVoiceId] = useState("female-tianmei");
@@ -249,7 +251,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
           });
       };
 
-      if (!formEl || process.env.NODE_ENV === "test") {
+      if (!formEl || reduceMotion || process.env.NODE_ENV === "test") {
         submit();
         return;
       }
@@ -274,6 +276,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
       router,
       targetDurationSeconds,
       voiceId,
+      reduceMotion,
     ],
   );
 

@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { useRef, useEffect, useState } from "react";
-import gsap from "gsap";
+import { useRef, useState } from "react";
+import { gsap, useGSAP } from "@/lib/gsap";
+import { usePrefersReducedMotion } from "@/lib/motion";
 
 const STEPS = [
   { label: "输入", desc: "描述数学概念" },
@@ -21,10 +22,11 @@ const SYMBOL_POSITIONS = FLOAT_SYMBOLS.map((_, i) => ({
 
 function FloatingSymbols() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = usePrefersReducedMotion();
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const ctx = gsap.context(() => {
+  useGSAP(() => {
+    if (!containerRef.current || reduceMotion) return;
+
       const symbols = containerRef.current!.querySelectorAll("[data-symbol]");
       symbols.forEach((el) => {
         const dur = gsap.utils.random(5, 8);
@@ -41,9 +43,7 @@ function FloatingSymbols() {
           delay: gsap.utils.random(0, 2),
         });
       });
-    });
-    return () => ctx.revert();
-  }, []);
+  }, { scope: containerRef, dependencies: [reduceMotion] });
 
   return (
     <div ref={containerRef} className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
@@ -71,89 +71,88 @@ function PreviewCanvas() {
   const glowRef = useRef<SVGEllipseElement>(null);
   const containerRef = useRef<HTMLAnchorElement>(null);
   const played = useRef(false);
+  const reduceMotion = usePrefersReducedMotion();
 
-  useEffect(() => {
+  useGSAP(() => {
     const container = containerRef.current;
     if (!container || !svgRef.current || !dotRef.current || played.current) return;
     played.current = true;
-    let cleanupHover: (() => void) | undefined;
 
-    const ctx = gsap.context(() => {
-      const curve = svgRef.current!.querySelector("[data-curve]") as SVGPathElement;
-      const tangent = svgRef.current!.querySelector("[data-tangent]") as SVGLineElement;
-      const pointX = svgRef.current!.querySelector("[data-point-x]") as SVGCircleElement;
-      const pointY = svgRef.current!.querySelector("[data-point-y]") as SVGCircleElement;
-      const fillArea = svgRef.current!.querySelector("[data-fill]") as SVGPathElement;
+    const curve = svgRef.current!.querySelector("[data-curve]") as SVGPathElement;
+    const tangent = svgRef.current!.querySelector("[data-tangent]") as SVGLineElement;
+    const pointX = svgRef.current!.querySelector("[data-point-x]") as SVGCircleElement;
+    const pointY = svgRef.current!.querySelector("[data-point-y]") as SVGCircleElement;
+    const fillArea = svgRef.current!.querySelector("[data-fill]") as SVGPathElement;
 
-      if (!curve) return;
+    if (!curve) return;
 
-      const len = curve.getTotalLength();
+    const len = curve.getTotalLength();
 
-      gsap.set(curve, { strokeDasharray: len, strokeDashoffset: len });
-      if (fillArea) gsap.set(fillArea, { opacity: 0 });
+    if (reduceMotion) {
+      gsap.set(curve, { strokeDasharray: len, strokeDashoffset: 0 });
+      gsap.set([tangent, pointX, pointY, fillArea], { opacity: 1 });
+      return;
+    }
 
-      const tl = gsap.timeline({ defaults: { ease: "power2.inOut" } });
+    gsap.set(curve, { strokeDasharray: len, strokeDashoffset: len });
+    if (fillArea) gsap.set(fillArea, { opacity: 0 });
 
-      tl.to(curve, {
-        strokeDashoffset: 0,
-        duration: 2.2,
-        delay: 0.35,
+    const tl = gsap.timeline({ defaults: { ease: "power2.inOut" } });
+
+    tl.to(curve, {
+      strokeDashoffset: 0,
+      duration: 2.2,
+      delay: 0.35,
+    })
+      .to(fillArea, { opacity: 1, duration: 0.8 }, "-=0.6")
+      .fromTo(
+        tangent,
+        { opacity: 0, attr: { x1: 165, x2: 165 } },
+        { opacity: 0.28, attr: { x2: 245 }, duration: 0.7 },
+        "-=0.3"
+      )
+      .fromTo(pointX, { scale: 0, transformOrigin: "center" }, { scale: 1, duration: 0.4 }, "-=0.4")
+      .fromTo(pointY, { scale: 0, transformOrigin: "center" }, { scale: 1, duration: 0.35 }, "-=0.25");
+
+    const dot = dotRef.current!;
+    const glow = glowRef.current!;
+    const dotTl = gsap.timeline({ repeat: -1, repeatDelay: 1.5, delay: 2.8 });
+    const progress = { v: 0 };
+
+    dotTl
+      .set([dot, glow], { opacity: 0 })
+      .to(progress, {
+        v: 1,
+        duration: 3.5,
+        ease: "none",
+        onUpdate: () => {
+          const pt = curve.getPointAtLength(progress.v * len);
+          gsap.set(dot, { cx: pt.x, cy: pt.y });
+          if (glow) gsap.set(glow, { cx: pt.x, cy: pt.y });
+        },
       })
-        .to(fillArea, { opacity: 1, duration: 0.8 }, "-=0.6")
-        .fromTo(
-          tangent,
-          { opacity: 0, attr: { x1: 165, x2: 165 } },
-          { opacity: 0.28, attr: { x2: 245 }, duration: 0.7 },
-          "-=0.3"
-        )
-        .fromTo(pointX, { scale: 0, transformOrigin: "center" }, { scale: 1, duration: 0.4 }, "-=0.4")
-        .fromTo(pointY, { scale: 0, transformOrigin: "center" }, { scale: 1, duration: 0.35 }, "-=0.25");
+      .to([dot, glow], { opacity: 0, duration: 0.3 });
 
-      const dot = dotRef.current!;
-      const glow = glowRef.current!;
-      const dotTl = gsap.timeline({ repeat: -1, repeatDelay: 1.5, delay: 2.8 });
-      const progress = { v: 0 };
+    const handleMouseEnter = () => {
+      gsap.to(curve, { strokeWidth: 2.5, duration: 0.3 });
+      gsap.to(dot, { r: 4.5, duration: 0.3 });
+      if (glow) gsap.to(glow, { rx: 18, ry: 10, opacity: 0.25, duration: 0.3 });
+    };
 
-      dotTl
-        .set([dot, glow], { opacity: 0 })
-        .to(progress, {
-          v: 1,
-          duration: 3.5,
-          ease: "none",
-          onUpdate: () => {
-            const pt = curve.getPointAtLength(progress.v * len);
-            gsap.set(dot, { cx: pt.x, cy: pt.y });
-            if (glow) gsap.set(glow, { cx: pt.x, cy: pt.y });
-          },
-        })
-        .to([dot, glow], { opacity: 0, duration: 0.3 });
+    const handleMouseLeave = () => {
+      gsap.to(curve, { strokeWidth: 2, duration: 0.3 });
+      gsap.to(dot, { r: 3, duration: 0.3 });
+      if (glow) gsap.to(glow, { rx: 14, ry: 7, opacity: 0.12, duration: 0.3 });
+    };
 
-      const handleMouseEnter = () => {
-        gsap.to(curve, { strokeWidth: 2.5, duration: 0.3 });
-        gsap.to(dot, { r: 4.5, duration: 0.3 });
-        if (glow) gsap.to(glow, { rx: 18, ry: 10, opacity: 0.25, duration: 0.3 });
-      };
-
-      const handleMouseLeave = () => {
-        gsap.to(curve, { strokeWidth: 2, duration: 0.3 });
-        gsap.to(dot, { r: 3, duration: 0.3 });
-        if (glow) gsap.to(glow, { rx: 14, ry: 7, opacity: 0.12, duration: 0.3 });
-      };
-
-      container?.addEventListener("mouseenter", handleMouseEnter, { passive: true });
-      container?.addEventListener("mouseleave", handleMouseLeave, { passive: true });
-
-      cleanupHover = () => {
-        container?.removeEventListener("mouseenter", handleMouseEnter);
-        container?.removeEventListener("mouseleave", handleMouseLeave);
-      };
-    }, container);
+    container?.addEventListener("mouseenter", handleMouseEnter, { passive: true });
+    container?.addEventListener("mouseleave", handleMouseLeave, { passive: true });
 
     return () => {
-      cleanupHover?.();
-      ctx.revert();
+      container?.removeEventListener("mouseenter", handleMouseEnter);
+      container?.removeEventListener("mouseleave", handleMouseLeave);
     };
-  }, []);
+  }, { scope: containerRef, dependencies: [reduceMotion] });
 
   return (
     <Link
@@ -231,11 +230,18 @@ function PreviewCanvas() {
 function FlowSteps() {
   const stepsRef = useRef<HTMLDivElement>(null);
   const [activeStep, setActiveStep] = useState(-1);
+  const reduceMotion = usePrefersReducedMotion();
 
-  useEffect(() => {
+  useGSAP(() => {
     if (!stepsRef.current) return;
-    const ctx = gsap.context(() => {
+
       const items = stepsRef.current!.querySelectorAll("[data-step]");
+      if (reduceMotion) {
+        gsap.set(items, { opacity: 0.78, y: 0 });
+        setActiveStep(items.length - 1);
+        return;
+      }
+
       items.forEach((el, i) => {
         gsap.fromTo(
           el,
@@ -250,9 +256,7 @@ function FlowSteps() {
           }
         );
       });
-    });
-    return () => ctx.revert();
-  }, []);
+  }, { scope: stepsRef, dependencies: [reduceMotion] });
 
   return (
     <div ref={stepsRef}>

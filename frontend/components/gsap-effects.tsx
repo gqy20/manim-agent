@@ -1,17 +1,22 @@
 "use client";
 
 import { useRef } from "react";
-import gsap from "gsap";
-import { useGSAP } from "@gsap/react";
+import { gsap, useGSAP } from "@/lib/gsap";
+import { usePrefersReducedMotion } from "@/lib/motion";
 
 const CHARS = "∑∫∆∇∞πθΩαβγδεζμξρστφχψω+-*/=≈≠≡≤≥";
 
 export function ScrambleTitle({ text, className }: { text: string; className?: string }) {
   const textRef = useRef<HTMLHeadingElement>(null);
+  const reduceMotion = usePrefersReducedMotion();
 
   useGSAP(() => {
     if (!textRef.current) return;
     const el = textRef.current;
+    if (reduceMotion) {
+      el.innerText = text;
+      return;
+    }
     
     const obj = { value: 0 };
     const length = text.length;
@@ -35,16 +40,18 @@ export function ScrambleTitle({ text, className }: { text: string; className?: s
         el.innerText = scrambled;
       }
     });
-  }, [text]);
+  }, { dependencies: [text, reduceMotion] });
 
   return <h1 ref={textRef} className={className}>{text}</h1>;
 }
 
 export function AnimatedMathDecorations() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const reduceMotion = usePrefersReducedMotion();
 
   useGSAP(() => {
     if (!containerRef.current) return;
+    if (reduceMotion) return;
     
     // Select all paths, lines, and circles that use a stroke (excluding the subtle background grid)
     const elements = containerRef.current.querySelectorAll<SVGGeometryElement>(
@@ -93,7 +100,7 @@ export function AnimatedMathDecorations() {
         delay: gsap.utils.random(0, 0.8),
       });
     });
-  }, { scope: containerRef });
+  }, { scope: containerRef, dependencies: [reduceMotion] });
 
   return (
     <div ref={containerRef} className="relative w-full h-full min-h-[420px] overflow-hidden" aria-hidden="true">
