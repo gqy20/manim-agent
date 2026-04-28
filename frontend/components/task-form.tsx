@@ -357,7 +357,9 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
         <div className="relative flex min-h-0 w-full flex-col space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-foreground/56">描述概念、受众和你希望动画突出的直觉。</p>
-            <span className="font-mono text-[11px] text-foreground/48">{text.trim().length} chars</span>
+            <span className="font-mono text-[11px] tabular-nums text-foreground/48">
+              {text.trim().length} 字
+            </span>
           </div>
 
           <Textarea
@@ -444,7 +446,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 variant="outline"
                 disabled={!canAct}
                 onClick={handleClarify}
-                className="h-10 rounded-lg border-primary/20 bg-primary/[0.055] px-4 text-foreground/82 hover:bg-primary/[0.09]"
+                className="h-10 min-w-[7.5rem] rounded-lg border-primary/20 bg-primary/[0.055] px-4 text-foreground/82 hover:bg-primary/[0.09]"
               >
                 {clarifying ? (
                   <>
@@ -462,7 +464,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                 type="button"
                 disabled={!canAct}
                 onClick={handleCreate}
-                className="btn-glow h-10 rounded-lg px-5"
+                className="btn-glow h-10 min-w-[7.75rem] rounded-lg px-5"
               >
                 {submitting ? (
                   <>
@@ -675,7 +677,7 @@ export function TaskForm({ initialPrompt = "" }: { initialPrompt?: string }) {
                     disabled={submitting}
                   className="rounded-md px-2 py-1 text-xs text-primary/82 transition-[background-color,color,transform] duration-200 hover:-translate-y-px hover:bg-primary/[0.08] hover:text-primary disabled:pointer-events-none disabled:opacity-45"
                   >
-                    调校
+                    调整
                   </button>
                 </div>
 

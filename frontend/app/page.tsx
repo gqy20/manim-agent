@@ -27,22 +27,22 @@ function FloatingSymbols() {
   useGSAP(() => {
     if (!containerRef.current || reduceMotion) return;
 
-      const symbols = containerRef.current!.querySelectorAll("[data-symbol]");
-      symbols.forEach((el) => {
-        const dur = gsap.utils.random(5, 8);
-        const yDist = gsap.utils.random(15, 30);
-        const rot = gsap.utils.random(-6, 6);
-        gsap.to(el, {
-          y: `-${yDist}`,
-          rotation: rot,
-          opacity: () => gsap.utils.random(0.04, 0.1),
-          duration: dur,
-          ease: "sine.inOut",
-          repeat: -1,
-          yoyo: true,
-          delay: gsap.utils.random(0, 2),
-        });
+    const symbols = containerRef.current!.querySelectorAll("[data-symbol]");
+    symbols.forEach((el) => {
+      const dur = gsap.utils.random(5, 8);
+      const yDist = gsap.utils.random(15, 30);
+      const rot = gsap.utils.random(-6, 6);
+      gsap.to(el, {
+        y: `-${yDist}`,
+        rotation: rot,
+        opacity: () => gsap.utils.random(0.04, 0.1),
+        duration: dur,
+        ease: "sine.inOut",
+        repeat: -1,
+        yoyo: true,
+        delay: gsap.utils.random(0, 2),
       });
+    });
   }, { scope: containerRef, dependencies: [reduceMotion] });
 
   return (
@@ -158,7 +158,7 @@ function PreviewCanvas() {
     <Link
       ref={containerRef}
       href="/create"
-      className="group relative block overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(180deg,oklch(0.17_0.01_250/0.82),oklch(0.12_0.008_250/0.92))] shadow-[0_28px_80px_-46px_oklch(0.72_0.11_250/0.45),inset_0_1px_0_oklch(1_0_0/0.06)] ring-1 ring-primary/[0.03] transition-all duration-300 hover:border-primary/24 hover:shadow-[0_32px_90px_-42px_oklch(0.72_0.11_250/0.58),inset_0_1px_0_oklch(1_0_0/0.08)]"
+      className="group relative block overflow-hidden rounded-xl border border-white/10 bg-[linear-gradient(180deg,oklch(0.17_0.01_250/0.82),oklch(0.12_0.008_250/0.92))] shadow-[0_24px_72px_-48px_oklch(0.72_0.11_250/0.38),inset_0_1px_0_oklch(1_0_0/0.06)] ring-1 ring-primary/[0.03] transition-[border-color,box-shadow,transform] duration-300 hover:-translate-y-0.5 hover:border-primary/22 hover:shadow-[0_28px_80px_-48px_oklch(0.72_0.11_250/0.48),inset_0_1px_0_oklch(1_0_0/0.08)]"
     >
       <FloatingSymbols />
       <div className="aspect-[1.95/1]">
@@ -235,27 +235,27 @@ function FlowSteps() {
   useGSAP(() => {
     if (!stepsRef.current) return;
 
-      const items = stepsRef.current!.querySelectorAll("[data-step]");
-      if (reduceMotion) {
-        gsap.set(items, { opacity: 0.78, y: 0 });
-        setActiveStep(items.length - 1);
-        return;
-      }
+    const items = stepsRef.current!.querySelectorAll("[data-step]");
+    if (reduceMotion) {
+      gsap.set(items, { opacity: 0.78, y: 0 });
+      setActiveStep(items.length - 1);
+      return;
+    }
 
-      items.forEach((el, i) => {
-        gsap.fromTo(
-          el,
-          { opacity: 0.34, y: 6 },
-          {
-            opacity: 0.78,
-            y: 0,
-            duration: 0.5,
-            ease: "cubic-bezier(0.16, 1, 0.3, 1)",
-            delay: 1.8 + i * 0.15,
-            onStart: () => setActiveStep(i),
-          }
-        );
-      });
+    items.forEach((el, i) => {
+      gsap.fromTo(
+        el,
+        { opacity: 0.34, y: 6 },
+        {
+          opacity: 0.78,
+          y: 0,
+          duration: 0.5,
+          ease: "cubic-bezier(0.16, 1, 0.3, 1)",
+          delay: 1.8 + i * 0.15,
+          onStart: () => setActiveStep(i),
+        }
+      );
+    });
   }, { scope: stepsRef, dependencies: [reduceMotion] });
 
   return (
@@ -280,7 +280,7 @@ function FlowSteps() {
 export default function HomePage() {
   return (
     <main className="relative flex min-h-full flex-col items-center justify-center overflow-hidden px-4 pb-14 pt-[calc(var(--app-header-height)+1rem)] sm:px-6 sm:pb-20 lg:px-8">
-      <div className="pointer-events-none absolute inset-x-0 top-[12%] mx-auto h-[520px] w-[min(780px,92vw)] rounded-full bg-primary/[0.035] blur-3xl" aria-hidden="true" />
+      <div className="pointer-events-none absolute inset-x-0 top-[12%] mx-auto h-[520px] w-[min(780px,92vw)] rounded-full bg-primary/[0.026] blur-3xl" aria-hidden="true" />
       <div className="pointer-events-none absolute inset-x-0 top-[36%] mx-auto h-px w-[min(720px,84vw)] bg-gradient-to-r from-transparent via-primary/14 to-transparent" aria-hidden="true" />
       <FloatingSymbols />
       <div className="relative z-10 mx-auto w-full max-w-[720px] -translate-y-3 space-y-9 sm:-translate-y-5 sm:space-y-10">

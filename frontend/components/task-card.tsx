@@ -48,12 +48,12 @@ export function TaskCard({ task, deleting = false, onDelete }: TaskCardProps) {
       )}
       <Link href={`/tasks/${task.id}`} className="block h-full">
         <Card
-          className="glass-card rounded-xl p-4 cursor-pointer transition-[border-color,box-shadow,transform] duration-300 ease-out
+          className="glass-card relative h-full cursor-pointer overflow-hidden rounded-lg p-4 transition-[border-color,box-shadow,transform] duration-300 ease-out
             hover:border-primary/25
-            hover:shadow-xl hover:shadow-primary/[0.04]
-            hover:-translate-y-1
+            hover:shadow-lg hover:shadow-primary/[0.03]
+            hover:-translate-y-0.5
             active:scale-[0.98]
-            relative overflow-hidden h-full"
+            "
           style={{ transformStyle: "preserve-3d", perspective: "1000px" }}
         >
           {/* Spotlight overlay effect */}
@@ -61,44 +61,44 @@ export function TaskCard({ task, deleting = false, onDelete }: TaskCardProps) {
             className="pointer-events-none absolute -inset-px transition-opacity duration-300 z-0 opacity-0 group-hover:opacity-100"
             style={{
               background:
-                "radial-gradient(600px circle at var(--spotlight-x) var(--spotlight-y), rgba(255,255,255,0.06), transparent 40%)",
+                "radial-gradient(520px circle at var(--spotlight-x) var(--spotlight-y), rgba(255,255,255,0.045), transparent 42%)",
             } as CSSProperties}
           />
 
           {/* Subtle top accent line */}
-        <div className="absolute top-0 left-4 right-4 h-[1px] bg-gradient-to-r from-transparent via-primary/0 to-transparent transition-colors duration-500 group-hover:via-primary/30"/>
+          <div className="absolute top-0 left-4 right-4 h-px bg-gradient-to-r from-transparent via-primary/0 to-transparent transition-colors duration-500 group-hover:via-primary/30" />
 
-        <CardContent className="p-0 space-y-3">
-          {/* Header row */}
-          <div className="flex items-center justify-between gap-3 pr-9">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="p-1.5 rounded-md bg-surface/80 flex-shrink-0 group-hover:bg-primary/10 transition-colors duration-300">
-                <Film className="h-3 w-3 text-muted-foreground/50 group-hover:text-primary/60 transition-colors"/>
+          <CardContent className="space-y-3 p-0">
+            {/* Header row */}
+            <div className="flex items-center justify-between gap-3 pr-9">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="flex-shrink-0 rounded-md bg-surface/80 p-1.5 transition-colors duration-300 group-hover:bg-primary/10">
+                  <Film className="h-3 w-3 text-muted-foreground/50 transition-colors group-hover:text-primary/60" />
+                </div>
+                <span className="truncate font-mono text-xs text-muted-foreground transition-colors group-hover:text-foreground/70">
+                  {task.id}
+                </span>
               </div>
-              <span className="font-mono text-xs text-muted-foreground group-hover:text-foreground/70 transition-colors truncate">
-                {task.id}
+              <StatusBadge status={task.status} />
+            </div>
+
+            {/* Description */}
+            <p className="line-clamp-2 text-sm leading-relaxed text-foreground/75 transition-colors group-hover:text-foreground/90">
+              {task.user_text}
+            </p>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-1">
+              <span className="font-mono text-[11px] text-muted-foreground/50">
+                {formatTaskTimestamp(task.created_at)}
+              </span>
+              <span className="flex -translate-x-2 items-center gap-1 text-[10px] text-primary/45 opacity-0 transition-[opacity,transform] duration-300 group-hover:translate-x-0 group-hover:opacity-100">
+                查看
+                <ArrowUpRight className="h-2.5 w-2.5" />
               </span>
             </div>
-            <StatusBadge status={task.status} />
-          </div>
-
-          {/* Description */}
-          <p className="text-sm text-foreground/75 line-clamp-2 leading-relaxed group-hover:text-foreground/90 transition-colors">
-            {task.user_text}
-          </p>
-
-          {/* Footer */}
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-[11px] text-muted-foreground/50 font-mono">
-              {formatTaskTimestamp(task.created_at)}
-            </span>
-            <span className="flex items-center gap-1 text-[10px] text-primary/40 opacity-0 -translate-x-2 transition-[opacity,transform] duration-300 group-hover:opacity-100 group-hover:translate-x-0">
-              查看
-              <ArrowUpRight className="h-2.5 w-2.5"/>
-            </span>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
       </Link>
     </div>
   );
